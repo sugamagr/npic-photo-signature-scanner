@@ -64,6 +64,19 @@ class SharedCaptureHolder : ViewModel() {
         _draft.value = null
     }
 
+    /**
+     * Return the current draft's UUID string, or mint a fresh draft (and thus a fresh
+     * UUID) if none exists yet. Guarantees a stable ID for the entire Camera→Edit→Save
+     * arc — critical for [SourceStore], which keys committed source assets by this ID.
+     */
+    fun draftIdOrMint(): String {
+        val existing = _draft.value
+        if (existing != null) return existing.id
+        val fresh = currentOrNew()
+        _draft.value = fresh
+        return fresh.id
+    }
+
     private fun currentOrNew(): StudentDraft {
         return _draft.value ?: StudentDraft(
             id = UUID.randomUUID().toString(),

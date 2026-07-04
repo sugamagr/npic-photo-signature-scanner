@@ -75,7 +75,7 @@ import com.npic.photoandsignscanner.domain.model.CameraMode
 fun EditScreen(
     capture: CameraCapture,
     onBack: () -> Unit,
-    onNext: () -> Unit,
+    onNext: (sourcePath: String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: EditViewModel,
 ) {
@@ -83,15 +83,25 @@ fun EditScreen(
 
     val state = viewModel.state.collectAsStateWithLifecycle().value ?: return
 
+    // PRD §5.5 commit path: when EditViewModel finishes rendering + writing the source,
+    // it publishes the on-disk path via committedSourcePath. Forward it once, then clear
+    // so process restore doesn't double-navigate.
+    LaunchedEffect(state.committedSourcePath) {
+        val path = state.committedSourcePath ?: return@LaunchedEffect
+        onNext(path)
+        viewModel.consumeCommittedSource()
+    }
+
     val chrome = LocalNpicChrome.current
     Box(modifier = modifier.fillMaxSize().background(chrome.cameraBg)) {
         Column(Modifier.fillMaxSize()) {
             EditTopBar(
                 mode = state.edit.mode,
+                committing = state.committing,
                 onBack = {
                     if (state.dirty) viewModel.requestDiscardConfirm() else onBack()
                 },
-                onNext = onNext,
+                onNext = { viewModel.commitEdits() },
             )
 
             ImageViewport(
@@ -132,6 +142,7 @@ fun EditScreen(
 @Composable
 private fun EditTopBar(
     mode: CameraMode,
+    committing: Boolean,
     onBack: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -163,14 +174,14 @@ private fun EditTopBar(
         Box(
             modifier = Modifier
                 .clip(NpicShapes.sm)
-                .clickable(onClick = onNext)
+                .then(if (committing) Modifier else Modifier.clickable(onClick = onNext))
                 .defaultMinSize(minHeight = 44.dp)
                 .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "Next",
-                color = NpicColors.Saffron,
+                text = if (committing) "Saving…" else "Next",
+                color = if (committing) chrome.inkMuted else NpicColors.Saffron,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(600)),
             )
         }

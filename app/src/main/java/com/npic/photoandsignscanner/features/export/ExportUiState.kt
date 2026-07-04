@@ -15,6 +15,12 @@ data class ExportUiState(
     val format: ExportFormat = ExportFormat.Combined,
     val exporting: Boolean = false,
     val warningExpanded: Boolean = false,
+    /**
+     * Count of exported items where JpegCompressor accepted a payload below the 10 KB
+     * portal floor (PRD §6.1 Option A). The Export destination raises a toast for the
+     * user so they know the portal MAY reject those items.
+     */
+    val underMinCount: Int = 0,
 ) {
     val recordCount: Int get() = records.size
     val isMulti: Boolean  get() = records.size > 1

@@ -23,6 +23,8 @@ data class EditUiState(
     val activeTool: EditTool = EditTool.Crop,
     val isRendering: Boolean = false,
     val showDiscardConfirm: Boolean = false,
+    val committing: Boolean = false,
+    val committedSourcePath: String? = null,
     val lastError: String? = null,
     /**
      * Full-resolution source bitmap loaded from `edit.source.rawPath`. Null while decoding.

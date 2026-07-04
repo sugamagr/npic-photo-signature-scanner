@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.npic.photoandsignscanner.domain.model.CropQuad
 import com.npic.photoandsignscanner.data.imaging.BitmapAdjustments
 import com.npic.photoandsignscanner.data.imaging.BitmapFilters
+import com.npic.photoandsignscanner.data.imaging.EditRenderer
+import com.npic.photoandsignscanner.data.storage.SourceStore
 import com.npic.photoandsignscanner.domain.model.Adjustments
 import com.npic.photoandsignscanner.domain.model.AspectLock
 import com.npic.photoandsignscanner.domain.model.CameraCapture
@@ -50,6 +52,9 @@ class EditViewModel(
     private val detectSignatureInk: DetectSignatureInk,
     private val bitmapFilters: BitmapFilters,
     private val bitmapAdjustments: BitmapAdjustments,
+    private val editRenderer: EditRenderer,
+    private val sourceStore: SourceStore,
+    private val draftIdProvider: () -> String,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<EditUiState?>(null)
@@ -58,6 +63,7 @@ class EditViewModel(
     private var loadJob: Job? = null
     private var detectionJob: Job? = null
     private var thumbnailsJob: Job? = null
+    private var commitJob: Job? = null
 
     /**
      * Seed from a fresh capture. No-op if the same capture is already loaded. Cancels any
@@ -250,6 +256,66 @@ class EditViewModel(
         _state.update { it?.copy(showDiscardConfirm = false) }
     }
 
+    /**
+     * PRD §5.5 commit path. Runs [EditRenderer.render] on the full-resolution source
+     * bitmap using the current [EditState], then persists the result via [SourceStore] as
+     * either `sources/{draftId}_photo.jpg` (Photo mode, long-side 1600) or
+     * `sources/{draftId}_signature.jpg` (Signature mode, long-side 1500).
+     *
+     * The written path is published on [EditUiState.committedSourcePath]. The screen
+     * observes that field via [LaunchedEffect] and hands the path to the
+     * [MainActivity]-provided `onNext` callback, which pushes it into
+     * [SharedCaptureHolder].
+     *
+     * Guarded against double-tap via [EditUiState.committing]. Concurrent-safe against
+     * `seed()` racing: cancels a prior commit if a new seed lands mid-render, and
+     * discards the render result if a newer capture replaced the state.
+     */
+    fun commitEdits() {
+        val snapshot = _state.value ?: return
+        if (snapshot.committing || snapshot.committedSourcePath != null) return
+        val source = snapshot.sourceBitmap ?: run {
+            _state.update { it?.copy(lastError = "Photo still loading — try again") }
+            return
+        }
+        commitJob?.cancel()
+        val activeRawPath = snapshot.edit.source.rawPath
+        val editSnapshot = snapshot.edit
+        val draftId = draftIdProvider()
+
+        _state.update { it?.copy(committing = true, lastError = null) }
+
+        commitJob = viewModelScope.launch {
+            val path = withContext(Dispatchers.Default) {
+                val rendered = runCatching { editRenderer.render(source, editSnapshot) }
+                    .onFailure { Log.e(TAG, "EditRenderer.render failed: ${it.message}", it) }
+                    .getOrNull() ?: return@withContext null
+                try {
+                    when (editSnapshot.mode) {
+                        CameraMode.Photo     -> sourceStore.writePhoto(draftId, rendered)
+                        CameraMode.Signature -> sourceStore.writeSignature(draftId, rendered)
+                    }
+                } finally {
+                    // Fresh allocation from EditRenderer.render — always ours to recycle.
+                    rendered.recycle()
+                }
+            }
+            _state.update { s ->
+                if (s == null || s.edit.source.rawPath != activeRawPath) s
+                else if (path == null) s.copy(committing = false, lastError = "Couldn't save the edited image")
+                else s.copy(committing = false, committedSourcePath = path)
+            }
+        }
+    }
+
+    /**
+     * Clear [EditUiState.committedSourcePath] after the destination has consumed it and
+     * navigated. Prevents a second navigation on process restore or configuration change.
+     */
+    fun consumeCommittedSource() {
+        _state.update { it?.copy(committedSourcePath = null) }
+    }
+
     override fun onCleared() {
         // Recycle cached bitmaps so leaving Edit reclaims the ~10-30 MB working set.
         _state.value?.let { s ->
@@ -270,10 +336,21 @@ class EditViewModel(
         private val detectSignatureInk: DetectSignatureInk,
         private val bitmapFilters: BitmapFilters,
         private val bitmapAdjustments: BitmapAdjustments,
+        private val editRenderer: EditRenderer,
+        private val sourceStore: SourceStore,
+        private val draftIdProvider: () -> String,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            EditViewModel(detectPhotoEdges, detectSignatureInk, bitmapFilters, bitmapAdjustments) as T
+            EditViewModel(
+                detectPhotoEdges,
+                detectSignatureInk,
+                bitmapFilters,
+                bitmapAdjustments,
+                editRenderer,
+                sourceStore,
+                draftIdProvider,
+            ) as T
     }
 
     private companion object {

@@ -18,13 +18,14 @@ import java.io.File
 object FileShareLauncher {
 
     private const val TAG = "FileShareLauncher"
-    private const val MIME_JPEG = "image/jpeg"
+    const val MIME_JPEG = "image/jpeg"
+    const val MIME_ZIP = "application/zip"
 
     /** Fire the share sheet for a single record via ACTION_SEND. */
-    fun shareSingle(context: Context, filePath: String, chooserTitle: String) {
+    fun shareSingle(context: Context, filePath: String, chooserTitle: String, mimeType: String = MIME_JPEG) {
         val uri = fileUri(context, filePath) ?: return
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = MIME_JPEG
+            type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -32,14 +33,14 @@ object FileShareLauncher {
     }
 
     /** Fire the share sheet for multiple records via ACTION_SEND_MULTIPLE. */
-    fun shareMulti(context: Context, filePaths: List<String>, chooserTitle: String) {
+    fun shareMulti(context: Context, filePaths: List<String>, chooserTitle: String, mimeType: String = MIME_JPEG) {
         val uris = filePaths.mapNotNull { fileUri(context, it) }
         if (uris.isEmpty()) {
             Log.w(TAG, "No shareable files resolved from ${filePaths.size} paths")
             return
         }
         val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-            type = MIME_JPEG
+            type = mimeType
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }

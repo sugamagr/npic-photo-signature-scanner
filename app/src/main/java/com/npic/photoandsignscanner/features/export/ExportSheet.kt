@@ -73,7 +73,7 @@ import com.npic.photoandsignscanner.domain.model.ExportFormat
 fun ExportSheet(
     viewModel: ExportViewModel,
     onCancel: () -> Unit,
-    onShare: (paths: List<String>, format: ExportFormat) -> Unit,
+    onShare: (result: ExportResult, format: ExportFormat) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -103,8 +103,8 @@ fun ExportSheet(
             canExport = state.canExport,
             onCancel = onCancel,
             onExport = {
-                viewModel.beginExport { paths ->
-                    if (paths.isNotEmpty()) onShare(paths, state.format)
+                viewModel.beginExport { result ->
+                    onShare(result, state.format)
                 }
             },
         )

@@ -28,12 +28,17 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.npic.photoandsignscanner.core.theme.NpicTheme
+import com.npic.photoandsignscanner.data.export.ZipExporter
 import com.npic.photoandsignscanner.data.imaging.BitmapAdjustments
 import com.npic.photoandsignscanner.data.imaging.BitmapFilters
+import com.npic.photoandsignscanner.data.imaging.CombinedRenderer
+import com.npic.photoandsignscanner.data.imaging.EditRenderer
+import com.npic.photoandsignscanner.data.imaging.JpegCompressor
 import com.npic.photoandsignscanner.data.imaging.OpenCvBridge
 import com.npic.photoandsignscanner.data.imaging.PhotoEdgeDetector
 import com.npic.photoandsignscanner.data.imaging.SignatureInkIsolator
 import com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository
+import com.npic.photoandsignscanner.data.storage.SourceStore
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.SignatureSource
 import com.npic.photoandsignscanner.domain.model.StudentDraft
@@ -87,6 +92,15 @@ class MainActivity : ComponentActivity() {
     private val signatureInkIsolator by lazy { SignatureInkIsolator(openCvBridge) }
     private val bitmapAdjustments by lazy { BitmapAdjustments(openCvBridge) }
     private val bitmapFilters by lazy { BitmapFilters(openCvBridge, bitmapAdjustments) }
+    private val editRenderer by lazy { EditRenderer(openCvBridge, bitmapFilters, bitmapAdjustments) }
+
+    // Layer 9 Save-render + Export-render graph (PRD §5.5 / §6 / §6.2 / §4.10). Kept
+    // Activity-scoped so a single SourceStore instance owns the `filesDir/sources/`
+    // directory across screen transitions.
+    private val sourceStore by lazy { SourceStore(filesDir) }
+    private val jpegCompressor by lazy { JpegCompressor() }
+    private val combinedRenderer by lazy { CombinedRenderer() }
+    private val zipExporter by lazy { ZipExporter(cacheDir) }
 
     // In-memory StudentRepository seeded from MockGalleryData. Gallery reads from this
     // for future migration off the mock seed; Save writes into it. Room impl slots in
@@ -99,13 +113,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         splash.setKeepOnScreenCondition { false }
 
-        val editVmFactory = EditViewModel.Factory(
-            detectPhotoEdges = photoEdgeDetector,
-            detectSignatureInk = signatureInkIsolator,
-            bitmapFilters = bitmapFilters,
-            bitmapAdjustments = bitmapAdjustments,
-        )
-
         setContent {
             NpicTheme {
                 Surface(
@@ -113,11 +120,31 @@ class MainActivity : ComponentActivity() {
                     color    = MaterialTheme.colorScheme.background,
                 ) {
                     val captureHolder: SharedCaptureHolder = viewModel()
+                    // EditViewModel.Factory captures a live draftIdProvider that reads
+                    // the current or freshly-minted draft ID out of the captureHolder.
+                    // Doing it in the Factory instead of a constructor param means every
+                    // new EditViewModel binding sees the current draft — critical when
+                    // the user re-enters Edit for a follow-up capture in the same session.
+                    val editVmFactory = remember(captureHolder) {
+                        EditViewModel.Factory(
+                            detectPhotoEdges = photoEdgeDetector,
+                            detectSignatureInk = signatureInkIsolator,
+                            bitmapFilters = bitmapFilters,
+                            bitmapAdjustments = bitmapAdjustments,
+                            editRenderer = editRenderer,
+                            sourceStore = sourceStore,
+                            draftIdProvider = { captureHolder.draftIdOrMint() },
+                        )
+                    }
                     NpicNavHost(
                         navController = rememberNavController(),
                         captureHolder = captureHolder,
                         editVmFactory = editVmFactory,
                         studentRepository = studentRepository,
+                        sourceStore = sourceStore,
+                        jpegCompressor = jpegCompressor,
+                        combinedRenderer = combinedRenderer,
+                        zipExporter = zipExporter,
                     )
                 }
             }
@@ -144,6 +171,10 @@ private fun NpicNavHost(
     captureHolder: SharedCaptureHolder,
     editVmFactory: EditViewModel.Factory,
     studentRepository: StudentRepository,
+    sourceStore: SourceStore,
+    jpegCompressor: JpegCompressor,
+    combinedRenderer: CombinedRenderer,
+    zipExporter: ZipExporter,
 ) {
     NavHost(navController = navController, startDestination = Route.Gallery) {
         composable(Route.Gallery) {
@@ -175,6 +206,10 @@ private fun NpicNavHost(
             ExportDestination(
                 studentRepository = studentRepository,
                 recordIds = ids,
+                sourceStore = sourceStore,
+                jpegCompressor = jpegCompressor,
+                combinedRenderer = combinedRenderer,
+                zipExporter = zipExporter,
                 onCancel = { navController.popBackStack() },
             )
         }
@@ -195,17 +230,24 @@ private fun NpicNavHost(
                 captureHolder = captureHolder,
                 editVmFactory = editVmFactory,
                 onBack = { navController.popBackStack() },
-                onNext = { capture ->
-                    // Layer 8b: the edited photo lives at capture.rawPath. Real Save-time
-                    // full-res render lands with the Save-render layer; for now we forward
-                    // the raw capture path so the Save sheet has something to persist.
-                    captureHolder.pushPhoto(capture.rawPath, capture.mode)
-                    val nextRoute = when (capture.mode) {
-                        CameraMode.Photo     -> Route.SignaturePrompt
-                        CameraMode.Signature -> Route.Save
-                    }
-                    navController.navigate(nextRoute) {
-                        popUpTo(Route.Edit) { inclusive = true }
+                onNext = { sourcePath, mode ->
+                    // PRD §5.5 commit path: EditViewModel already ran EditRenderer +
+                    // SourceStore.writePhoto/writeSignature and gave us the on-disk source
+                    // path. Attach it to the draft under the correct media slot, then
+                    // move on to the mode-appropriate next step.
+                    when (mode) {
+                        CameraMode.Photo -> {
+                            captureHolder.pushPhoto(sourcePath, mode)
+                            navController.navigate(Route.SignaturePrompt) {
+                                popUpTo(Route.Edit) { inclusive = true }
+                            }
+                        }
+                        CameraMode.Signature -> {
+                            captureHolder.pushSignaturePath(sourcePath)
+                            navController.navigate(Route.Save) {
+                                popUpTo(Route.Edit) { inclusive = true }
+                            }
+                        }
                     }
                 },
             )
@@ -235,6 +277,8 @@ private fun NpicNavHost(
         }
         composable(Route.SignatureDraw) {
             SignatureDrawDestination(
+                sourceStore = sourceStore,
+                draftIdProvider = { captureHolder.draftIdOrMint() },
                 onBack = { navController.popBackStack() },
                 onDone = { path ->
                     captureHolder.pushSignature(path, SignatureSource.Drawn)
@@ -358,7 +402,7 @@ private fun EditDestination(
     captureHolder: SharedCaptureHolder,
     editVmFactory: EditViewModel.Factory,
     onBack: () -> Unit,
-    onNext: (com.npic.photoandsignscanner.domain.model.CameraCapture) -> Unit,
+    onNext: (sourcePath: String, mode: CameraMode) -> Unit,
 ) {
     val capture by captureHolder.capture.collectAsStateWithLifecycle()
 
@@ -377,28 +421,31 @@ private fun EditDestination(
     EditScreen(
         capture = current,
         onBack = onBack,
-        onNext = { onNext(current) },
+        onNext = { sourcePath -> onNext(sourcePath, current.mode) },
         viewModel = editViewModel,
     )
 }
 
 @Composable
 private fun SignatureDrawDestination(
+    sourceStore: SourceStore,
+    draftIdProvider: () -> String,
     onBack: () -> Unit,
     onDone: (signaturePath: String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val cacheDir = remember(context) { File(context.cacheDir, "drafts").apply { mkdirs() } }
 
     SignatureDrawScreen(
         onBack = onBack,
         onDone = { result ->
-            // Rasterise strokes on Dispatchers.Default and write a 1500×500 JPEG into
-            // cache/drafts/. The signaturePath is then attached to the shared draft.
+            // PRD §5.5.2 / §6.0.2: rasterise strokes to 1500×500 and persist through
+            // SourceStore as `sources/{draftId}_signature.jpg` — the canonical committed
+            // asset. Landing straight in sources/ (not cache/drafts/) means Export can
+            // decode from there without a second copy step.
             scope.launch {
                 val path = withContext(Dispatchers.Default) {
-                    rasterizeSignatureToDisk(result, cacheDir)
+                    persistDrawnSignature(result, sourceStore, draftIdProvider())
                 }
                 if (path != null) {
                     Toast.makeText(
@@ -416,27 +463,27 @@ private fun SignatureDrawDestination(
 }
 
 /**
- * Rasterises the drawn strokes to a 1500×500 JPEG in [cacheDir] and returns the file
- * path. Returns null on empty strokes (the SignatureDrawScreen guards Done against this,
- * so it's a defensive branch) or IO failure.
+ * Rasterise [result.strokes] to a 1500×500 bitmap and hand it to [SourceStore] for
+ * canonical persistence at `sources/{draftId}_signature.jpg`. Returns the absolute path
+ * on success, null on empty strokes (SignatureDrawScreen guards Done against this, so
+ * it's a defensive branch) or IO failure.
  *
- * Uses a fake canvas size matching the export aspect so the rasteriser's scale math
- * degenerates to 1:1. The real on-device canvas size doesn't matter here — strokes are
- * already in canvas coords and we don't have that value at Done time. TODO(pipeline):
- * pipe the actual canvas size through SignatureDrawResult so per-stroke widths scale
- * naturally from device DP → 1500-px space.
+ * Note the canvas size passed to the rasteriser matches the export dimensions — strokes
+ * are already in canvas-space and we don't have the actual on-device canvas size at Done
+ * time. TODO(pipeline): pipe the real canvas size through SignatureDrawResult so per-
+ * stroke widths scale naturally from device DP → 1500-px space.
  */
-private fun rasterizeSignatureToDisk(result: SignatureDrawResult, cacheDir: File): String? {
+private suspend fun persistDrawnSignature(
+    result: SignatureDrawResult,
+    sourceStore: SourceStore,
+    draftId: String,
+): String? {
     val canvasSize = Size(SignatureRasterizer.EXPORT_WIDTH, SignatureRasterizer.EXPORT_HEIGHT)
     val bitmap: Bitmap = SignatureRasterizer.rasterize(result.strokes, canvasSize) ?: return null
     return try {
-        val file = File(cacheDir, "${UUID.randomUUID()}_signature.jpg")
-        FileOutputStream(file).use { stream ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, stream)
-        }
-        file.absolutePath
+        sourceStore.writeSignature(draftId, bitmap)
     } catch (t: Throwable) {
-        Log.e("MainActivity", "Failed to write signature JPEG", t)
+        Log.e("MainActivity", "Failed to persist drawn signature", t)
         null
     } finally {
         bitmap.recycle()
@@ -484,25 +531,64 @@ private fun SaveDestination(
 private fun ExportDestination(
     studentRepository: StudentRepository,
     recordIds: List<Long>,
+    sourceStore: SourceStore,
+    jpegCompressor: JpegCompressor,
+    combinedRenderer: CombinedRenderer,
+    zipExporter: ZipExporter,
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
     val idsKey = remember(recordIds) { recordIds.joinToString(",") }
     val factory = remember(studentRepository, idsKey) {
-        ExportViewModel.Factory(studentRepository, recordIds)
+        ExportViewModel.Factory(
+            repository = studentRepository,
+            recordIds = recordIds,
+            sourceStore = sourceStore,
+            jpegCompressor = jpegCompressor,
+            combinedRenderer = combinedRenderer,
+            zipExporter = zipExporter,
+            cacheDir = context.cacheDir,
+        )
     }
     val viewModel: ExportViewModel = viewModel(key = "export-$idsKey", factory = factory)
 
     ExportSheet(
         viewModel = viewModel,
         onCancel = onCancel,
-        onShare = { paths, _ ->
-            if (paths.isEmpty()) {
-                Toast.makeText(context, "Nothing to export", Toast.LENGTH_SHORT).show()
-            } else if (paths.size == 1) {
-                FileShareLauncher.shareSingle(context, paths.first(), "Export via UPMSP")
-            } else {
-                FileShareLauncher.shareMulti(context, paths, "Export via UPMSP")
+        onShare = { result, _ ->
+            when (result) {
+                is com.npic.photoandsignscanner.features.export.ExportResult.Ready.Single -> {
+                    if (result.underMinCount > 0) {
+                        Toast.makeText(
+                            context,
+                            "Export saved but is smaller than the portal minimum — the UPMSP portal may reject it.",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    FileShareLauncher.shareSingle(
+                        context = context,
+                        filePath = result.path,
+                        chooserTitle = "Export via UPMSP",
+                        mimeType = FileShareLauncher.MIME_JPEG,
+                    )
+                }
+                is com.npic.photoandsignscanner.features.export.ExportResult.Ready.Zip -> {
+                    if (result.underMinCount > 0) {
+                        Toast.makeText(
+                            context,
+                            "${result.underMinCount} of ${result.entryCount} items fell below portal minimum size — the UPMSP portal may reject them.",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    FileShareLauncher.shareSingle(
+                        context = context,
+                        filePath = result.path,
+                        chooserTitle = "Export via UPMSP",
+                        mimeType = FileShareLauncher.MIME_ZIP,
+                    )
+                }
+                com.npic.photoandsignscanner.features.export.ExportResult.Failed ->
+                    Toast.makeText(context, "Couldn't prepare the export", Toast.LENGTH_SHORT).show()
             }
             onCancel()
         },
