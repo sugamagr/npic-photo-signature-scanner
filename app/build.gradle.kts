@@ -30,6 +30,14 @@ android {
         }
 
         vectorDrawables { useSupportLibrary = true }
+
+        // OpenCV 4.10 Maven artifact ships arm64-v8a + armeabi-v7a `.so`s only.
+        // Filtering to the same ABI set keeps the APK small and avoids UnsatisfiedLinkError
+        // when the build system would otherwise expect x86/x86_64 stubs it can't find.
+        // Apple-Silicon emulator uses the arm64 image; Intel emulators are unsupported for now.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
@@ -129,11 +137,11 @@ dependencies {
     // Preferences DataStore
     implementation(libs.datastore.preferences)
 
-    // NOTE: OpenCV artifact is intentionally omitted from this bootstrap commit.
-    // The Maven-central 'org.opencv:opencv:4.10.0' distribution requires the native
-    // .so libraries via a JNI loader that we wire up in a later camera-layer commit.
-    // Adding it here without the native init would ship a broken dependency.
-    // See PRD §7 for the pipeline; the camera layer will add the artifact + init.
+    // OpenCV Android bindings + bundled .so (arm64-v8a, armeabi-v7a). Loaded lazily via
+    // NpicApplication.initOpenCVOnce() on first Camera-screen entry. See PRD §7 for the
+    // pipeline that consumes these primitives (edge detection + ink isolation).
+    implementation(libs.opencv)
+    // NOTE: compose-navigation is already pulled in via the compose bundle above.
 
     // Debug tooling
     debugImplementation(libs.compose.ui.tooling)
