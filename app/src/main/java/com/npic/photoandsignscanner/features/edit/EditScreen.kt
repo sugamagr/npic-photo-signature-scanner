@@ -99,9 +99,11 @@ fun EditScreen(
             EditTopBar(
                 mode = state.edit.mode,
                 committing = state.committing,
+                canReset = state.edit.hasChanges,
                 onBack = {
                     if (state.dirty) viewModel.requestDiscardConfirm() else onBack()
                 },
+                onReset = { viewModel.resetAll() },
                 onNext = { viewModel.commitEdits() },
             )
 
@@ -144,7 +146,9 @@ fun EditScreen(
 private fun EditTopBar(
     mode: CameraMode,
     committing: Boolean,
+    canReset: Boolean,
     onBack: () -> Unit,
+    onReset: () -> Unit,
     onNext: () -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
@@ -172,6 +176,20 @@ private fun EditTopBar(
                 .weight(1f)
                 .padding(horizontal = NpicSpacing.sm),
         )
+        Box(
+            modifier = Modifier
+                .clip(NpicShapes.sm)
+                .then(if (committing || !canReset) Modifier else Modifier.clickable(onClick = onReset))
+                .defaultMinSize(minHeight = 44.dp)
+                .padding(horizontal = NpicSpacing.sm, vertical = NpicSpacing.sm),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "Reset",
+                color = if (committing || !canReset) chrome.inkMuted else NpicColors.Terracotta,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(600)),
+            )
+        }
         Box(
             modifier = Modifier
                 .clip(NpicShapes.sm)

@@ -54,11 +54,17 @@ class GuideBoxCropper {
 
                 // Clamp the rect to the rotated bitmap bounds. The projection math can
                 // land 1-2 px outside the buffer on FILL_CENTER inverse edge cases.
+                //
+                // m2332 Bug M: width/height MUST be measured from the CLAMPED left/top,
+                // not the original rect's left/top. If original.left is negative and
+                // clamp shifts it to 0, using (right - original.left) keeps the ORIGINAL
+                // span → the crop rect extends further down/right than framed, and the
+                // captured photo appears "slightly shifted downward" in Edit.
                 val left = guideBoxImageSpace.left.coerceIn(0, rotated.width - 1)
                 val top = guideBoxImageSpace.top.coerceIn(0, rotated.height - 1)
-                val width = (guideBoxImageSpace.right - guideBoxImageSpace.left)
+                val width = (guideBoxImageSpace.right - left)
                     .coerceIn(1, rotated.width - left)
-                val height = (guideBoxImageSpace.bottom - guideBoxImageSpace.top)
+                val height = (guideBoxImageSpace.bottom - top)
                     .coerceIn(1, rotated.height - top)
 
                 val cropped = Bitmap.createBitmap(rotated, left, top, width, height)

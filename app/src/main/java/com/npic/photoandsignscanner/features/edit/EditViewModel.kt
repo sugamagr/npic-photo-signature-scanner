@@ -21,7 +21,6 @@ import com.npic.photoandsignscanner.domain.model.EditState
 import com.npic.photoandsignscanner.domain.model.FilterPreset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,6 +60,14 @@ class EditViewModel(
     private var thumbnailsJob: Job? = null
     private var commitJob: Job? = null
     private var livePreviewJob: Job? = null
+
+    // m2332 Bug N: busy-flag + pending-value coalescing. Rapid slider drags used to
+    // cancel-and-restart the render coroutine, so no frame ever made it past the debounce
+    // delay — the viewport only updated on finger-lift. Now: if a render is in flight,
+    // mark `pendingRender = true` and let the running coroutine re-launch once with the
+    // latest state. Latest-value semantics without cancel storms. Adobe Lightroom Mobile
+    // pattern.
+    @Volatile private var pendingRender: Boolean = false
 
     /**
      * Seed from a fresh capture. No-op if the same capture is already loaded. Cancels any
@@ -242,6 +249,22 @@ class EditViewModel(
         }
     }
 
+    /**
+     * m2332 Bug O: reset EVERY Edit-screen knob (crop + filter + adjustments + rotation +
+     * aspectLock) to the initial [EditState.seedFrom] baseline. Does NOT touch the source
+     * JPEG on disk — the shutter-time [GuideBoxCropper] output stays baked in, as the user
+     * explicitly parenthesized. Cached bitmaps (source / preview / thumbnails) are
+     * preserved so we don't pay the ~2s decode + downsample + 8× filter render cost again;
+     * only the live preview is re-rendered on top of the same preview buffer.
+     */
+    fun resetAll() {
+        _state.update { s ->
+            s ?: return@update null
+            s.copy(edit = EditState.seedFrom(s.edit.source))
+        }
+        scheduleLivePreview()
+    }
+
     fun setAspectLock(lock: AspectLock) {
         _state.update { it?.copy(edit = it.edit.copy(aspectLock = lock)) }
     }
@@ -272,50 +295,59 @@ class EditViewModel(
     }
 
     /**
-     * Bug#3 fix. Schedule a debounced re-render of [EditUiState.previewBitmap] through
-     * [EditRenderer] using the current [EditState]. Result lands on
-     * [EditUiState.livePreviewBitmap] which the viewport displays in preference to the raw
-     * source (except in Crop mode, where the overlay needs the untransformed source).
+     * Schedule a re-render of [EditUiState.previewBitmap] through [EditRenderer] using the
+     * current [EditState]. Result lands on [EditUiState.livePreviewBitmap] which the
+     * viewport displays in preference to the raw source (except in Crop mode).
      *
-     * Runs on [Dispatchers.Default]. The 1920px preview means each render is ~30-55 ms
-     * on a mid-tier Snapdragon 6-series (measured on A35 5G) for Filter+Adjust alone.
-     * Adding a quarter-turn rotation (Bitmap.createBitmap with filter=true on ~4 MB of
-     * pixels) can spike total render to 300-800 ms, and rapid slider drags produce a
-     * cancel-and-restart storm where the user sees the last frame trail behind. The
-     * [LIVE_PREVIEW_DEBOUNCE_MS] delay yields one render per ~120 ms window regardless
-     * of drag frequency — the industry norm (Adobe Lightroom Mobile ~100 ms, Google
-     * Photos ~150 ms). Prior render is cancelled and its result recycled.
+     * m2332 Bug N: uses a busy-flag + pending-value pattern instead of cancel-restart.
+     * If a render is already in flight, mark [pendingRender] and return; the running
+     * coroutine re-launches itself once with the latest state when it finishes. This
+     * gives latest-value semantics without cancel storms — Adobe Lightroom Mobile pattern.
+     *
+     * The 1920px preview renders in ~30-55 ms on Snapdragon 6 Gen 1 (A35) for Filter+
+     * Adjust alone, ~300-800 ms with a quarter-turn rotation. In the busy path, up to one
+     * user-visible render lag per drag stroke, but sliders no longer feel frozen.
      */
     private fun scheduleLivePreview() {
-        val snapshot = _state.value ?: return
-        val preview = snapshot.previewBitmap ?: return
-        val source = snapshot.sourceBitmap ?: return
-        val activeRawPath = snapshot.edit.source.rawPath
-
-        // CropQuad ordinates live in FULL-RESOLUTION source coordinate space by design
-        // (EditState.seedFrom KDoc: "image space of the source"). The live preview renders
-        // against a 384px-long-side downsample of that source, so we must translate the
-        // quad into preview space before EditRenderer runs — otherwise OpenCV's
-        // warpPerspective samples entirely outside the preview buffer, filling the output
-        // with the BORDER_CONSTANT (mid-gray in ARGB_8888) — the m1653/m1780 gray blob.
-        // Uniform scale is correct because downsample() preserves aspect ratio.
-        val scale = preview.width.toFloat() / source.width.toFloat()
-        val editSnapshot = snapshot.edit.copy(crop = snapshot.edit.crop.scaledBy(scale))
-
-        livePreviewJob?.cancel()
+        // If a render is already running, mark that we want another one and let the
+        // running coroutine pick up the latest state when it finishes.
+        if (livePreviewJob?.isActive == true) {
+            pendingRender = true
+            return
+        }
+        pendingRender = false
         livePreviewJob = viewModelScope.launch {
-            // Debounce: rapid slider drags / rotation button mashing cancel this delay
-            // before the expensive render fires. m2320 Bug G fix.
-            delay(LIVE_PREVIEW_DEBOUNCE_MS)
+            renderLoop()
+        }
+    }
+
+    private suspend fun renderLoop() {
+        while (true) {
+            val snapshot = _state.value ?: return
+            val preview = snapshot.previewBitmap ?: return
+            val source = snapshot.sourceBitmap ?: return
+            val activeRawPath = snapshot.edit.source.rawPath
+
+            // CropQuad ordinates live in FULL-RESOLUTION source coordinate space
+            // (EditState.seedFrom KDoc). Live preview renders against the 1920px
+            // downsample, so we must translate the quad into preview space —
+            // otherwise warpPerspective samples outside the buffer and fills with
+            // BORDER_CONSTANT (mid-gray) — the m1653/m1780 gray blob.
+            val scale = preview.width.toFloat() / source.width.toFloat()
+            val editSnapshot = snapshot.edit.copy(crop = snapshot.edit.crop.scaledBy(scale))
+
             val rendered = withContext(Dispatchers.Default) {
                 runCatching { editRenderer.render(preview, editSnapshot) }
                     .onFailure { Log.e(TAG, "live-preview render failed: ${it.message}", it) }
                     .getOrNull()
-            } ?: return@launch
-            // Oracle #1 C2 (qc-round-10): StateFlow.update{} may retry its lambda if a
-            // concurrent producer wins the CAS, so any recycle inside the lambda could
-            // fire twice on the same bitmap. Capture the old ref, let update{} commit,
-            // then recycle exactly once outside the retry loop.
+            }
+            if (rendered == null) {
+                if (!pendingRender) return
+                pendingRender = false
+                continue
+            }
+            // Oracle #1 C2 (qc-round-10): capture the stale bitmap OUTSIDE update{}'s
+            // retry loop so a lost-CAS retry doesn't double-recycle.
             var stale: Bitmap? = null
             _state.update { s ->
                 if (s == null || s.edit.source.rawPath != activeRawPath) {
@@ -327,6 +359,10 @@ class EditViewModel(
                 }
             }
             stale?.recycle()
+
+            // If new state arrived while we were rendering, loop again with the latest.
+            if (!pendingRender) return
+            pendingRender = false
         }
     }
 
@@ -435,21 +471,11 @@ class EditViewModel(
     private companion object {
         const val TAG = "EditViewModel"
 
-        // Live-preview render size (m1863 → m1869). 1440 was crisp on-viewport but the
-        // user asked for slightly more resolution. 1920 keeps pixel-perfect rendering
-        // with clear margin over the viewport height and matches what mainstream scanner
-        // apps use (Adobe Scan ~1600, Microsoft Lens ~2048). Filter+adjust cost on a
-        // ~854×1920 preview is 30-55 ms on Snapdragon 6 Gen 1 (A35); a quarter-turn
-        // rotation (Bitmap.createBitmap on ~4 MB) adds 250-750 ms, which is why
-        // LIVE_PREVIEW_DEBOUNCE_MS below exists (m2320 Bug G). Memory ~5.9 MB per preview.
+        // Live-preview render size (m1863 → m1869). 1920 matches Adobe Scan / Microsoft
+        // Lens tier. Filter+adjust ~30-55 ms on A35; quarter-turn adds 250-750 ms. Cancel-
+        // storm mitigation moved from debounce (m2320 Bug G) to busy-flag coalescing
+        // (m2332 Bug N) — see scheduleLivePreview.
         const val PREVIEW_LONG_SIDE = 1920
-
-        // Debounce window for scheduleLivePreview. 120 ms sits between Adobe Lightroom
-        // Mobile (~100 ms) and Google Photos (~150 ms). Short enough that slider drag
-        // still feels responsive, long enough to swallow multi-tap rotation storms and
-        // 60 Hz slider ticks that would otherwise trigger a cancel-and-restart chain of
-        // 300-800 ms renders. m2320 Bug G.
-        const val LIVE_PREVIEW_DEBOUNCE_MS = 120L
 
         const val THUMBNAIL_LONG_SIDE = 192
     }
