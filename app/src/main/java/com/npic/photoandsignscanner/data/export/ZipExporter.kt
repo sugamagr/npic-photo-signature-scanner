@@ -35,7 +35,7 @@ class ZipExporter(private val cacheDir: File) {
 
     /**
      * Bundle [files] into a single ZIP and return the file. Each element is `(filename,
-     * bytes)`; filename is the ZIP entry name verbatim (should already include `.jpg`),
+     * bytes)`; filename is the ZIP entry name verbatim (should already include `.jpeg`),
      * bytes is the JPEG payload from JpegCompressor.
      *
      * Returns null on IO failure. The returned file's absolute path is safe to hand to
@@ -102,7 +102,7 @@ class ZipExporter(private val cacheDir: File) {
         val cleaned = basename
             .replace(Regex("\\.{2,}"), "")
             .replace(Regex("[/\\\\]"), "")
-        return cleaned.ifEmpty { "export.jpg" }
+        return cleaned.ifEmpty { "export.jpeg" }
     }
 
     private companion object {

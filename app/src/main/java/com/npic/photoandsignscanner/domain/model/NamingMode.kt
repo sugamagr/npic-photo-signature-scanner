@@ -7,8 +7,8 @@ import androidx.compose.runtime.Immutable
  * `Serial | Name` segmented control, and per PRD §6.3 the two modes produce different
  * filename patterns:
  *
- *  * [Serial]: `{portalCode}{4-digit serial}.jpg`   e.g. `090001.jpg`
- *  * [Name]  : `{Name_ClassSuffix}.jpg`             e.g. `Rahul_Kumar_09.jpg`
+ *  * [Serial]: `{portalCode}{4-digit serial}.jpeg`   e.g. `090001.jpeg`
+ *  * [Name]  : `{Name_ClassSuffix}.jpeg`             e.g. `Rahul_Kumar_09.jpeg`
  *
  * A sealed hierarchy (rather than an enum) so each variant can carry its own value
  * exactly once and the `filename` derivation stays typesafe. PRD §4.6 validation:
@@ -65,13 +65,18 @@ sealed interface NamingMode {
 /**
  * Derives the on-disk filename for a naming mode + class per PRD §6.3.
  *
- * For [NamingMode.Name] the spec is `{Name_ClassSuffix}.jpg` — spaces collapse to
- * underscores, class portal code appended (e.g. `_09`), then `.jpg`.
+ * For [NamingMode.Name] the spec is `{Name_ClassSuffix}.jpeg` — spaces collapse to
+ * underscores, class portal code appended (e.g. `_09`), then `.jpeg`.
+ *
+ * Extension is `.jpeg` (not `.jpg`) so the display in Save/Update sheets matches the
+ * actual file produced by [com.npic.photoandsignscanner.domain.usecase.GenerateFileName].
+ * qc-round-9 anchor: post-9eaf564 grep caught divergence between this preview text and
+ * GenerateFileName's `.jpeg` output.
  */
 fun NamingMode.toFilename(classNum: ClassNum): String = when (this) {
-    is NamingMode.Serial -> "${classNum.portalCode}${number.toString().padStart(4, '0')}.jpg"
+    is NamingMode.Serial -> "${classNum.portalCode}${number.toString().padStart(4, '0')}.jpeg"
     is NamingMode.Name   -> {
         val cleaned = text.trim().replace(Regex("\\s+"), "_")
-        "${cleaned}_${classNum.portalCode}.jpg"
+        "${cleaned}_${classNum.portalCode}.jpeg"
     }
 }

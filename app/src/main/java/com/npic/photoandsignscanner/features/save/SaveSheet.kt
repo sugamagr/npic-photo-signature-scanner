@@ -257,7 +257,9 @@ private fun DuplicateSheet(
         }
 
         val subjectDescription = when (duplicate.input.naming) {
-            is NamingMode.Serial -> "serial ${duplicate.input.filename.removeSuffix(".jpg")}"
+            // qc-round-9: extension is .jpeg after NamingMode.toFilename fix; strip both
+            // suffixes so a future extension change doesn't silently leak into user copy.
+            is NamingMode.Serial -> "serial ${duplicate.input.filename.removeSuffix(".jpeg").removeSuffix(".jpg")}"
             is NamingMode.Name   -> "name \"${(duplicate.input.naming as NamingMode.Name).text.trim()}\""
         }
         Text(
