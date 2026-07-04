@@ -37,7 +37,15 @@ coil                    = "2.7.0"
 # --- OpenCV (Android) ---
 # We use the community-maintained Maven distribution to avoid the .aar-in-libs mess.
 # Verified via https://central.sonatype.com/artifact/org.opencv/opencv
-opencv                  = "4.10.0"
+# 4.10.0 shipped 4 KB-aligned .so files which trigger the Android 15+ (SDK 35+)
+# "not 16 KB aligned" warning dialog on Samsung One UI 7 / Pixel 8+ and will be
+# rejected by Play from Nov 2025. 4.11.0+ ships 16 KB-aligned arm64 binaries
+# (verified `readelf -l | grep LOAD | awk '{print $NF}'` = 0x4000 on all PT_LOAD
+# segments in libopencv_java4.so AND the co-shipped libc++_shared.so). Staying
+# on the 4.x line preserves API compatibility with our primitives: Canny,
+# bilateralFilter, morphologyEx, findContours, getPerspectiveTransform,
+# warpPerspective, adaptiveThreshold (see data/imaging/*).
+opencv                  = "4.13.0"
 
 # --- DataStore ---
 datastore               = "1.1.1"

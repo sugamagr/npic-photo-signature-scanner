@@ -75,6 +75,19 @@ android {
                 "/META-INF/versions/**/OSGI-INF/**",
             )
         }
+        // Android 15+ (SDK 35+) requires arm64 native libraries to be 16 KB page-aligned.
+        // Google Play enforces this for new/updated apps targeting SDK 35+ from Nov 2025;
+        // Samsung One UI 7 (Android 15) already shows a launch-time warning dialog listing
+        // any 4 KB-aligned .so files. Two culprits in this project: libopencv_java4.so
+        // (OpenCV 4.10 Maven artifact) and libc++_shared.so (bundled by OpenCV via NDK STL).
+        // Setting useLegacyPackaging = false makes AGP store .so files uncompressed and
+        // instructs zipalign to use `-P 16` (16 KB page alignment) at packaging time,
+        // which realigns even prebuilt libraries. See:
+        //   https://developer.android.com/guide/practices/page-sizes
+        //   https://developer.android.com/build/releases/gradle-plugin#8-5-0 (jniLibs alignment)
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 
     testOptions {
