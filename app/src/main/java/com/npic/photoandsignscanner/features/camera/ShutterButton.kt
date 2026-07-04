@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicTheme
@@ -50,16 +51,17 @@ fun ShutterButton(
     enabled: Boolean = true,
 ) {
     val chrome = LocalNpicChrome.current
+    val reduceMotion = LocalReduceMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.92f else 1f,
-        animationSpec = NpicMotion.fast(),
+        animationSpec = NpicMotion.fastOrSnap(reduceMotion),
         label = "shutter_scale",
     )
     val arcSweep by animateFloatAsState(
         targetValue = if (capturing) 360f else 0f,
-        animationSpec = NpicMotion.standard(),
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "shutter_arc",
     )
 

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,17 +31,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
@@ -75,7 +81,7 @@ fun EditScreen(
 ) {
     LaunchedEffect(capture.rawPath) { viewModel.seed(capture) }
 
-    val state = viewModel.state.collectAsState().value ?: return
+    val state = viewModel.state.collectAsStateWithLifecycle().value ?: return
 
     val chrome = LocalNpicChrome.current
     Box(modifier = modifier.fillMaxSize().background(chrome.cameraBg)) {
@@ -136,7 +142,7 @@ private fun EditTopBar(
             .background(chrome.cameraBg.copy(alpha = 0.85f))
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(56.dp)
-            .padding(horizontal = NpicSpacing.xs),
+            .padding(horizontal = NpicSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         NpicIconButton(
@@ -149,6 +155,7 @@ private fun EditTopBar(
             text = if (mode == CameraMode.Photo) "Edit Photo" else "Edit Signature",
             color = chrome.cameraInk,
             style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = NpicSpacing.sm),
@@ -157,7 +164,9 @@ private fun EditTopBar(
             modifier = Modifier
                 .clip(NpicShapes.sm)
                 .clickable(onClick = onNext)
+                .defaultMinSize(minHeight = 44.dp)
                 .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
+            contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = "Next",
@@ -171,7 +180,7 @@ private fun EditTopBar(
 @Composable
 private fun ImageViewport(
     state: EditUiState,
-    onCropChange: (com.npic.photoandsignscanner.core.ui.CropQuad) -> Unit,
+    onCropChange: (com.npic.photoandsignscanner.domain.model.CropQuad) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Viewport shrinks when a non-Crop tool opens per DESIGN §7.3.0.a — that shrink is
@@ -182,17 +191,15 @@ private fun ImageViewport(
         modifier = modifier
             .fillMaxWidth()
             .padding(NpicSpacing.lg)
-            .background(chrome.cameraSurface, NpicShapes.md)
+            .background(chrome.cameraBg, NpicShapes.md)
             .clip(NpicShapes.md),
         contentAlignment = Alignment.Center,
     ) {
         val bitmap = state.sourceBitmap
         if (bitmap != null) {
-            // Letterbox the source on CameraSurface with ContentScale.Fit. The crop overlay
-            // draws in the OVERLAY'S own layout box (not the image's intrinsic bitmap space);
-            // Layer 7c will project image-space coords through the letterbox transform.
+            val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = imageBitmap,
                 contentDescription = if (state.edit.mode == CameraMode.Photo) {
                     "Captured photo"
                 } else {
@@ -210,7 +217,9 @@ private fun ImageViewport(
         )
         AnimatedVisibility(
             visible = state.showInkFallbackBanner,
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .semantics { liveRegion = LiveRegionMode.Polite },
         ) {
             InkFallbackBanner()
         }
@@ -252,9 +261,10 @@ private fun ToolContentRegion(
     state: EditUiState,
     viewModel: EditViewModel,
 ) {
+    val reduceMotion = LocalReduceMotion.current
     val height by animateDpAsState(
         targetValue = state.activeTool.panelHeight,
-        animationSpec = NpicMotion.standard(),
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "tool_panel_height",
     )
     Box(
@@ -264,7 +274,9 @@ private fun ToolContentRegion(
     ) {
         AnimatedContent(
             targetState = state.activeTool,
-            transitionSpec = { fadeIn(NpicMotion.fast()) togetherWith fadeOut(NpicMotion.fast()) },
+            transitionSpec = {
+                fadeIn(NpicMotion.fastOrSnap(reduceMotion)) togetherWith fadeOut(NpicMotion.fastOrSnap(reduceMotion))
+            },
             label = "active_tool",
         ) { tool ->
             when (tool) {

@@ -6,7 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.npic.photoandsignscanner.core.ui.CropQuad
+import com.npic.photoandsignscanner.domain.model.CropQuad
 import com.npic.photoandsignscanner.data.imaging.BitmapAdjustments
 import com.npic.photoandsignscanner.data.imaging.BitmapFilters
 import com.npic.photoandsignscanner.domain.model.Adjustments
@@ -71,30 +71,59 @@ class EditViewModel(
         detectionJob?.cancel()
         thumbnailsJob?.cancel()
 
+        // Recycle prior-capture bitmaps before overwriting the state; otherwise the
+        // ~10-30 MB working set from the previous edit leaks until GC eventually reclaims it.
+        current?.let { prior ->
+            prior.sourceBitmap?.recycle()
+            prior.previewBitmap?.recycle()
+            prior.filterThumbnails.values.forEach { it.recycle() }
+        }
+
         _state.value = EditUiState(edit = EditState.seedFrom(capture))
 
+        val activeRawPath = capture.rawPath
         loadJob = viewModelScope.launch {
             val decoded = decodeSource(capture.rawPath)
             if (decoded != null) {
                 val preview = downsample(decoded, PREVIEW_LONG_SIDE)
-                _state.update { it?.copy(sourceBitmap = decoded, previewBitmap = preview) }
-                launchDetection(capture, decoded)
-                launchThumbnails(preview)
+                _state.update { s ->
+                    // Guard against a newer seed() replacing the state while we were decoding.
+                    if (s == null || s.edit.source.rawPath != activeRawPath) {
+                        decoded.recycle()
+                        preview.recycle()
+                        s
+                    } else {
+                        s.copy(sourceBitmap = decoded, previewBitmap = preview)
+                    }
+                }
+                launchDetection(capture, decoded, activeRawPath)
+                launchThumbnails(preview, activeRawPath)
             } else {
-                _state.update { it?.copy(lastError = "Couldn't decode capture") }
+                _state.update { s ->
+                    if (s?.edit?.source?.rawPath == activeRawPath) {
+                        s.copy(lastError = "Couldn't decode capture")
+                    } else s
+                }
             }
         }
     }
 
-    private fun launchDetection(capture: CameraCapture, source: Bitmap) {
+    private fun launchDetection(capture: CameraCapture, source: Bitmap, activeRawPath: String) {
         detectionJob = viewModelScope.launch {
+            // Null guide-box → user shuttered before overlay laid out. Use full decoded-image
+            // bounds as the seed rect so IoU scoring still runs against a real region rather
+            // than the (0,0,0,0) sentinel that Layer 6 originally passed through.
+            val seed = capture.guideBoxImageSpace
+                ?: RectI(0, 0, source.width, source.height)
             val detected = when (capture.mode) {
-                CameraMode.Photo -> detectPhotoEdges(source, capture.guideBoxImageSpace)
-                CameraMode.Signature -> detectSignatureInk(source, capture.guideBoxImageSpace)
+                CameraMode.Photo -> detectPhotoEdges(source, seed)
+                CameraMode.Signature -> detectSignatureInk(source, seed)
             }
-            val quad = detectedToQuad(detected, capture.guideBoxImageSpace)
+            val quad = detectedToQuad(detected, seed)
             _state.update { s ->
-                s?.copy(
+                // Discard the result if a newer seed replaced the state under us.
+                if (s == null || s.edit.source.rawPath != activeRawPath) s
+                else s.copy(
                     edit = s.edit.copy(crop = quad),
                     detectionOrigin = detected.origin,
                 )
@@ -102,7 +131,7 @@ class EditViewModel(
         }
     }
 
-    private fun launchThumbnails(preview: Bitmap) {
+    private fun launchThumbnails(preview: Bitmap, activeRawPath: String) {
         thumbnailsJob = viewModelScope.launch {
             val thumbs = withContext(Dispatchers.Default) {
                 val base = downsample(preview, THUMBNAIL_LONG_SIDE)
@@ -112,7 +141,14 @@ class EditViewModel(
                     copy
                 }.also { base.recycle() }
             }
-            _state.update { it?.copy(filterThumbnails = thumbs) }
+            _state.update { s ->
+                if (s == null || s.edit.source.rawPath != activeRawPath) {
+                    thumbs.values.forEach { it.recycle() }
+                    s
+                } else {
+                    s.copy(filterThumbnails = thumbs)
+                }
+            }
         }
     }
 

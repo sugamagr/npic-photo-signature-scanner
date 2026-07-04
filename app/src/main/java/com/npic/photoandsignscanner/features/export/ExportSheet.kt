@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,14 +31,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -45,7 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
+import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.ui.NpicBottomSheet
@@ -164,11 +168,15 @@ private fun FormatCard(
         onClick = onClick,
         selected = isSelected,
         padding = PaddingValues(NpicSpacing.md),
-        modifier = Modifier.semantics {
-            role = Role.RadioButton
-            this.selected = isSelected
-            contentDescription = "${format.title}. ${format.subtitle}"
-        },
+        modifier = Modifier
+            // DESIGN §7.8: 72dp min-height format card. defaultMinSize (not fixed height)
+            // keeps the tile expandable if a future format subtitle wraps to two lines.
+            .defaultMinSize(minHeight = 72.dp)
+            .semantics {
+                role = Role.RadioButton
+                this.selected = isSelected
+                contentDescription = "${format.title}. ${format.subtitle}"
+            },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -178,7 +186,9 @@ private fun FormatCard(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(NpicShapes.md)
-                    .background(NpicColors.SaffronSoft.copy(alpha = 0.55f)),
+                    // DESIGN §7.8: solid SaffronSoft fill on the icon container. Earlier
+                    // impl used .copy(alpha = 0.55f) which read washed-out against Ivory.
+                    .background(NpicColors.SaffronSoft),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -208,13 +218,16 @@ private fun FormatCard(
 @Composable
 private fun RadioMark(isSelected: Boolean) {
     val chrome = LocalNpicChrome.current
+    // NpicShapes.full is the design-system's canonical pill/circle token. Using it here
+    // instead of foundation.shape.CircleShape keeps the RadioMark aligned with the rest
+    // of the theme (Oracle m-8c2).
     Box(
         modifier = Modifier
             .size(24.dp)
-            .clip(androidx.compose.foundation.shape.CircleShape)
+            .clip(NpicShapes.full)
             .background(
                 if (isSelected) NpicColors.Saffron else NpicColors.Surface,
-                androidx.compose.foundation.shape.CircleShape,
+                NpicShapes.full,
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -222,7 +235,7 @@ private fun RadioMark(isSelected: Boolean) {
             Box(
                 modifier = Modifier
                     .size(10.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .clip(NpicShapes.full)
                     .background(NpicColors.Ink),
             )
         } else {
@@ -230,14 +243,14 @@ private fun RadioMark(isSelected: Boolean) {
             Box(
                 modifier = Modifier
                     .size(24.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .clip(NpicShapes.full)
                     .background(chrome.borderStrong),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
                     modifier = Modifier
                         .size(20.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .clip(NpicShapes.full)
                         .background(NpicColors.Surface),
                 )
             }
@@ -267,7 +280,11 @@ private fun MissingMediaWarning(
             .fillMaxWidth()
             .clip(NpicShapes.md)
             .background(NpicColors.TerracottaSoft)
-            .padding(NpicSpacing.md),
+            .padding(NpicSpacing.md)
+            // Polite live region so TalkBack announces the missing-media warning when it
+            // appears after a format switch, without interrupting mid-sentence readouts
+            // (Oracle M-8c2-M2-QCC).
+            .semantics { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
     ) {
         Row(
@@ -281,7 +298,10 @@ private fun MissingMediaWarning(
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                text  = "$skippedCount item${if (skippedCount == 1) "" else "s"} will be skipped for the chosen format.",
+                // DESIGN §7.8 copy: "N items don't have a signature. They'll be skipped."
+                // (Layer 8c.2 shipped a generic "will be skipped for the chosen format"
+                // line; Oracle m-8c2 caught the divergence from spec.)
+                text  = "$skippedCount item${if (skippedCount == 1) "" else "s"} don't have a signature. They'll be skipped.",
                 color = NpicColors.Ink,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
@@ -306,10 +326,13 @@ private fun MissingMediaWarning(
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
             )
         }
+        val reduceMotion = LocalReduceMotion.current
         AnimatedVisibility(
             visible = expanded,
-            enter = fadeIn() + expandVertically(),
-            exit  = fadeOut() + shrinkVertically(),
+            enter = fadeIn(NpicMotion.standardOrSnap(reduceMotion)) +
+                expandVertically(NpicMotion.standardOrSnap(reduceMotion)),
+            exit = fadeOut(NpicMotion.fastOrSnap(reduceMotion)) +
+                shrinkVertically(NpicMotion.fastOrSnap(reduceMotion)),
         ) {
             SkippedList(names = skippedNames)
         }

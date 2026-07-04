@@ -28,15 +28,21 @@ class OpenCvBridge {
      */
     fun toMat(bitmap: Bitmap): Mat? {
         if (!isAvailable()) return null
+        // Track whether ensureArgb8888 allocated a fresh copy so we recycle it after the
+        // Utils.bitmapToMat blit. Leaving the copy alive would leak ~w*h*4 bytes per
+        // non-ARGB call (48 MB for a 12MP frame).
         val normalized = bitmap.ensureArgb8888()
-        return Mat().also { mat ->
-            try {
-                Utils.bitmapToMat(normalized, mat)
-            } catch (t: Throwable) {
-                Log.e(TAG, "bitmapToMat failed", t)
-                mat.release()
-                return null
-            }
+        val ownsNormalized = normalized !== bitmap
+        val mat = Mat()
+        return try {
+            Utils.bitmapToMat(normalized, mat)
+            mat
+        } catch (t: Throwable) {
+            Log.e(TAG, "bitmapToMat failed", t)
+            mat.release()
+            null
+        } finally {
+            if (ownsNormalized) normalized.recycle()
         }
     }
 

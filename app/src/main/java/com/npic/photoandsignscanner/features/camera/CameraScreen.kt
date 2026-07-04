@@ -2,10 +2,12 @@ package com.npic.photoandsignscanner.features.camera
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -36,22 +38,26 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
@@ -67,8 +73,6 @@ import com.npic.photoandsignscanner.domain.model.FlashMode
 import com.npic.photoandsignscanner.domain.model.RectI
 import java.io.File
 import java.util.UUID
-import kotlinx.coroutines.launch
-import kotlinx.datetime.Clock
 
 /**
  * Unified Camera screen. Full-bleed CameraX preview under all chrome; mode swapping only
@@ -135,13 +139,27 @@ private fun CameraGranted(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
+    val reduceMotion = LocalReduceMotion.current
 
     val controller = remember { NpicCameraController(context) }
     LaunchedEffect(lifecycleOwner) { controller.bindTo(lifecycleOwner) }
     LaunchedEffect(state.flash) { controller.applyFlash(state.flash) }
 
     var guideBoxPx by remember { mutableStateOf<Rect?>(null) }
+
+    // DESIGN §7.2: mode swap reshapes the guide box 3:4 ↔ 3:1 over 220ms EaseInOutCubic
+    // instead of snapping. Animate the two overlay props, not the enum itself.
+    // WCAG 2.3.3: when reduce-motion is on, snap to the new aspect instead of morphing.
+    val guideAspectAnim by animateFloatAsState(
+        targetValue   = state.mode.guideAspect,
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion, NpicMotion.EaseInOutCubic),
+        label         = "camera_guide_aspect",
+    )
+    val guideFillAnim by animateFloatAsState(
+        targetValue   = state.mode.guideFillFraction,
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion, NpicMotion.EaseInOutCubic),
+        label         = "camera_guide_fill",
+    )
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(
@@ -152,11 +170,12 @@ private fun CameraGranted(
                     this.controller = controller.controller
                 }
             },
+            update = { /* PreviewView keeps its own controller reference; nothing to refresh per recomp. */ },
         )
 
         NpicCameraOverlay(
-            aspect            = state.mode.guideAspect,
-            fillFraction      = state.mode.guideFillFraction,
+            aspect            = guideAspectAnim,
+            fillFraction      = guideFillAnim,
             onGuideBoxChanged = { guideBoxPx = it },
         )
 
@@ -183,26 +202,17 @@ private fun CameraGranted(
             onShutter = {
                 val target = File(context.cacheDir, "drafts").apply { mkdirs() }
                     .resolve("${UUID.randomUUID()}.jpg")
-                viewModel.onCaptureStarted()
-                scope.launch {
-                    try {
-                        val file = controller.takePicture(target)
-                        val boxPx = guideBoxPx
-                        val guideBoxImageSpace = boxPx?.let { rectPxToImageSpace(it, density) }
-                            ?: RectI(0, 0, 0, 0)
-                        viewModel.onCaptureFinished()
-                        onCaptureComplete(
-                            CameraCapture(
-                                rawPath           = file.absolutePath,
-                                mode              = state.mode,
-                                guideBoxImageSpace = guideBoxImageSpace,
-                                capturedAt        = Clock.System.now(),
-                            )
-                        )
-                    } catch (t: Throwable) {
-                        viewModel.onCaptureFailed(t.message ?: "Capture failed")
-                    }
-                }
+                // Null when overlay hasn't laid out yet (first-frame shutter). Domain model
+                // accepts null and detectors substitute full-image bounds — no (0,0,0,0)
+                // sentinel needed anymore.
+                val guideBoxImageSpace: RectI? =
+                    guideBoxPx?.let { rectPxToImageSpace(it, density) }
+                viewModel.capture(
+                    controller         = controller,
+                    target             = target,
+                    guideBoxImageSpace = guideBoxImageSpace,
+                    onDone             = onCaptureComplete,
+                )
             },
         )
     }
@@ -221,10 +231,11 @@ private fun HintText(
         with(density) { (box.bottom + 20.dp.toPx()).toDp() }
     } ?: 0.dp
 
+    val reduceMotion = LocalReduceMotion.current
     AnimatedVisibility(
         visible = visible && guideBoxPx != null,
-        enter   = fadeIn(animationSpec = NpicMotion.emphasized()),
-        exit    = fadeOut(animationSpec = NpicMotion.fast()),
+        enter   = fadeIn(animationSpec = NpicMotion.emphasizedOrSnap(reduceMotion)),
+        exit    = fadeOut(animationSpec = NpicMotion.fastOrSnap(reduceMotion)),
     ) {
         Box(
             modifier = Modifier
@@ -246,8 +257,10 @@ private fun HintText(
                     .padding(NpicSpacing.sm),
             )
         }
-    }
-    if (visible) {
+        // Key on (visible, mode) INSIDE the AnimatedVisibility content so the timer only
+        // runs while the hint is actually on screen. Previously the LaunchedEffect sat
+        // outside AnimatedVisibility and could fire onDismiss() on a screen the user had
+        // already left (Oracle M-6-M1 code-quality).
         LaunchedEffect(mode) {
             kotlinx.coroutines.delay(6000)
             onDismiss()
@@ -268,6 +281,7 @@ private fun CameraTopBar(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(56.dp)
+            .backdropBlur()
             .background(chrome.cameraBg.copy(alpha = 0.85f))
             .padding(horizontal = NpicSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
@@ -317,14 +331,17 @@ private fun SessionStackBadge(count: Int) {
         Box(Modifier.size(44.dp))
         return
     }
+    // Cap at "99+" so a runaway session doesn't blow past the 44dp footprint.
+    val label = if (count > 99) "99+" else count.toString()
     Box(
         modifier = Modifier
             .size(44.dp)
-            .background(chrome.cameraInk.copy(alpha = 0.20f), NpicShapes.sm),
+            .background(chrome.cameraInk.copy(alpha = 0.20f), NpicShapes.sm)
+            .semantics { contentDescription = "Captured $count in this session" },
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text  = count.toString(),
+            text  = label,
             color = NpicColors.Ink,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight(700)),
             modifier = Modifier
@@ -333,6 +350,15 @@ private fun SessionStackBadge(count: Int) {
         )
     }
 }
+
+/**
+ * Guarded backdrop blur — DESIGN §7.2 calls for 24dp blur behind the top and bottom bars
+ * on SDK 31+ (RenderNode-backed [Modifier.blur] is a no-op on older SDKs).
+ */
+private fun Modifier.backdropBlur(): Modifier =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        this.blur(radius = 24.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+    } else this
 
 @Composable
 private fun BoxScope.CameraBottomBar(
@@ -349,6 +375,7 @@ private fun BoxScope.CameraBottomBar(
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
+            .backdropBlur()
             .background(chrome.cameraBg.copy(alpha = 0.85f))
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(vertical = NpicSpacing.md),

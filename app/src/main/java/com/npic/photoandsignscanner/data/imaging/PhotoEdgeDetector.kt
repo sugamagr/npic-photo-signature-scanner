@@ -150,7 +150,14 @@ class PhotoEdgeDetector(private val bridge: OpenCvBridge) : DetectPhotoEdges {
             approx.release()
             if (points.size != 4) continue
 
-            val convex = Imgproc.isContourConvex(MatOfPoint(*points))
+            // Wrap points in a Mat only long enough to check convexity, then release —
+            // MatOfPoint owns a native buffer that GC won't reclaim on its own.
+            val convexProbe = MatOfPoint(*points)
+            val convex = try {
+                Imgproc.isContourConvex(convexProbe)
+            } finally {
+                convexProbe.release()
+            }
             out += Candidate(points, area, convex)
         }
         return out
@@ -178,7 +185,11 @@ class PhotoEdgeDetector(private val bridge: OpenCvBridge) : DetectPhotoEdges {
 
         val quadWidth  = max(1, quadRect.width).toFloat()
         val quadHeight = max(1, quadRect.height).toFloat()
-        val aspect = quadWidth / quadHeight
+        // Rotation-invariant aspect: fold landscape quads into portrait space (min of
+        // w/h and h/w) before comparing to the 3:4 target. Without this, a landscape-
+        // oriented photo scores ~0.07 lower purely because its raw aspect is >1.
+        val rawAspect = quadWidth / quadHeight
+        val aspect = min(rawAspect, 1f / rawAspect)
         val aspectDelta = abs(aspect - 0.75f)
         val aspectScore = 1f - (aspectDelta / 0.75f).coerceAtMost(1f)
 

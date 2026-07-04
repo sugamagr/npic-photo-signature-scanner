@@ -2,10 +2,11 @@ package com.npic.photoandsignscanner.features.signaturedraw
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.Size
+import androidx.compose.ui.graphics.toArgb
+import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.domain.model.DrawStroke
 
 /**
@@ -32,7 +33,7 @@ object SignatureRasterizer {
 
         val bitmap = Bitmap.createBitmap(EXPORT_WIDTH, EXPORT_HEIGHT, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.WHITE)
+        canvas.drawColor(SURFACE_COLOR)
 
         val scaleX = EXPORT_WIDTH.toFloat() / canvasSize.width.toFloat()
         val scaleY = EXPORT_HEIGHT.toFloat() / canvasSize.height.toFloat()
@@ -77,5 +78,6 @@ object SignatureRasterizer {
         return bitmap
     }
 
-    private const val INK_COLOR = 0xFF1A1613.toInt()
+    private val INK_COLOR = NpicColors.Ink.toArgb()
+    private val SURFACE_COLOR = NpicColors.Surface.toArgb()
 }

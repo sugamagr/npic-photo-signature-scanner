@@ -45,6 +45,10 @@ class ExportViewModel(
      * .data.export.FileShareLauncher] since it owns the Android Context.
      */
     fun beginExport(onReady: (List<String>) -> Unit) {
+        // Guard against double-tap: without this, tapping Export twice before the
+        // share sheet appears would enqueue a second identical share attempt
+        // (Oracle M-8b-M3).
+        if (_state.value.exporting) return
         val effective = _state.value.effective
         if (effective.isEmpty()) return
         _state.value = _state.value.copy(exporting = true)

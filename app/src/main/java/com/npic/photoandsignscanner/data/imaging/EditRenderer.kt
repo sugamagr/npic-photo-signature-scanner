@@ -3,7 +3,7 @@ package com.npic.photoandsignscanner.data.imaging
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.util.Log
-import com.npic.photoandsignscanner.core.ui.CropQuad
+import com.npic.photoandsignscanner.domain.model.CropQuad
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.EditState
 import org.opencv.core.Core

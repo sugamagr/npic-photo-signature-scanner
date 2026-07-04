@@ -6,9 +6,9 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -41,11 +41,17 @@ fun SignatureCanvas(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Committed-stroke Paths are stable — cache one Path per DrawStroke identity so the
+    // draw scope doesn't re-allocate on every frame. The in-flight stroke is grown per
+    // frame and must rebuild; that Path is small (recent points only).
+    val committedPaths = remember(strokes) {
+        strokes.map { it to it.buildPath() }
+    }
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(SIGNATURE_ASPECT)
-            .background(Color.White)
+            .background(NpicColors.Surface)
             .semantics { contentDescription = "Signature drawing canvas" }
             .pointerInput(Unit) {
                 detectDragGestures(
@@ -59,29 +65,35 @@ fun SignatureCanvas(
                 )
             },
     ) {
-        strokes.forEach { drawStroke(it) }
-        inFlightStroke?.let { drawStroke(it) }
+        committedPaths.forEach { (stroke, path) -> drawStroke(stroke, path) }
+        inFlightStroke?.let { drawStroke(it, it.buildPath()) }
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(stroke: DrawStroke) {
+private fun DrawStroke.buildPath(): Path {
+    val pts = points
+    val path = Path()
+    if (pts.isEmpty()) return path
+    path.moveTo(pts.first().x, pts.first().y)
+    for (i in 1 until pts.size) {
+        path.lineTo(pts[i].x, pts[i].y)
+    }
+    return path
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
+    stroke: DrawStroke,
+    path: Path,
+) {
     val pts = stroke.points
     if (pts.isEmpty()) return
     if (pts.size == 1) {
-        // Single tap — render as a filled dot the width of the stroke so it doesn't
-        // vanish. Otherwise a lone tap would produce an empty Path.
         drawCircle(
             color = NpicColors.Ink,
             radius = stroke.widthPx / 2f,
             center = pts.first(),
         )
         return
-    }
-    val path = Path().apply {
-        moveTo(pts.first().x, pts.first().y)
-        for (i in 1 until pts.size) {
-            lineTo(pts[i].x, pts[i].y)
-        }
     }
     drawPath(
         path = path,

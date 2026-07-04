@@ -20,6 +20,6 @@ enum class EditTool(
 ) {
     Crop(   label = "Crop",   icon = Icons.Outlined.Crop,        panelHeight = 64.dp),
     Filter( label = "Filter", icon = Icons.Outlined.Style,       panelHeight = 120.dp),
-    Adjust( label = "Adjust", icon = Icons.Outlined.Tune,        panelHeight = 200.dp),
+    Adjust( label = "Adjust", icon = Icons.Outlined.Tune,        panelHeight = 216.dp),
     Rotate( label = "Rotate", icon = Icons.AutoMirrored.Outlined.RotateRight, panelHeight = 140.dp),
 }

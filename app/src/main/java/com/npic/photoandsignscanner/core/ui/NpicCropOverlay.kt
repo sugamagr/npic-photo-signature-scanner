@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicTheme
+import com.npic.photoandsignscanner.domain.model.CropQuad
 
 /**
  * Draggable crop quadrilateral. Per DESIGN §6.15:
@@ -145,86 +146,48 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHandle(
 /**
  * A grabbable point on the crop overlay: one of the four corners or one of the four edge
  * midpoints. Corners translate freely; edges translate along their perpendicular axis only.
+ *
+ * View-layer only — kept out of `domain/model/CropQuad` because it exists solely to route
+ * pointer events on the overlay Canvas.
  */
 sealed interface CropHandle {
     enum class Corner : CropHandle { TL, TR, BR, BL }
     enum class Edge   : CropHandle { Top, Right, Bottom, Left }
 }
 
-/** Four corners in overlay-local pixel coordinates. Anchored top-left is [tl]. */
-data class CropQuad(
-    val tl: Offset,
-    val tr: Offset,
-    val br: Offset,
-    val bl: Offset,
-) {
-    val topMid:    Offset get() = (tl + tr) / 2f
-    val rightMid:  Offset get() = (tr + br) / 2f
-    val bottomMid: Offset get() = (br + bl) / 2f
-    val leftMid:   Offset get() = (bl + tl) / 2f
-
-    fun nearestHandle(p: Offset): CropHandle {
-        var best: CropHandle = CropHandle.Corner.TL
-        var bestD = (tl - p).getDistance()
-        fun tryHandle(h: CropHandle, d: Float) {
-            if (d < bestD) { best = h; bestD = d }
-        }
-        tryHandle(CropHandle.Corner.TR,     (tr        - p).getDistance())
-        tryHandle(CropHandle.Corner.BR,     (br        - p).getDistance())
-        tryHandle(CropHandle.Corner.BL,     (bl        - p).getDistance())
-        tryHandle(CropHandle.Edge.Top,      (topMid    - p).getDistance())
-        tryHandle(CropHandle.Edge.Right,    (rightMid  - p).getDistance())
-        tryHandle(CropHandle.Edge.Bottom,   (bottomMid - p).getDistance())
-        tryHandle(CropHandle.Edge.Left,     (leftMid   - p).getDistance())
-        return best
+/**
+ * Nearest-handle Voronoi routing for a pointer position (DESIGN §6.15). Extension on the
+ * domain [CropQuad] so the domain model stays free of view-layer sealed interfaces.
+ */
+fun CropQuad.nearestHandle(p: Offset): CropHandle {
+    var best: CropHandle = CropHandle.Corner.TL
+    var bestD = (tl - p).getDistance()
+    fun tryHandle(h: CropHandle, d: Float) {
+        if (d < bestD) { best = h; bestD = d }
     }
+    tryHandle(CropHandle.Corner.TR,     (tr        - p).getDistance())
+    tryHandle(CropHandle.Corner.BR,     (br        - p).getDistance())
+    tryHandle(CropHandle.Corner.BL,     (bl        - p).getDistance())
+    tryHandle(CropHandle.Edge.Top,      (topMid    - p).getDistance())
+    tryHandle(CropHandle.Edge.Right,    (rightMid  - p).getDistance())
+    tryHandle(CropHandle.Edge.Bottom,   (bottomMid - p).getDistance())
+    tryHandle(CropHandle.Edge.Left,     (leftMid   - p).getDistance())
+    return best
+}
 
-    fun moveHandle(handle: CropHandle, delta: Offset): CropQuad {
-        val dx = Offset(delta.x, 0f)
-        val dy = Offset(0f, delta.y)
-        return when (handle) {
-            CropHandle.Corner.TL   -> copy(tl = tl + delta)
-            CropHandle.Corner.TR   -> copy(tr = tr + delta)
-            CropHandle.Corner.BR   -> copy(br = br + delta)
-            CropHandle.Corner.BL   -> copy(bl = bl + delta)
-            CropHandle.Edge.Top    -> copy(tl = tl + dy, tr = tr + dy)
-            CropHandle.Edge.Bottom -> copy(br = br + dy, bl = bl + dy)
-            CropHandle.Edge.Left   -> copy(bl = bl + dx, tl = tl + dx)
-            CropHandle.Edge.Right  -> copy(tr = tr + dx, br = br + dx)
-        }
-    }
-
-    fun clampedTo(w: Float, h: Float): CropQuad {
-        fun c(o: Offset) = Offset(o.x.coerceIn(0f, w), o.y.coerceIn(0f, h))
-        return copy(tl = c(tl), tr = c(tr), br = c(br), bl = c(bl))
-    }
-
-    companion object {
-        /** Full-frame quad for the given box size. */
-        fun full(width: Float, height: Float): CropQuad = CropQuad(
-            tl = Offset(0f, 0f),
-            tr = Offset(width, 0f),
-            br = Offset(width, height),
-            bl = Offset(0f, height),
-        )
-
-        /** 3:4 photo aspect centered inside the given box. */
-        fun photo34(width: Float, height: Float): CropQuad {
-            val targetAspect = 3f / 4f
-            val (w, h) = if (width / height > targetAspect) {
-                height * targetAspect to height
-            } else {
-                width to width / targetAspect
-            }
-            val x0 = (width - w) / 2f
-            val y0 = (height - h) / 2f
-            return CropQuad(
-                tl = Offset(x0,       y0),
-                tr = Offset(x0 + w,   y0),
-                br = Offset(x0 + w,   y0 + h),
-                bl = Offset(x0,       y0 + h),
-            )
-        }
+/** Translate a grabbed handle by [delta]. Corner=free, Edge=perpendicular-only. */
+fun CropQuad.moveHandle(handle: CropHandle, delta: Offset): CropQuad {
+    val dx = Offset(delta.x, 0f)
+    val dy = Offset(0f, delta.y)
+    return when (handle) {
+        CropHandle.Corner.TL   -> copy(tl = tl + delta)
+        CropHandle.Corner.TR   -> copy(tr = tr + delta)
+        CropHandle.Corner.BR   -> copy(br = br + delta)
+        CropHandle.Corner.BL   -> copy(bl = bl + delta)
+        CropHandle.Edge.Top    -> copy(tl = tl + dy, tr = tr + dy)
+        CropHandle.Edge.Bottom -> copy(br = br + dy, bl = bl + dy)
+        CropHandle.Edge.Left   -> copy(bl = bl + dx, tl = tl + dx)
+        CropHandle.Edge.Right  -> copy(tr = tr + dx, br = br + dx)
     }
 }
 

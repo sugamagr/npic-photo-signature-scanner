@@ -10,7 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Icon
@@ -18,12 +19,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -62,9 +67,13 @@ fun SaveSheet(
 
     // Fire the completion callback exactly once when the ViewModel signals success. The
     // destination is responsible for popping the back stack + navigating to the Camera
-    // (Photo) so the user can keep capturing (PRD §4.8 "After save").
+    // (Photo) so the user can keep capturing (PRD §4.8 "After save"). consumeCompleted()
+    // clears the id so process-restore / config-change re-collects don't double-navigate.
     androidx.compose.runtime.LaunchedEffect(state.completedRecordId) {
-        state.completedRecordId?.let(onSaved)
+        state.completedRecordId?.let {
+            onSaved(it)
+            viewModel.consumeCompleted()
+        }
     }
 
     NpicBottomSheet(
@@ -167,7 +176,9 @@ fun SaveSheet(
                     text  = err,
                     color = chrome.terracotta,
                     style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    // Assertive: validation errors interrupt to prevent the user tapping
+                    // Save again on an already-broken form (Oracle M-8b-M2-QCC).
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
                 )
             }
         }
@@ -218,15 +229,19 @@ private fun DuplicateSheet(
     onCancel: () -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
+    // Selection defaults to "new" — matches the visual saffron highlight the layer 8b
+    // impl shipped and keeps the destructive Keep-new button as the primary CTA per
+    // PRD §4.7 "radio-select-then-confirm" flow.
+    var selection by remember { mutableStateOf(DuplicateSide.New) }
+
     NpicBottomSheet(onDismiss = onCancel) {
-        // Warning title row.
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Warning,
-                contentDescription = null,
+                contentDescription = "Warning",
                 tint = chrome.terracotta,
                 modifier = Modifier.size(24.dp),
             )
@@ -249,19 +264,23 @@ private fun DuplicateSheet(
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
         ) {
             DuplicateCard(
                 title = "New (just captured)",
                 subtitle = "Class ${duplicate.input.classNum.label} · ${duplicate.input.displayName}",
-                highlighted = true,
+                selected = selection == DuplicateSide.New,
+                onSelect = { selection = DuplicateSide.New },
                 modifier = Modifier.weight(1f),
             )
             DuplicateCard(
                 title = "Existing",
                 subtitle = "Class ${duplicate.existing.classNum.label} · ${duplicate.existing.displayName}",
-                highlighted = false,
+                selected = selection == DuplicateSide.Existing,
+                onSelect = { selection = DuplicateSide.Existing },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -285,11 +304,14 @@ private fun DuplicateSheet(
     }
 }
 
+private enum class DuplicateSide { New, Existing }
+
 @Composable
 private fun DuplicateCard(
     title: String,
     subtitle: String,
-    highlighted: Boolean,
+    selected: Boolean,
+    onSelect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val chrome = LocalNpicChrome.current
@@ -298,12 +320,17 @@ private fun DuplicateCard(
             .clip(NpicShapes.md)
             .background(NpicColors.Surface, NpicShapes.md)
             .border(
-                width = if (highlighted) 3.dp else 1.dp,
-                color = if (highlighted) NpicColors.Saffron else chrome.borderSoft,
+                width = if (selected) 3.dp else 1.dp,
+                color = if (selected) NpicColors.Saffron else chrome.borderSoft,
                 shape = NpicShapes.md,
             )
+            .selectable(
+                selected = selected,
+                onClick = onSelect,
+                role = Role.RadioButton,
+            )
             .padding(NpicSpacing.md)
-            .semantics { contentDescription = "$title. $subtitle" },
+            .semantics(mergeDescendants = true) { contentDescription = "$title. $subtitle" },
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
     ) {
         Text(

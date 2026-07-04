@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
@@ -70,14 +71,15 @@ private fun EditToolTab(
     modifier: Modifier = Modifier,
 ) {
     val chrome = LocalNpicChrome.current
+    val reduceMotion = LocalReduceMotion.current
     val ink by animateColorAsState(
         targetValue = if (isActive) NpicColors.Saffron else chrome.cameraInkMuted,
-        animationSpec = NpicMotion.fast(),
+        animationSpec = NpicMotion.fastOrSnap(reduceMotion),
         label = "tab_ink",
     )
     val pillFill by animateColorAsState(
         targetValue = if (isActive) NpicColors.SaffronSoft.copy(alpha = 0.22f) else Color.Transparent,
-        animationSpec = NpicMotion.fast(),
+        animationSpec = NpicMotion.fastOrSnap(reduceMotion),
         label = "tab_pill",
     )
     Box(

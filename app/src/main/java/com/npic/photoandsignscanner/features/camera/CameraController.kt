@@ -54,6 +54,11 @@ class NpicCameraController(private val context: Context) {
      */
     suspend fun takePicture(target: File): File = suspendCancellableCoroutine { cont ->
         val options = ImageCapture.OutputFileOptions.Builder(target).build()
+        // CameraX doesn't expose a cancellation handle for takePicture, so we settle for
+        // best-effort orphan cleanup: if the coroutine is cancelled (screen leaves comp
+        // mid-capture), delete the target file once it lands so we don't accumulate stale
+        // JPEGs in cache/drafts/.
+        cont.invokeOnCancellation { runCatching { target.delete() } }
         impl.takePicture(
             options,
             ContextCompat.getMainExecutor(context),

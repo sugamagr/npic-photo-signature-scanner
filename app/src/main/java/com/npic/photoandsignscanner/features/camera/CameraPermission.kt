@@ -7,12 +7,16 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
  * Runtime permission state for `android.permission.CAMERA` — the single permission the app
@@ -75,6 +79,22 @@ fun rememberCameraPermissionState(context: Context): CameraPermissionHandle {
             if (transient) CameraPermissionState.DeniedTransient
             else CameraPermissionState.DeniedPermanent
         }
+    }
+
+    // Recover DeniedPermanent when user grants CAMERA via Settings and returns via ON_RESUME;
+    // without this, the "Open Settings" branch is a dead-end even after permission flips.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME &&
+                state != CameraPermissionState.Granted &&
+                hasCameraPermission(context)
+            ) {
+                state = CameraPermissionState.Granted
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     return remember(launcher) {

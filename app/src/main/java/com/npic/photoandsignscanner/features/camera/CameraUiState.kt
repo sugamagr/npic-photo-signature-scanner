@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.features.camera
 
+import androidx.compose.runtime.Immutable
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.FlashMode
 
@@ -9,6 +10,7 @@ import com.npic.photoandsignscanner.domain.model.FlashMode
  * The three visual regions of the Camera screen (top bar chrome, mode pills / hint, bottom
  * control row) read directly from this object; there is no derived per-region state.
  */
+@Immutable
 data class CameraUiState(
     val mode: CameraMode = CameraMode.Photo,
     val flash: FlashMode = FlashMode.Auto,

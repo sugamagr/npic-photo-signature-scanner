@@ -1,13 +1,17 @@
 package com.npic.photoandsignscanner.core.theme
 
+import android.content.Context
+import android.provider.Settings
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Root theme composable. Every screen must be wrapped in `NpicTheme { … }`.
@@ -128,15 +132,42 @@ private val WarmEditorialColorScheme = lightColorScheme(
 fun NpicTheme(
     content: @Composable () -> Unit,
 ) {
+    val context = LocalContext.current
+    val reduceMotion = remember(context) { context.resolveReduceMotion() }
     MaterialTheme(
         colorScheme = WarmEditorialColorScheme,
         typography  = NpicTypography,
         shapes      = NpicShapes.material,
     ) {
         CompositionLocalProvider(
-            LocalNpicChrome provides WarmEditorialChrome,
-            LocalTextStyle  provides NpicTypography.bodyMedium,
+            LocalNpicChrome    provides WarmEditorialChrome,
+            LocalTextStyle     provides NpicTypography.bodyMedium,
+            LocalReduceMotion  provides reduceMotion,
             content = content,
         )
     }
+}
+
+/**
+ * True when animations should be suppressed. Two signals per Android platform docs:
+ * 1. Pre-API 33 proxy: `Settings.Global.TRANSITION_ANIMATION_SCALE == 0f` (developer-options
+ *    or a11y-tool driven).
+ * 2. API 33+: `AccessibilityManager` exposes reduce-motion via developer-facing intent that
+ *    the same global setting drives. Reading the global setting covers both paths and needs
+ *    no permission.
+ *
+ * `AccessibilityManager.isEnabled` alone is NOT reduce-motion — it's true whenever any a11y
+ * service (TalkBack, Switch Access, magnification, etc.) is on. We deliberately DO NOT read
+ * that here.
+ */
+private fun Context.resolveReduceMotion(): Boolean = try {
+    val transition = Settings.Global.getFloat(
+        contentResolver, Settings.Global.TRANSITION_ANIMATION_SCALE, 1f,
+    )
+    val animator = Settings.Global.getFloat(
+        contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
+    )
+    transition == 0f || animator == 0f
+} catch (_: Throwable) {
+    false
 }

@@ -245,16 +245,16 @@ class BitmapFilters(
         const val SCHOOL_ID_SIGMA = 1.0
         const val SCHOOL_ID_AMOUNT = 0.6f
 
-        // Faded Print Rescue
+        // Faded Print Rescue (PRD §5: Sharpen +15 → 15/50 × 1.5 amount scale = 0.45)
         const val FADED_SHADOW_LIFT = 10
         const val FADED_SIGMA = 1.2
-        const val FADED_AMOUNT = 0.5f
+        const val FADED_AMOUNT = 0.45f
 
-        // Ink Boost
+        // Ink Boost (PRD §5: Sharpen +25 → 25/50 × 1.5 amount scale = 0.75)
         const val INK_BLOCK_SIZE = 41
         const val INK_CONSTANT = 12.0
         const val INK_SIGMA = 1.0
-        const val INK_AMOUNT = 0.7f
+        const val INK_AMOUNT = 0.75f
 
         // Shadow lift knee — pixels darker than this get lifted; brighter pixels untouched.
         const val SHADOW_KNEE = 96

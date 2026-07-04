@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -89,7 +90,10 @@ private fun AdjustRow(
 ) {
     val chrome = LocalNpicChrome.current
     Row(
-        modifier = Modifier.fillMaxWidth().height(40.dp),
+        // BLOCKER B-7a-2: hard .height(40.dp) clips labelMedium at 200% font scale
+        // (14sp → 28sp needs ~37dp line height). heightIn(min = 40.dp) preserves the
+        // spec baseline while allowing expansion for accessibility scaling.
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

@@ -20,20 +20,22 @@ import androidx.compose.material.icons.automirrored.outlined.Redo
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
 import com.npic.photoandsignscanner.core.theme.NpicColors
@@ -41,6 +43,7 @@ import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.ui.NpicIconButton
 import com.npic.photoandsignscanner.core.ui.NpicIconButtonStyle
+import com.npic.photoandsignscanner.core.ui.NpicSlider
 
 /**
  * Draw Signature screen (PRD §4.4).
@@ -59,13 +62,16 @@ fun SignatureDrawScreen(
     modifier: Modifier = Modifier,
     viewModel: SignatureDrawViewModel = viewModel(),
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var showDiscardConfirm by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize().background(NpicColors.Ivory)) {
         Column(Modifier.fillMaxSize()) {
             SignatureDrawTopBar(
                 canFinish = state.canFinish,
-                onBack = onBack,
+                onBack = {
+                    if (state.canFinish) showDiscardConfirm = true else onBack()
+                },
                 onDone = {
                     onDone(
                         SignatureDrawResult(
@@ -107,12 +113,27 @@ fun SignatureDrawScreen(
         }
     }
 
-    BackHandler(enabled = true) { onBack() }
+    // BLOCKER B-8a1: Android 14+ predictive-back could silently trash committed strokes.
+    // Guard on canFinish and surface the same confirm dialog as Clear so the user has to
+    // opt into discarding real work.
+    BackHandler(enabled = true) {
+        if (state.canFinish) showDiscardConfirm = true else onBack()
+    }
 
     if (state.showClearConfirm) {
         ClearConfirmDialog(
             onKeep = { viewModel.dismissClearConfirm() },
             onClear = { viewModel.clearAll() },
+        )
+    }
+
+    if (showDiscardConfirm) {
+        DiscardConfirmDialog(
+            onKeep = { showDiscardConfirm = false },
+            onDiscard = {
+                showDiscardConfirm = false
+                onBack()
+            },
         )
     }
 }
@@ -160,7 +181,9 @@ private fun SignatureDrawTopBar(
             modifier = Modifier
                 .clip(NpicShapes.sm)
                 .then(if (canFinish) Modifier.clickable { onDone() } else Modifier)
+                .defaultMinSize(minHeight = 44.dp)
                 .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
+            contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = "Done",
@@ -195,15 +218,13 @@ private fun SignatureDrawToolbar(
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(end = NpicSpacing.sm),
             )
-            Slider(
+            NpicSlider(
+                label = "Thickness",
                 value = thicknessPx,
                 onValueChange = onThicknessChange,
                 valueRange = SignatureDrawUiState.MIN_THICKNESS..SignatureDrawUiState.MAX_THICKNESS,
-                colors = SliderDefaults.colors(
-                    thumbColor = NpicColors.Saffron,
-                    activeTrackColor = NpicColors.Saffron,
-                    inactiveTrackColor = NpicColors.BorderStrong,
-                ),
+                valueLabel = "${thicknessPx.toInt()} px",
+                showHeader = false,
                 modifier = Modifier.weight(1f),
             )
             Text(
@@ -263,6 +284,35 @@ private fun ClearConfirmDialog(
         confirmButton = {
             TextButton(onClick = onClear) {
                 Text("Clear", color = NpicColors.Terracotta)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeep) {
+                Text("Keep drawing", color = NpicColors.Saffron)
+            }
+        },
+    )
+}
+
+@Composable
+private fun DiscardConfirmDialog(
+    onKeep: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    val chrome = LocalNpicChrome.current
+    AlertDialog(
+        onDismissRequest = onKeep,
+        title = { Text("Discard signature?", style = MaterialTheme.typography.headlineMedium) },
+        text = {
+            Text(
+                "You'll lose your drawing. This can't be undone.",
+                color = chrome.inkMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDiscard) {
+                Text("Discard", color = NpicColors.Terracotta)
             }
         },
         dismissButton = {

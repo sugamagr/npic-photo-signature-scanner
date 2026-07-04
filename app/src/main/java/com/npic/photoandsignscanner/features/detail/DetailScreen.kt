@@ -22,17 +22,20 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,9 +85,11 @@ fun DetailScreen(
     onDeleted: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val currentOnBack by rememberUpdatedState(onBack)
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.notFound) {
-        if (state.notFound) onBack()
+        if (state.notFound) currentOnBack()
     }
 
     Column(Modifier.fillMaxSize().background(NpicColors.Ivory)) {
@@ -90,10 +97,22 @@ fun DetailScreen(
             title = state.record?.headerTitle ?: "Loading…",
             onBack = onBack,
             onEdit = { state.record?.let { onEditPhoto(it) } },
-            onDelete = { viewModel.delete(onDeleted) },
+            onDelete = { showDeleteConfirm = true },
             onDuplicateToClass = { state.record?.let { onDuplicateToAnotherClass(it) } },
             menuEnabled = state.record != null,
         )
+
+        // Match Gallery's destructive-action pattern with an explicit confirm dialog.
+        // Detail didn't have one before — Oracle m-8c1 UX inconsistency fix.
+        if (showDeleteConfirm) {
+            DeleteConfirmDialog(
+                onKeep  = { showDeleteConfirm = false },
+                onDelete = {
+                    showDeleteConfirm = false
+                    viewModel.delete(onDeleted)
+                },
+            )
+        }
 
         val record = state.record
         if (record == null) {
@@ -251,7 +270,11 @@ private fun MetadataCard(record: StudentRecord) {
 @Composable
 private fun MetadataCell(key: String, value: String, modifier: Modifier = Modifier) {
     val chrome = LocalNpicChrome.current
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$key: $value"
+        },
+    ) {
         Text(
             text  = key,
             color = chrome.inkMuted,
@@ -274,9 +297,9 @@ private fun PhotoCard(
     onImport: () -> Unit,
 ) {
     val hasPhoto = record.photoPath.isNotBlank()
+    val chrome = LocalNpicChrome.current
     NpicCard(
-        style   = if (hasPhoto) com.npic.photoandsignscanner.core.ui.NpicCardStyle.Flat
-                  else          com.npic.photoandsignscanner.core.ui.NpicCardStyle.Flat,
+        style   = com.npic.photoandsignscanner.core.ui.NpicCardStyle.Flat,
         onClick = if (hasPhoto) onEdit else null,
         padding = PaddingValues(NpicSpacing.md),
     ) {
@@ -288,9 +311,11 @@ private fun PhotoCard(
             )
             if (hasPhoto) {
                 PhotoPlaceholder()
+                // BLOCKER B-8c1-1: Saffron on Surface at labelMedium 12sp is ~2.13:1
+                // — fails WCAG 1.4.3 AA. DESIGN §2.2 also forbids Saffron for text <16sp.
                 Text(
                     text  = "Tap to edit",
-                    color = NpicColors.Saffron,
+                    color = chrome.inkMuted,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
                 )
             } else {
@@ -333,6 +358,7 @@ private fun SignatureCard(
     onImport: () -> Unit,
 ) {
     val hasSig = record.hasSignature
+    val chrome = LocalNpicChrome.current
     NpicCard(
         onClick = if (hasSig) onEdit else null,
         padding = PaddingValues(NpicSpacing.md),
@@ -345,9 +371,10 @@ private fun SignatureCard(
             )
             if (hasSig) {
                 SignaturePlaceholder()
+                // BLOCKER B-8c1-1: same contrast fix as PhotoCard.
                 Text(
                     text  = "Tap to edit",
-                    color = NpicColors.Saffron,
+                    color = chrome.inkMuted,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
                 )
             } else {
@@ -406,7 +433,7 @@ private fun PhotoPlaceholder() {
     ) {
         Icon(
             imageVector = Icons.Outlined.CameraAlt,
-            contentDescription = "Photo preview",
+            contentDescription = null,
             tint = NpicColors.Saffron,
             modifier = Modifier.size(32.dp),
         )
@@ -429,7 +456,7 @@ private fun SignaturePlaceholder() {
     ) {
         Icon(
             imageVector = Icons.Outlined.Draw,
-            contentDescription = "Signature preview",
+            contentDescription = null,
             tint = NpicColors.Saffron,
             modifier = Modifier.size(28.dp),
         )
@@ -443,6 +470,8 @@ private fun DashedPlaceholder(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
 ) {
     val chrome = LocalNpicChrome.current
+    // Hoisted so PathEffect isn't allocated on every Canvas draw pass.
+    val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -456,7 +485,7 @@ private fun DashedPlaceholder(
                     cornerRadius = CornerRadius(cornerPx, cornerPx),
                     style        = Stroke(
                         width      = 1.5.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f),
+                        pathEffect = dashEffect,
                     ),
                 )
             }
@@ -561,4 +590,33 @@ private fun relativeTimeLabel(delta: Duration): String = when {
     delta < 2.days     -> "Yesterday"
     delta < 30.days    -> "${delta.inWholeDays}d ago"
     else               -> "${(delta.inWholeDays / 30)} mo ago"
+}
+
+@Composable
+private fun DeleteConfirmDialog(
+    onKeep: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val chrome = LocalNpicChrome.current
+    AlertDialog(
+        onDismissRequest = onKeep,
+        title = { Text("Delete this record?", style = MaterialTheme.typography.headlineMedium) },
+        text = {
+            Text(
+                "The photo and signature will be removed. This can't be undone.",
+                color = chrome.inkMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDelete) {
+                Text("Delete", color = NpicColors.Terracotta)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeep) {
+                Text("Keep", color = NpicColors.Saffron)
+            }
+        },
+    )
 }

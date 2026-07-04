@@ -7,16 +7,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
@@ -41,6 +47,7 @@ fun ModePillsRow(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(
+            modifier = Modifier.selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xxl),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -59,6 +66,7 @@ fun ModePillsRow(
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
                 modifier = Modifier
                     .padding(top = NpicSpacing.sm)
+                    .defaultMinSize(minHeight = 44.dp)
                     .clickable(onClick = onDrawInsteadClick)
                     .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.xs),
             )
@@ -73,9 +81,10 @@ private fun ModePill(
     onClick: () -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
+    val reduceMotion = LocalReduceMotion.current
     val ink by animateColorAsState(
         targetValue = if (selected) NpicColors.Saffron else chrome.cameraInkMuted,
-        animationSpec = NpicMotion.standard(),
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "mode_pill_ink",
     )
     Text(
@@ -87,6 +96,10 @@ private fun ModePill(
         modifier = Modifier
             .defaultMinSize(minHeight = 44.dp)
             .clickable(onClick = onClick)
+            .semantics {
+                role = Role.RadioButton
+                this.selected = selected
+            }
             .padding(horizontal = NpicSpacing.xl, vertical = NpicSpacing.sm),
     )
 }

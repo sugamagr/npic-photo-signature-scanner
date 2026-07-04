@@ -1,7 +1,6 @@
 package com.npic.photoandsignscanner.features.gallery
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -32,7 +31,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +44,9 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
@@ -88,7 +88,9 @@ fun GalleryScreen(
     onSearchClick: () -> Unit = {},
     onOverflowClick: () -> Unit = {},
 ) {
-    val state by viewModel.state.collectAsState()
+    // Oracle m-8c1 consistency: lifecycle-aware collection stops StateFlow work when the
+    // Gallery is off-screen (Camera/Edit/Save/Detail cover it). Matches Detail/Edit/Save.
+    val state by viewModel.state.collectAsStateWithLifecycle()
     GalleryContent(
         state               = state,
         onCaptureClick      = onCaptureClick,
@@ -399,10 +401,12 @@ private fun FabRegion(
                     ),
                 ),
         )
+        val reduceMotion = LocalReduceMotion.current
         AnimatedContent(
             targetState = selectionMode,
             transitionSpec = {
-                fadeIn(tween(NpicMotion.StandardMs)) togetherWith fadeOut(tween(NpicMotion.StandardMs))
+                fadeIn(NpicMotion.standardOrSnap(reduceMotion)) togetherWith
+                    fadeOut(NpicMotion.standardOrSnap(reduceMotion))
             },
             modifier = Modifier
                 .fillMaxWidth()

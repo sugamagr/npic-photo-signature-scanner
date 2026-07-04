@@ -60,10 +60,10 @@ fun CropTool(
 
 @Composable
 private fun ResetChip(onClick: () -> Unit) {
-    // Ghost link — Saffron labelLarge, no fill, 40dp hit target.
+    // BLOCKER B-7a-1: WCAG 2.5.5 requires 44dp minimum touch target; hardcoded 40dp fails.
     Box(
         modifier = Modifier
-            .height(40.dp)
+            .defaultMinSize(minHeight = 44.dp)
             .clip(NpicShapes.sm)
             .clickable(onClick = onClick)
             .padding(horizontal = NpicSpacing.sm),

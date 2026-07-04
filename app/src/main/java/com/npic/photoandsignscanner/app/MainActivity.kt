@@ -13,13 +13,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -360,7 +360,7 @@ private fun EditDestination(
     onBack: () -> Unit,
     onNext: (com.npic.photoandsignscanner.domain.model.CameraCapture) -> Unit,
 ) {
-    val capture by captureHolder.capture.collectAsState()
+    val capture by captureHolder.capture.collectAsStateWithLifecycle()
 
     // Guard the null case defensively: if a user process-restarts into Route.Edit (e.g.
     // via a deep link that doesn't exist yet, or a state restoration edge), pop back to
@@ -451,7 +451,7 @@ private fun SaveDestination(
     onSaved: () -> Unit,
 ) {
     val context = LocalContext.current
-    val draftState by captureHolder.draft.collectAsState()
+    val draftState by captureHolder.draft.collectAsStateWithLifecycle()
 
     // Guard the null case: if the user lands on Save without a draft (deep link edge,
     // process death), synthesise an empty draft so the sheet renders with the "add a

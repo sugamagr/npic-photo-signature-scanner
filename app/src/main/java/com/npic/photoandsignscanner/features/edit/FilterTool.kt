@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
@@ -98,9 +100,10 @@ private fun FilterCell(
     thumbnail: Bitmap?,
 ) {
     val chrome = LocalNpicChrome.current
+    val reduceMotion = LocalReduceMotion.current
     val ringColor by animateColorAsState(
         targetValue = if (isSelected) NpicColors.Saffron else Color.Transparent,
-        animationSpec = NpicMotion.fast(),
+        animationSpec = NpicMotion.fastOrSnap(reduceMotion),
         label = "filter_cell_ring",
     )
     Column(
@@ -114,16 +117,20 @@ private fun FilterCell(
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // DESIGN §7.3: 2dp Saffron ring OUTSIDE the corner. Applying .border BEFORE .clip
+        // means the stroke draws at the outer edge and doesn't get clipped by the corner
+        // radius, matching the spec.
         Box(
             modifier = Modifier
                 .size(84.dp)
+                .border(2.dp, ringColor, NpicShapes.sm)
                 .clip(NpicShapes.sm)
-                .background(chrome.cameraSurface, NpicShapes.sm)
-                .border(2.dp, ringColor, NpicShapes.sm),
+                .background(chrome.cameraSurface, NpicShapes.sm),
         ) {
             if (thumbnail != null) {
+                val imageBitmap = remember(thumbnail) { thumbnail.asImageBitmap() }
                 Image(
-                    bitmap = thumbnail.asImageBitmap(),
+                    bitmap = imageBitmap,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().clip(NpicShapes.sm),

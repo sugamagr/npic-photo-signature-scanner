@@ -80,7 +80,9 @@ fun NpicBottomSheet(
                 Text(
                     text  = title,
                     color = NpicColors.Ink,
-                    style = MaterialTheme.typography.headlineMedium,
+                    // DESIGN §7.4 / §7.8: sheet header uses titleLarge (Fraunces 20sp),
+                    // not headlineMedium (24sp). Applies to Save, Signature-prompt, Export.
+                    style = MaterialTheme.typography.titleLarge,
                 )
             }
             content()
@@ -115,7 +117,7 @@ private fun SheetChromePreview() {
                         .clip(NpicShapes.full)
                         .background(chrome.borderStrong),
                 )
-                Text("Export", style = MaterialTheme.typography.headlineMedium)
+                Text("Export", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Choose a format and share with the portal.",
                     color = chrome.inkMuted,

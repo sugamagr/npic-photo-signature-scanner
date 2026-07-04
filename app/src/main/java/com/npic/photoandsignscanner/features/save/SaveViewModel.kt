@@ -8,9 +8,11 @@ import com.npic.photoandsignscanner.domain.model.NamingMode
 import com.npic.photoandsignscanner.domain.model.SaveResult
 import com.npic.photoandsignscanner.domain.model.StudentDraft
 import com.npic.photoandsignscanner.domain.repo.StudentRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -33,20 +35,27 @@ class SaveViewModel(
     private val _state = MutableStateFlow(SaveUiState(draft = draft))
     val state: StateFlow<SaveUiState> = _state.asStateFlow()
 
+    // Track the active nextSerial() lookup so rapid class-toggling doesn't publish a
+    // stale prior-class serial over the current selection (Oracle M-8b-M1 race).
+    private var nextSerialJob: Job? = null
+    private var saveJob: Job? = null
+
     fun setClass(classNum: ClassNum) {
         val current = _state.value
         _state.value = current.copy(classNum = classNum, errorMessage = null)
-        // Auto-populate the serial input the first time we see this class.
         if (classNum !in current.autoSerialForClass) {
-            viewModelScope.launch {
+            nextSerialJob?.cancel()
+            nextSerialJob = viewModelScope.launch {
                 val next = repo.nextSerial(classNum)
-                _state.value = _state.value.copy(
-                    autoSerialForClass = _state.value.autoSerialForClass + (classNum to next),
-                    // Only overwrite the serial input if the user is on Serial mode and hasn't typed anything else.
-                    serialText = if (_state.value.namingKind == NamingMode.Kind.Serial && _state.value.serialText.isBlank())
-                        next.toString()
-                    else _state.value.serialText,
-                )
+                _state.update { s ->
+                    if (s.classNum != classNum) return@update s
+                    s.copy(
+                        autoSerialForClass = s.autoSerialForClass + (classNum to next),
+                        serialText = if (s.namingKind == NamingMode.Kind.Serial && s.serialText.isBlank())
+                            next.toString()
+                        else s.serialText,
+                    )
+                }
             }
         }
     }
@@ -72,10 +81,12 @@ class SaveViewModel(
     }
 
     fun save() {
+        if (_state.value.saving) return
         val input = _state.value.saveInput ?: return
         val current = _state.value
         _state.value = current.copy(saving = true, errorMessage = null)
-        viewModelScope.launch {
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
             when (val outcome = repo.save(current.draft, input)) {
                 is SaveResult.Success ->
                     _state.value = _state.value.copy(saving = false, completedRecordId = outcome.record.id)
@@ -85,6 +96,15 @@ class SaveViewModel(
                     _state.value = _state.value.copy(saving = false, errorMessage = "Add a photo or signature to save.")
             }
         }
+    }
+
+    /**
+     * Called by the destination after it has consumed [SaveUiState.completedRecordId] and
+     * navigated. Prevents a second navigation if the state is re-collected on process
+     * restore or configuration change (Oracle m-8b).
+     */
+    fun consumeCompleted() {
+        _state.update { it.copy(completedRecordId = null) }
     }
 
     fun resolveDuplicateReplacingExisting() {

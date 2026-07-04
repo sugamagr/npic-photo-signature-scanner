@@ -1,11 +1,18 @@
 package com.npic.photoandsignscanner.features.camera
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.CameraMode
+import com.npic.photoandsignscanner.domain.model.RectI
+import java.io.File
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
 
 /**
  * Camera presenter. Owns the mode, flash, session count, capture-in-progress flag, and the
@@ -21,6 +28,8 @@ class CameraViewModel : ViewModel() {
     private val _state = MutableStateFlow(CameraUiState())
     val state: StateFlow<CameraUiState> = _state.asStateFlow()
 
+    private var captureJob: Job? = null
+
     fun setMode(mode: CameraMode) {
         _state.update { it.copy(mode = mode, hintVisible = true, lastError = null) }
     }
@@ -33,20 +42,41 @@ class CameraViewModel : ViewModel() {
         _state.update { it.copy(hintVisible = false) }
     }
 
-    fun onCaptureStarted() {
+    /**
+     * Own the entire shutter workflow inside [viewModelScope] so the coroutine survives
+     * screen re-composition but is cancelled cleanly when the ViewModel itself dies
+     * (config change → new VM instance, or Activity destroy). The screen previously
+     * launched this in `rememberCoroutineScope()` which orphaned the coroutine on back-out.
+     */
+    fun capture(
+        controller: NpicCameraController,
+        target: File,
+        guideBoxImageSpace: RectI?,
+        onDone: (CameraCapture) -> Unit,
+    ) {
+        if (_state.value.capturing) return
+        val currentMode = _state.value.mode
         _state.update { it.copy(capturing = true, lastError = null) }
-    }
-
-    fun onCaptureFinished() {
-        _state.update {
-            it.copy(
-                capturing = false,
-                sessionCount = it.sessionCount + 1,
-            )
+        captureJob?.cancel()
+        captureJob = viewModelScope.launch {
+            try {
+                val file = controller.takePicture(target)
+                _state.update {
+                    it.copy(capturing = false, sessionCount = it.sessionCount + 1)
+                }
+                onDone(
+                    CameraCapture(
+                        rawPath            = file.absolutePath,
+                        mode               = currentMode,
+                        guideBoxImageSpace = guideBoxImageSpace,
+                        capturedAt         = Clock.System.now(),
+                    )
+                )
+            } catch (t: Throwable) {
+                _state.update {
+                    it.copy(capturing = false, lastError = t.message ?: "Capture failed")
+                }
+            }
         }
-    }
-
-    fun onCaptureFailed(message: String) {
-        _state.update { it.copy(capturing = false, lastError = message) }
     }
 }

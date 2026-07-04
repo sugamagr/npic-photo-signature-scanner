@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
@@ -96,19 +97,20 @@ private fun PreviewTile(
 ) {
     val chrome = LocalNpicChrome.current
     val shape = NpicShapes.md
-    val cornerRadius = with(androidx.compose.ui.platform.LocalDensity.current) { 14.dp.toPx() }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val cornerRadius = with(density) { 14.dp.toPx() }
+    // Hoist per-frame allocations out of Canvas draw scope (Oracle m-8b): both the
+    // dashPathEffect and the Stroke are stable across recompositions.
+    val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f) }
+    val dashStroke = remember(density, dashEffect) {
+        Stroke(width = with(density) { 1.5.dp.toPx() }, pathEffect = dashEffect)
+    }
 
-    // The image is decoded off-thread when a real path arrives; kept as a lightweight
-    // mutable state so we don't block the sheet composition. For Layer 8b we defer real
-    // decode (uses android.graphics.BitmapFactory in the caller before Save); this tile
-    // renders a semantic placeholder icon whenever `path` is present but no bitmap
-    // materialised yet.
     var thumb by remember(path) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(path) {
         thumb = null
-        // TODO(save): pipe the actual decoded bitmap through when the Save layer wires
-        // Coil / BitmapFactory. Meanwhile the icon placeholder is honest — a saved path
-        // exists but the sheet doesn't reload the pixels for the preview.
+        // TODO(save): decode the actual bitmap via Coil once the Save layer lands. Layer 8b
+        // renders the "Ready" placeholder to stay honest about the media not being loaded.
     }
 
     Box(
@@ -116,19 +118,20 @@ private fun PreviewTile(
             .clip(shape)
             .background(chrome.saffronSoft.copy(alpha = 0.35f), shape)
             .then(if (path == null && onAdd != null) Modifier.clickable(onClick = onAdd) else Modifier)
-            .semantics { contentDescription = if (path == null) missingLabel else "Captured $missingLabel" },
+            .semantics {
+                // Two distinct labels — Oracle M-8b-M5-QCC caught the "Captured No photo"
+                // string that appeared when a path was present (announces the wrong state
+                // to TalkBack).
+                contentDescription = if (path == null) missingLabel else "Captured photo ready"
+            },
         contentAlignment = Alignment.Center,
     ) {
         if (path == null) {
-            // Dashed BorderStrong placeholder + semantic label + optional "Add" affordance.
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawRoundRect(
                     color = chrome.borderStrong,
                     cornerRadius = CornerRadius(cornerRadius, cornerRadius),
-                    style = Stroke(
-                        width = 1.5.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f),
-                    ),
+                    style = dashStroke,
                     size = Size(size.width, size.height),
                     topLeft = Offset.Zero,
                 )
@@ -146,9 +149,15 @@ private fun PreviewTile(
                 )
                 if (onAdd != null) {
                     Text(
+                        // SaffronDeep + underline: fixes the ~1.8:1 Saffron-on-SaffronSoft@35%
+                        // WCAG AA fail (Oracle M-8b-M4-QCC) while keeping the tile's warm
+                        // accent, matching Stripe/Linear "premium destination link" pattern.
                         text = addLabel,
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
-                        color = NpicColors.Saffron,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight(600),
+                            textDecoration = TextDecoration.Underline,
+                        ),
+                        color = NpicColors.SaffronDeep,
                         textAlign = TextAlign.Center,
                     )
                 }

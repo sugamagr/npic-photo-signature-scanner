@@ -2,7 +2,6 @@ package com.npic.photoandsignscanner.domain.model
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Offset
-import com.npic.photoandsignscanner.core.ui.CropQuad
 
 /**
  * The whole non-destructive edit graph for a single [CameraCapture] (PRD §4.5). Every knob
@@ -69,7 +68,12 @@ data class EditState(
             // callback later re-projects into view-space; the shape only depends on the
             // guide-box aspect, which the lock already carries. `lock` is reserved for
             // future aspect-constrained reseeding (Layer 7b), hence the suppress.
-            val r = capture.guideBoxImageSpace
+            // When guideBoxImageSpace is null (overlay hadn't laid out at capture time), we
+            // seed a degenerate zero-quad — detection replaces it with the full-image
+            // fallback quad as soon as the decoded bitmap is available (EditViewModel).
+            val r = capture.guideBoxImageSpace ?: return CropQuad(
+                tl = Offset.Zero, tr = Offset.Zero, br = Offset.Zero, bl = Offset.Zero,
+            )
             return CropQuad(
                 tl = Offset(r.left.toFloat(),  r.top.toFloat()),
                 tr = Offset(r.right.toFloat(), r.top.toFloat()),

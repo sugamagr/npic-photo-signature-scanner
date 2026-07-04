@@ -1,7 +1,6 @@
 package com.npic.photoandsignscanner.features.edit
 
 import android.graphics.Bitmap
-import androidx.compose.runtime.Immutable
 import com.npic.photoandsignscanner.domain.model.DetectedCrop
 import com.npic.photoandsignscanner.domain.model.EditState
 import com.npic.photoandsignscanner.domain.model.FilterPreset
@@ -12,9 +11,13 @@ import com.npic.photoandsignscanner.domain.model.FilterPreset
  * detection origin (drives the "Couldn't detect ink automatically" banner), and any terminal
  * error to surface as a toast.
  *
+ * Not annotated `@Immutable` because [sourceBitmap] / [previewBitmap] / [filterThumbnails]
+ * are mutable Bitmap references (contents can change without the wrapper being replaced).
+ * The `@Immutable` promise would let Compose skip recompositions the state actually needs.
+ * Compose infers Bitmap-holding data classes as Unstable by default, which is correct here.
+ *
  * Mutations flow through [EditViewModel]. The screen only reads.
  */
-@Immutable
 data class EditUiState(
     val edit: EditState,
     val activeTool: EditTool = EditTool.Crop,
