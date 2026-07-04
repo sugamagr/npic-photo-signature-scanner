@@ -2,7 +2,9 @@ package com.npic.photoandsignscanner.features.camera
 
 import android.graphics.BitmapFactory
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.npic.photoandsignscanner.data.imaging.GuideBoxCropper
 import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import java.io.File
@@ -25,7 +27,9 @@ import kotlinx.datetime.Clock
  * here. Skipping for the shell — session state resets on back-out, which is acceptable for
  * an internal-preview build.
  */
-class CameraViewModel : ViewModel() {
+class CameraViewModel(
+    private val guideBoxCropper: GuideBoxCropper,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(CameraUiState())
     val state: StateFlow<CameraUiState> = _state.asStateFlow()
@@ -63,10 +67,10 @@ class CameraViewModel : ViewModel() {
         captureJob = viewModelScope.launch {
             try {
                 val file = controller.takePicture(target)
-                // Layer 11: now that we have the WRITTEN JPEG, decode just its bounds
-                // (cheap — no pixel buffer allocated) and project the overlay's
-                // preview-space rect into the image's pixel grid via PreviewGuide.toImageSpace.
-                // Result feeds EditRenderer's OpenCV seed area (PRD §7.1 / §7.2).
+                // Layer 11: decode the written JPEG's bounds (cheap — no pixel buffer
+                // allocated) and project the overlay's preview-space rect into the image's
+                // pixel grid via PreviewGuide.toImageSpace, with EXIF-orientation swap so
+                // the projection matches the visually-upright image the user will edit.
                 val guideBoxImageSpace = previewGuide?.let { pg ->
                     withContext(Dispatchers.IO) {
                         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -92,6 +96,19 @@ class CameraViewModel : ViewModel() {
                         pg.toImageSpace(imgW, imgH)
                     }
                 }
+                // m2228 A + B: pre-crop the JPEG to the guide-box region so Edit opens at
+                // the actual image corners of a pre-cropped file, not at some small quad
+                // floating inside the raw sensor frame. On success we null out
+                // guideBoxImageSpace so EditState.initialCropFor hits the sentinel path and
+                // EditRenderer remaps to full source bounds. On failure we keep the raw
+                // JPEG + the projected RectI so Edit still seeds at the guide-box region.
+                val effectiveGuideBox = if (guideBoxImageSpace != null) {
+                    val cropped = guideBoxCropper.cropJpegToGuideBox(
+                        path = file.absolutePath,
+                        guideBoxImageSpace = guideBoxImageSpace,
+                    )
+                    if (cropped) null else guideBoxImageSpace
+                } else null
                 _state.update {
                     it.copy(
                         capturing = false,
@@ -103,7 +120,7 @@ class CameraViewModel : ViewModel() {
                     CameraCapture(
                         rawPath            = file.absolutePath,
                         mode               = currentMode,
-                        guideBoxImageSpace = guideBoxImageSpace,
+                        guideBoxImageSpace = effectiveGuideBox,
                         capturedAt         = Clock.System.now(),
                     )
                 )
@@ -113,5 +130,11 @@ class CameraViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    class Factory(private val guideBoxCropper: GuideBoxCropper) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            CameraViewModel(guideBoxCropper) as T
     }
 }

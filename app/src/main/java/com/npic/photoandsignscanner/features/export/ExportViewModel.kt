@@ -33,7 +33,9 @@ import java.io.FileOutputStream
  *   1. Load the source bitmap(s) from [SourceStore]-managed paths.
  *   2. Compose per format via [CombinedRenderer] (Combined) or pass-through (PhotoOnly /
  *      SignatureOnly).
- *   3. Compress into the 10–30 KB portal window via [JpegCompressor].
+ *   3. Compress into the portal window via [JpegCompressor]: PhotoOnly / SignatureOnly
+ *      cap at 23 KB, Combined at 28 KB (m2228 tightened from 30 KB to leave safety margin
+ *      against the observed 30.23 KB portal-edge overshoot).
  *   4. Name the payload via [GenerateFileName].
  *
  * Then bundle the results for the share sheet:
@@ -279,7 +281,14 @@ class ExportViewModel(
                 }
             }
             return try {
-                val result = jpegCompressor.compress(composed)
+                // m2228 per-format ceilings: PhotoOnly / SignatureOnly cap at 23 KB;
+                // Combined at 28 KB (matches JpegCompressor.MAX_BYTES default). Portal
+                // rejects at 30.23 KB and above in practice.
+                val maxBytes = when (format) {
+                    ExportFormat.Combined -> 28 * 1024
+                    ExportFormat.PhotoOnly, ExportFormat.SignatureOnly -> 23 * 1024
+                }
+                val result = jpegCompressor.compress(composed, maxBytes = maxBytes)
                 result.bytes to result.underMinAccepted
             } finally {
                 // Combined path allocates a fresh composed bitmap distinct from photo /

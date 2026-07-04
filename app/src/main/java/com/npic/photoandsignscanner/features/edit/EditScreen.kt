@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
@@ -213,6 +214,15 @@ private fun ImageViewport(
         pan += panChange
     }
 
+    // m2228 Bug C coordinate bridge. EditState.crop lives in source-image pixel space
+    // (EditRenderer + scheduleLivePreview both expect that); NpicCropOverlay reports drags
+    // back in overlay-canvas pixel space (its Canvas draw scope). Prior code wrote canvas
+    // px straight to EditState.crop, so scheduleLivePreview's `scale = preview.w / source.w`
+    // then mis-mapped viewport coords to source coords — filter tap re-rendered a random
+    // slice. Fix: bridge both directions using the letterboxed display rect (source aspect
+    // vs canvas aspect determines the letterbox offset since the Image is ContentScale.Fit).
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -262,11 +272,83 @@ private fun ImageViewport(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            if (state.activeTool == EditTool.Crop) {
+            if (state.activeTool == EditTool.Crop && bitmap != null && canvasSize != IntSize.Zero) {
+                // Letterbox: Image is ContentScale.Fit so the drawn image is inset by
+                // (canvas - display)/2 on the limiting axis. Corners MUST land inside the
+                // drawn image or dragging them yields empty regions.
+                val srcW = bitmap.width.toFloat()
+                val srcH = bitmap.height.toFloat()
+                val canvasW = canvasSize.width.toFloat()
+                val canvasH = canvasSize.height.toFloat()
+                val srcAspect = srcW / srcH
+                val canvasAspect = canvasW / canvasH
+                val displayW: Float
+                val displayH: Float
+                val offsetX: Float
+                val offsetY: Float
+                if (srcAspect > canvasAspect) {
+                    displayW = canvasW
+                    displayH = displayW / srcAspect
+                    offsetX = 0f
+                    offsetY = (canvasH - displayH) / 2f
+                } else {
+                    displayH = canvasH
+                    displayW = displayH * srcAspect
+                    offsetX = (canvasW - displayW) / 2f
+                    offsetY = 0f
+                }
+
+                // Sentinel path: EditState.crop stays at the (0..1) unit square after a
+                // fresh capture (guideBoxImageSpace == null, per m2154 removal + m2228
+                // GuideBoxCropper). Expand it to full source bounds BEFORE mapping so the
+                // corner handles land at the actual image edges instead of a 1×1 blob.
+                // Inline sentinel test: no `maxOrdinate` extension on CropQuad — mirrors
+                // EditRenderer.isNormalizedSentinel logic (< NORMALIZED_SENTINEL_THRESHOLD = 1.5f).
+                val q0 = state.edit.crop
+                val maxOrd = maxOf(
+                    q0.tl.x, q0.tr.x, q0.br.x, q0.bl.x,
+                    q0.tl.y, q0.tr.y, q0.br.y, q0.bl.y,
+                )
+                val sourceQuad = if (maxOrd < 1.5f) {
+                    com.npic.photoandsignscanner.domain.model.CropQuad(
+                        tl = Offset(0f, 0f),
+                        tr = Offset(srcW, 0f),
+                        br = Offset(srcW, srcH),
+                        bl = Offset(0f, srcH),
+                    )
+                } else state.edit.crop
+
+                fun sourceToCanvas(q: com.npic.photoandsignscanner.domain.model.CropQuad) =
+                    com.npic.photoandsignscanner.domain.model.CropQuad(
+                        tl = Offset(offsetX + (q.tl.x / srcW) * displayW, offsetY + (q.tl.y / srcH) * displayH),
+                        tr = Offset(offsetX + (q.tr.x / srcW) * displayW, offsetY + (q.tr.y / srcH) * displayH),
+                        br = Offset(offsetX + (q.br.x / srcW) * displayW, offsetY + (q.br.y / srcH) * displayH),
+                        bl = Offset(offsetX + (q.bl.x / srcW) * displayW, offsetY + (q.bl.y / srcH) * displayH),
+                    )
+
+                fun canvasToSource(q: com.npic.photoandsignscanner.domain.model.CropQuad) =
+                    com.npic.photoandsignscanner.domain.model.CropQuad(
+                        tl = Offset(((q.tl.x - offsetX) / displayW) * srcW, ((q.tl.y - offsetY) / displayH) * srcH),
+                        tr = Offset(((q.tr.x - offsetX) / displayW) * srcW, ((q.tr.y - offsetY) / displayH) * srcH),
+                        br = Offset(((q.br.x - offsetX) / displayW) * srcW, ((q.br.y - offsetY) / displayH) * srcH),
+                        bl = Offset(((q.bl.x - offsetX) / displayW) * srcW, ((q.bl.y - offsetY) / displayH) * srcH),
+                    )
+
+                NpicCropOverlay(
+                    quad = sourceToCanvas(sourceQuad),
+                    onQuadChange = { canvasQuad -> onCropChange(canvasToSource(canvasQuad)) },
+                    onLayoutSize = { canvasSize = it },
+                    modifier = Modifier.fillMaxSize(),
+                    aspectLock = state.edit.aspectLock,
+                )
+            } else if (state.activeTool == EditTool.Crop) {
+                // First layout pass: canvasSize is still IntSize.Zero. Render an invisible
+                // overlay just to receive onLayoutSize so the real overlay appears on the
+                // next recomp. Without this, the "if bitmap && canvasSize" gate never opens.
                 NpicCropOverlay(
                     quad = state.edit.crop,
-                    onQuadChange = onCropChange,
-                    onLayoutSize = { /* layer 7c will feed this back into image-space math */ },
+                    onQuadChange = {},
+                    onLayoutSize = { canvasSize = it },
                     modifier = Modifier.fillMaxSize(),
                     aspectLock = state.edit.aspectLock,
                 )

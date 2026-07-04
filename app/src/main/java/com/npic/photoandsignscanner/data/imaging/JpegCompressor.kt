@@ -10,8 +10,11 @@ import kotlin.math.roundToInt
  * PRD §6 portal-window JPEG compressor.
  *
  * The UPMSP portal accepts files strictly in the 10 KB ≤ size ≤ 30 KB window. Below 10 KB
- * the portal rejects for "poor quality"; above 30 KB it rejects for size cap. This class
- * hits that window via a two-phase algorithm:
+ * the portal rejects for "poor quality"; above 30 KB it rejects for size cap. Per user
+ * directive m2228, our internal ceiling is tightened to 28 KB (2 KB safety margin against
+ * portal edge-case rejections observed at 30.23 KB). Per-format overrides live at the
+ * caller (ExportViewModel): PhotoOnly and SignatureOnly cap at 23 KB, Combined at 28 KB.
+ * This class hits the caller-provided window via a two-phase algorithm:
  *
  * ### Phase 1: binary-search on quality
  * Search JPEG quality in [30, 95] with a 10-iteration cap. On each step, encode the input
@@ -67,7 +70,8 @@ class JpegCompressor {
      *
      * ### Args
      * - [minBytes] defaults to 10 KB (PRD §6 window floor)
-     * - [maxBytes] defaults to 30 KB (PRD §6 window ceiling)
+     * - [maxBytes] defaults to 28 KB (PRD §6 ceiling minus m2228 2 KB safety margin).
+     *   ExportViewModel overrides this to 23 KB for PhotoOnly / SignatureOnly.
      *
      * Never returns null. The pathological "even q95 on a heavily downscaled bitmap is
      * under min" case surfaces as `underMinAccepted = true`.
@@ -220,9 +224,14 @@ class JpegCompressor {
     private companion object {
         const val TAG = "JpegCompressor"
 
-        /** PRD §6 window. */
+        /**
+         * PRD §6 window with m2228 safety margin. Portal ceiling is 30 KB; we target 28 KB
+         * to leave headroom against the binary-search + downscale fallback overshooting
+         * (observed at 30.23 KB pre-fix). Per-format overrides live at the ExportViewModel
+         * call site: PhotoOnly / SignatureOnly cap at 23 KB, Combined at 28 KB.
+         */
         const val MIN_BYTES = 10 * 1024
-        const val MAX_BYTES = 30 * 1024
+        const val MAX_BYTES = 28 * 1024
 
         /** PRD §6 quality search range. */
         const val QUALITY_MIN = 30

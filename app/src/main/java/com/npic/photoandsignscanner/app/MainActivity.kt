@@ -42,6 +42,7 @@ import com.npic.photoandsignscanner.data.imaging.BitmapAdjustments
 import com.npic.photoandsignscanner.data.imaging.BitmapFilters
 import com.npic.photoandsignscanner.data.imaging.CombinedRenderer
 import com.npic.photoandsignscanner.data.imaging.EditRenderer
+import com.npic.photoandsignscanner.data.imaging.GuideBoxCropper
 import com.npic.photoandsignscanner.data.imaging.JpegCompressor
 import com.npic.photoandsignscanner.data.imaging.OpenCvBridge
 import com.npic.photoandsignscanner.data.db.NpicDatabase
@@ -109,6 +110,14 @@ class MainActivity : ComponentActivity() {
     private val bitmapAdjustments by lazy { BitmapAdjustments(openCvBridge) }
     private val bitmapFilters by lazy { BitmapFilters(openCvBridge, bitmapAdjustments) }
     private val editRenderer by lazy { EditRenderer(openCvBridge, bitmapFilters, bitmapAdjustments) }
+
+    // m2228 Bug A+B pre-crop: rewrites the raw CameraX JPEG to the guide-box region
+    // before Edit ever sees it. When it succeeds, CameraViewModel emits a CameraCapture
+    // with guideBoxImageSpace = null, which routes EditState.initialCropFor through the
+    // normalized-sentinel path so Crop tab opens at the pre-cropped image's actual
+    // corners. Activity-scoped, stateless — belongs in the imaging graph (not Save
+    // graph) because it fires before SourceStore ever sees the file.
+    private val guideBoxCropper by lazy { GuideBoxCropper() }
 
     // Layer 9 Save-render + Export-render graph (PRD §5.5 / §6 / §6.2 / §4.10). Kept
     // Activity-scoped so a single SourceStore instance owns the `filesDir/sources/`
@@ -214,6 +223,7 @@ class MainActivity : ComponentActivity() {
                             combinedRenderer = combinedRenderer,
                             zipExporter = zipExporter,
                             mediaStoreExporter = mediaStoreExporter,
+                            guideBoxCropper = guideBoxCropper,
                             onOpenSettings = { drawerScope.launch { drawerState.open() } },
                         )
                     }
@@ -265,6 +275,7 @@ private fun NpicNavHost(
     combinedRenderer: CombinedRenderer,
     zipExporter: ZipExporter,
     mediaStoreExporter: com.npic.photoandsignscanner.data.export.MediaStoreExporter,
+    guideBoxCropper: GuideBoxCropper,
     onOpenSettings: () -> Unit,
 ) {
     NavHost(navController = navController, startDestination = Route.Gallery) {
@@ -336,6 +347,7 @@ private fun NpicNavHost(
             val initialMode = runCatching { CameraMode.valueOf(modeName) }.getOrDefault(CameraMode.Photo)
             CameraDestination(
                 initialMode = initialMode,
+                guideBoxCropper = guideBoxCropper,
                 onBack = { navController.popBackStack() },
                 onCaptureComplete = { capture ->
                     captureHolder.pushCapture(capture)
@@ -777,13 +789,18 @@ private fun copyUriToDraftsCache(context: android.content.Context, uri: android.
 @Composable
 private fun CameraDestination(
     initialMode: CameraMode,
+    guideBoxCropper: GuideBoxCropper,
     onBack: () -> Unit,
     onCaptureComplete: (com.npic.photoandsignscanner.domain.model.CameraCapture) -> Unit,
     onDrawInsteadClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val viewModel: com.npic.photoandsignscanner.features.camera.CameraViewModel = viewModel()
+    val cameraVmFactory = remember(guideBoxCropper) {
+        com.npic.photoandsignscanner.features.camera.CameraViewModel.Factory(guideBoxCropper)
+    }
+    val viewModel: com.npic.photoandsignscanner.features.camera.CameraViewModel =
+        viewModel(factory = cameraVmFactory)
     // Layer 12: honor the nav-arg by seeding the mode ONCE per destination entry.
     // Keyed on initialMode so a follow-on navigation with a different mode also re-seeds;
     // NOT on Unit because that would prevent re-entry after the user manually flipped modes.
