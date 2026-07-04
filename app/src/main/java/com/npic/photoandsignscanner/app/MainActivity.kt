@@ -39,9 +39,12 @@ import com.npic.photoandsignscanner.domain.model.SignatureSource
 import com.npic.photoandsignscanner.domain.model.StudentDraft
 import com.npic.photoandsignscanner.domain.repo.StudentRepository
 import com.npic.photoandsignscanner.features.camera.CameraScreen
+import com.npic.photoandsignscanner.data.export.FileShareLauncher
 import com.npic.photoandsignscanner.features.detail.DetailScreen
 import com.npic.photoandsignscanner.features.detail.DetailViewModel
 import com.npic.photoandsignscanner.features.edit.EditScreen
+import com.npic.photoandsignscanner.features.export.ExportSheet
+import com.npic.photoandsignscanner.features.export.ExportViewModel
 import com.npic.photoandsignscanner.features.edit.EditViewModel
 import com.npic.photoandsignscanner.features.edit.SharedCaptureHolder
 import com.npic.photoandsignscanner.features.gallery.GalleryScreen
@@ -131,6 +134,8 @@ private object Route {
     const val Save            = "save"
     const val DetailPattern   = "detail/{id}"
     fun detail(id: Long): String = "detail/$id"
+    const val ExportPattern   = "export/{ids}"
+    fun export(ids: Collection<Long>): String = "export/${ids.joinToString(",")}"
 }
 
 @Composable
@@ -146,6 +151,7 @@ private fun NpicNavHost(
                 studentRepository = studentRepository,
                 onCaptureClick = { navController.navigate(Route.Camera) },
                 onRecordClick = { id -> navController.navigate(Route.detail(id)) },
+                onExportSelection = { ids -> navController.navigate(Route.export(ids.toList())) },
             )
         }
         composable(
@@ -157,6 +163,19 @@ private fun NpicNavHost(
                 studentRepository = studentRepository,
                 recordId = id,
                 onBack = { navController.popBackStack() },
+                onExport = { navController.navigate(Route.export(listOf(id))) },
+            )
+        }
+        composable(
+            route = Route.ExportPattern,
+            arguments = listOf(navArgument("ids") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val raw = backStackEntry.arguments?.getString("ids").orEmpty()
+            val ids = raw.split(",").mapNotNull { it.toLongOrNull() }
+            ExportDestination(
+                studentRepository = studentRepository,
+                recordIds = ids,
+                onCancel = { navController.popBackStack() },
             )
         }
         composable(Route.Camera) {
@@ -248,6 +267,7 @@ private fun GalleryDestination(
     studentRepository: StudentRepository,
     onCaptureClick: () -> Unit,
     onRecordClick: (Long) -> Unit,
+    onExportSelection: (Set<Long>) -> Unit,
 ) {
     val context = LocalContext.current
     val factory = remember(studentRepository) { GalleryViewModel.Factory(studentRepository) }
@@ -256,9 +276,7 @@ private fun GalleryDestination(
         viewModel = viewModel,
         onCaptureClick = onCaptureClick,
         onRecordClick = onRecordClick,
-        onExportSelection = { ids ->
-            Toast.makeText(context, "Export ${ids.size} record(s) → Share sheet (next layer)", Toast.LENGTH_SHORT).show()
-        },
+        onExportSelection = onExportSelection,
         onDeleteSelection = { ids ->
             Toast.makeText(context, "Delete ${ids.size} record(s) → Confirm dialog (next layer)", Toast.LENGTH_SHORT).show()
         },
@@ -276,6 +294,7 @@ private fun DetailDestination(
     studentRepository: StudentRepository,
     recordId: Long,
     onBack: () -> Unit,
+    onExport: () -> Unit,
 ) {
     val context = LocalContext.current
     val factory = remember(studentRepository, recordId) {
@@ -306,9 +325,7 @@ private fun DetailDestination(
         onImportSignature = {
             Toast.makeText(context, "Import signature (next layer)", Toast.LENGTH_SHORT).show()
         },
-        onExport = {
-            Toast.makeText(context, "Export → Format sheet (next layer)", Toast.LENGTH_SHORT).show()
-        },
+        onExport = { _ -> onExport() },
         onDuplicateToAnotherClass = {
             Toast.makeText(context, "Duplicate to another class (next layer)", Toast.LENGTH_SHORT).show()
         },
@@ -459,6 +476,35 @@ private fun SaveDestination(
         onSaved = { recordId ->
             Toast.makeText(context, "Saved student #$recordId", Toast.LENGTH_SHORT).show()
             onSaved()
+        },
+    )
+}
+
+@Composable
+private fun ExportDestination(
+    studentRepository: StudentRepository,
+    recordIds: List<Long>,
+    onCancel: () -> Unit,
+) {
+    val context = LocalContext.current
+    val idsKey = remember(recordIds) { recordIds.joinToString(",") }
+    val factory = remember(studentRepository, idsKey) {
+        ExportViewModel.Factory(studentRepository, recordIds)
+    }
+    val viewModel: ExportViewModel = viewModel(key = "export-$idsKey", factory = factory)
+
+    ExportSheet(
+        viewModel = viewModel,
+        onCancel = onCancel,
+        onShare = { paths, _ ->
+            if (paths.isEmpty()) {
+                Toast.makeText(context, "Nothing to export", Toast.LENGTH_SHORT).show()
+            } else if (paths.size == 1) {
+                FileShareLauncher.shareSingle(context, paths.first(), "Export via UPMSP")
+            } else {
+                FileShareLauncher.shareMulti(context, paths, "Export via UPMSP")
+            }
+            onCancel()
         },
     )
 }

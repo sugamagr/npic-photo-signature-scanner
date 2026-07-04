@@ -1,0 +1,41 @@
+package com.npic.photoandsignscanner.features.export
+
+import androidx.compose.runtime.Immutable
+import com.npic.photoandsignscanner.domain.model.ExportFormat
+import com.npic.photoandsignscanner.domain.model.StudentRecord
+
+/**
+ * Export sheet UI state (PRD §4.10 + DESIGN §7.8). [records] is the target set — always
+ * non-empty when the sheet is open; single-record entries via Detail bottom bar, multi
+ * entries via Gallery selection-mode Export.
+ */
+@Immutable
+data class ExportUiState(
+    val records: List<StudentRecord> = emptyList(),
+    val format: ExportFormat = ExportFormat.Combined,
+    val exporting: Boolean = false,
+    val warningExpanded: Boolean = false,
+) {
+    val recordCount: Int get() = records.size
+    val isMulti: Boolean  get() = records.size > 1
+
+    /**
+     * Records that would be skipped for the current [format]: Combined and SignatureOnly
+     * skip anything without a signature; PhotoOnly skips anything without a photo.
+     */
+    val skipped: List<StudentRecord> get() = records.filter { !hasRequiredMedia(it) }
+    val effective: List<StudentRecord> get() = records.filter { hasRequiredMedia(it) }
+
+    val hasWarning: Boolean get() = skipped.isNotEmpty()
+    val canExport: Boolean get() = !exporting && effective.isNotEmpty()
+
+    private fun hasRequiredMedia(r: StudentRecord): Boolean {
+        val hasPhoto = r.photoPath.isNotBlank()
+        val hasSig   = r.hasSignature
+        return when (format) {
+            ExportFormat.Combined      -> hasPhoto && hasSig
+            ExportFormat.PhotoOnly     -> hasPhoto
+            ExportFormat.SignatureOnly -> hasSig
+        }
+    }
+}
