@@ -11,18 +11,18 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * Presenter for the Detail screen (PRD §4.9). Subscribes to the repo's `observeAll()`
- * flow filtered to the single [recordId] so the screen live-updates when the record is
- * mutated (e.g. Edit → Save-render replaces its photoPath, Layer 8d+).
+ * Presenter for the Detail screen (PRD §4.9). Subscribes to the repo's `observeById`
+ * flow so the screen live-updates only when THIS record mutates (Edit → Save-render
+ * replaces its photoPath, delete, etc.). Oracle #5 A5 (qc-round-10): scoped Flow —
+ * unrelated inserts/updates on other rows no longer wake the Detail screen.
  */
 class DetailViewModel(
     private val repository: StudentRepository,
     private val recordId: String,
 ) : ViewModel() {
 
-    val state: StateFlow<DetailUiState> = repository.observeAll()
-        .map { records ->
-            val hit = records.firstOrNull { it.id == recordId }
+    val state: StateFlow<DetailUiState> = repository.observeById(recordId)
+        .map { hit ->
             DetailUiState(
                 record   = hit,
                 isLoading = false,

@@ -1,6 +1,7 @@
 package com.npic.photoandsignscanner.features.edit
 
 import android.graphics.Bitmap
+import androidx.compose.runtime.Stable
 import com.npic.photoandsignscanner.domain.model.DetectedCrop
 import com.npic.photoandsignscanner.domain.model.EditState
 import com.npic.photoandsignscanner.domain.model.FilterPreset
@@ -11,13 +12,16 @@ import com.npic.photoandsignscanner.domain.model.FilterPreset
  * detection origin (drives the "Couldn't detect ink automatically" banner), and any terminal
  * error to surface as a toast.
  *
- * Not annotated `@Immutable` because [sourceBitmap] / [previewBitmap] / [filterThumbnails]
- * are mutable Bitmap references (contents can change without the wrapper being replaced).
- * The `@Immutable` promise would let Compose skip recompositions the state actually needs.
- * Compose infers Bitmap-holding data classes as Unstable by default, which is correct here.
+ * `@Stable` — [EditViewModel] never mutates a live [EditUiState] instance; every state
+ * transition emits a fresh copy via `_state.update { }` and swaps the whole reference. That
+ * means `equals` is a valid recomposition-skip signal. NOT annotated `@Immutable` because
+ * the Bitmap payloads are physically mutable (pixel data can change without the wrapper
+ * being replaced), and `@Immutable` promises Compose no field ever changes for equal
+ * instances — a stronger contract we can't uphold. `@Stable` is the correct middle ground.
  *
  * Mutations flow through [EditViewModel]. The screen only reads.
  */
+@Stable
 data class EditUiState(
     val edit: EditState,
     val activeTool: EditTool = EditTool.Crop,
@@ -32,8 +36,8 @@ data class EditUiState(
      */
     val sourceBitmap: Bitmap? = null,
     /**
-     * 384px-longest-side downsample used for live Adjust slider previews (PRD §4.5 <100 ms
-     * latency budget). Null until [sourceBitmap] is decoded.
+     * 1920px-longest-side downsample used for live Adjust slider previews (PRD §4.5 <100 ms
+     * latency budget after m1869 quality bump). Null until [sourceBitmap] is decoded.
      */
     val previewBitmap: Bitmap? = null,
     /**

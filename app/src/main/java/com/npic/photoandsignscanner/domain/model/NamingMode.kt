@@ -73,10 +73,13 @@ sealed interface NamingMode {
  * qc-round-9 anchor: post-9eaf564 grep caught divergence between this preview text and
  * GenerateFileName's `.jpeg` output.
  */
+// Oracle #4 S2 (qc-round-10): compile once for the Name-mode preview hot path.
+private val FILENAME_WHITESPACE_RUN = Regex("\\s+")
+
 fun NamingMode.toFilename(classNum: ClassNum): String = when (this) {
     is NamingMode.Serial -> "${classNum.portalCode}${number.toString().padStart(4, '0')}.jpeg"
     is NamingMode.Name   -> {
-        val cleaned = text.trim().replace(Regex("\\s+"), "_")
+        val cleaned = text.trim().replace(FILENAME_WHITESPACE_RUN, "_")
         "${cleaned}_${classNum.portalCode}.jpeg"
     }
 }

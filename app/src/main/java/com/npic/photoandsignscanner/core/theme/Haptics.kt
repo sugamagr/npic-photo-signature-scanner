@@ -1,6 +1,7 @@
 package com.npic.photoandsignscanner.core.theme
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -26,6 +27,7 @@ fun rememberNpicHaptics(): NpicHaptics {
  * screen and call [performClick] / [performLongPress] on events. Instances are cheap:
  * they hold a reference to [HapticFeedback] and a boolean flag.
  */
+@Stable
 class NpicHaptics internal constructor(
     private val feedback: HapticFeedback,
     private val enabled: Boolean,

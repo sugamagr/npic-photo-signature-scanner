@@ -10,6 +10,7 @@ import com.npic.photoandsignscanner.domain.repo.StudentRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
@@ -37,6 +38,9 @@ class InMemoryStudentRepository(
 
     override suspend fun getById(id: String): StudentRecord? =
         _records.value.firstOrNull { it.id == id }
+
+    override fun observeById(id: String): Flow<StudentRecord?> =
+        _records.map { list -> list.firstOrNull { it.id == id } }
 
     override suspend fun delete(id: String): Unit = mutex.withLock {
         val filtered = _records.value.filterNot { it.id == id }
@@ -117,8 +121,12 @@ class InMemoryStudentRepository(
     }
 
     private companion object {
+        // Oracle #4 S2 (qc-round-10): compile once, not per-call. Same regex fires
+        // on every duplicate check + every save on the hot path.
+        private val WHITESPACE_RUN = Regex("\\s+")
+
         /** Normalised comparison key for name-based duplicate detection. */
         fun nameKey(raw: String): String =
-            raw.trim().lowercase().replace(Regex("\\s+"), " ")
+            raw.trim().lowercase().replace(WHITESPACE_RUN, " ")
     }
 }

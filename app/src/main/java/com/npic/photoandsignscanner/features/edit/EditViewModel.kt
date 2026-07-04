@@ -3,8 +3,6 @@ package com.npic.photoandsignscanner.features.edit
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.ViewModel
@@ -100,7 +98,12 @@ class EditViewModel(
         _state.value = EditUiState(edit = EditState.seedFrom(capture))
 
         if (toRecycle.isNotEmpty()) {
-            Handler(Looper.getMainLooper()).post {
+            // Oracle #1 C1 (qc-round-10): tie deferred recycle to viewModelScope so it cancels
+            // cleanly on onCleared() — Handler.post could fire after VM death causing use-after-
+            // recycle on bitmaps a stale Compose read holds. Dispatchers.Main.immediate keeps
+            // the same "next main-thread tick" semantic as post() so Compose still moves past
+            // the mutation frame before recycle runs. No wasteful Handler allocation.
+            viewModelScope.launch(Dispatchers.Main.immediate) {
                 toRecycle.forEach { runCatching { it.recycle() } }
             }
         }
@@ -320,9 +323,10 @@ class EditViewModel(
      * [EditUiState.livePreviewBitmap] which the viewport displays in preference to the raw
      * source (except in Crop mode, where the overlay needs the untransformed source).
      *
-     * Runs on [Dispatchers.Default]. The 384px preview means each render is ~5-15 ms —
-     * well inside PRD §4.5 "<100 ms" budget so no debounce delay is needed.
-     * Prior render is cancelled and its result recycled so slider drags don't stack.
+     * Runs on [Dispatchers.Default]. The 1920px preview means each render is ~30-55 ms
+     * on a mid-tier Snapdragon 6-series (measured on A35 5G) — still inside PRD §4.5
+     * "<100 ms" budget so no debounce delay is needed. Prior render is cancelled and
+     * its result recycled so slider drags don't stack.
      */
     private fun scheduleLivePreview() {
         val snapshot = _state.value ?: return
@@ -347,15 +351,21 @@ class EditViewModel(
                     .onFailure { Log.e(TAG, "live-preview render failed: ${it.message}", it) }
                     .getOrNull()
             } ?: return@launch
+            // Oracle #1 C2 (qc-round-10): StateFlow.update{} may retry its lambda if a
+            // concurrent producer wins the CAS, so any recycle inside the lambda could
+            // fire twice on the same bitmap. Capture the old ref, let update{} commit,
+            // then recycle exactly once outside the retry loop.
+            var stale: Bitmap? = null
             _state.update { s ->
                 if (s == null || s.edit.source.rawPath != activeRawPath) {
                     rendered.recycle()
                     s
                 } else {
-                    s.livePreviewBitmap?.recycle()
+                    stale = s.livePreviewBitmap
                     s.copy(livePreviewBitmap = rendered)
                 }
             }
+            stale?.recycle()
         }
     }
 

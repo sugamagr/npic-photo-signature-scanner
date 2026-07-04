@@ -5,6 +5,7 @@ import com.npic.photoandsignscanner.data.db.StudentDao
 import com.npic.photoandsignscanner.data.db.normalizeNameKey
 import com.npic.photoandsignscanner.data.db.toEntity
 import com.npic.photoandsignscanner.data.db.toRecord
+import com.npic.photoandsignscanner.data.storage.SourceStore
 import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.NamingMode
 import com.npic.photoandsignscanner.domain.model.SaveInput
@@ -28,6 +29,12 @@ import kotlinx.datetime.Clock
  */
 class RoomStudentRepository(
     private val dao: StudentDao,
+    // Oracle #2 D3 (qc-round-10): repo owns the on-disk asset lifecycle so a
+    // record delete cascades to sources/{id}_photo.jpg and _signature.jpg. Without
+    // this, orphaned JPEGs accumulate forever — each ~200 KB × N deletes over the
+    // life of the install. Passing SourceStore into the repo (rather than deleting
+    // from the callsite) keeps delete atomicity honest: the caller can't forget.
+    private val sourceStore: SourceStore,
 ) : StudentRepository {
 
     override fun observeAll(): Flow<List<StudentRecord>> =
@@ -35,6 +42,9 @@ class RoomStudentRepository(
 
     override suspend fun getById(id: String): StudentRecord? =
         dao.getById(id)?.toRecord()
+
+    override fun observeById(id: String): Flow<StudentRecord?> =
+        dao.observeById(id).map { it?.toRecord() }
 
     override suspend fun nextSerial(classNum: ClassNum): Int =
         dao.peekNextSerial(classNum.label)
@@ -121,11 +131,29 @@ class RoomStudentRepository(
             createdAt     = draft.createdAt,
             updatedAt     = now,
         )
-        dao.replace(existingId = existingId, incoming = record.toEntity(namingKind = input.naming.kind.name))
+        // Oracle #2 D2 (qc-round-10): replace() must advance the class counter for
+        // Serial-mode inputs, matching save(). Without this, a "Keep new" with
+        // serial N > current counter leaves the counter stale — the next auto-serial
+        // collides with N and the user hits DuplicateFound on a fresh save. Name mode
+        // already bumped via nextSerialAndBump above so passes null.
+        val advanceTo = (input.naming as? NamingMode.Serial)?.number
+        dao.replaceWithCounter(
+            existingId       = existingId,
+            incoming         = record.toEntity(namingKind = input.naming.kind.name),
+            advanceCounterTo = advanceTo,
+        )
+        // Oracle #2 D3: replace() reuses the SAME id (draft.id == existingId when the
+        // UpdateConfirm flow is in play, per SharedCaptureHolder.beginUpdate). SourceStore
+        // files are keyed by id so they're overwritten by the fresh writePhoto/writeSignature
+        // that ran during Edit commit — no orphan cleanup needed here.
         return SaveResult.Success(record)
     }
 
     override suspend fun delete(id: String) {
         dao.delete(id)
+        // Oracle #2 D3 (qc-round-10): delete BOTH source assets to prevent orphan
+        // accumulation. deleteFor() is idempotent so a missing file is a no-op —
+        // safe even if the record had no signature.
+        sourceStore.deleteFor(id)
     }
 }

@@ -127,7 +127,9 @@ class MainActivity : ComponentActivity() {
     // internally serialises writes on its executor and shares a single connection pool,
     // so a lazy singleton here is the composition root for both repositories.
     private val roomDb by lazy { NpicDatabase.create(this) }
-    private val studentRepository: StudentRepository by lazy { RoomStudentRepository(roomDb.studentDao()) }
+    private val studentRepository: StudentRepository by lazy {
+        RoomStudentRepository(dao = roomDb.studentDao(), sourceStore = sourceStore)
+    }
     private val draftRepository: DraftRepository by lazy { RoomDraftRepository(roomDb.draftDao()) }
 
     // Settings drawer prefs (user m1551 S3). DataStore is process-scoped so we hand it
@@ -171,10 +173,11 @@ class MainActivity : ComponentActivity() {
                             draftIdProvider = { captureHolder.draftIdOrMint() },
                         )
                     }
-                    val settingsVmFactory = remember(appSettingsRepository, roomDb, sourceStore) {
+                    val settingsVmFactory = remember(appSettingsRepository, roomDb, draftRepository, sourceStore) {
                         SettingsViewModel.Factory(
                             settingsRepository = appSettingsRepository,
                             database = roomDb,
+                            draftRepository = draftRepository,
                             sourceStore = sourceStore,
                             cacheDir = cacheDir,
                         )
@@ -183,6 +186,11 @@ class MainActivity : ComponentActivity() {
                     val drawerState = rememberDrawerState(DrawerValue.Closed)
                     val drawerScope = rememberCoroutineScope()
                     val hostContext = LocalContext.current
+                    // Oracle #5 A10 (qc-round-10): NavController is hoisted OUTSIDE
+                    // ModalNavigationDrawer so its back-stack survives drawer open/close
+                    // cycles. Inside the drawer's content lambda it would be re-remembered
+                    // each time the drawer scope rebuilds — silently resetting nav state.
+                    val navController = rememberNavController()
                     ModalNavigationDrawer(
                         drawerState = drawerState,
                         drawerContent = {
@@ -201,7 +209,7 @@ class MainActivity : ComponentActivity() {
                         },
                     ) {
                         NpicNavHost(
-                            navController = rememberNavController(),
+                            navController = navController,
                             captureHolder = captureHolder,
                             editVmFactory = editVmFactory,
                             studentRepository = studentRepository,
@@ -1063,7 +1071,10 @@ private fun handleExportResult(
     val jpegMime = FileShareLauncher.MIME_JPEG
     val zipMime = if (mimePref == com.npic.photoandsignscanner.domain.model.ExportMime.JpegOnly)
         jpegMime else FileShareLauncher.MIME_ZIP
-    when (result) {
+    // Oracle #5 A9 (qc-round-10): assign the when to Unit so the compiler enforces
+    // exhaustiveness. Adding a new ExportResult variant will now fail to compile until
+    // this handler learns about it, catching silent drops of new export outcomes.
+    val exhaustive: Unit = when (result) {
         is com.npic.photoandsignscanner.features.export.ExportResult.Ready.Single -> {
             raiseUnderMinToast(context, result.underMinCount, total = 1)
             FileShareLauncher.shareSingle(
@@ -1116,6 +1127,8 @@ private fun handleExportResult(
         com.npic.photoandsignscanner.features.export.ExportResult.Failed ->
             Toast.makeText(context, "Couldn't prepare the export", Toast.LENGTH_SHORT).show()
     }
+    // Silence "unused" while keeping the exhaustiveness assertion above.
+    @Suppress("UNUSED_VARIABLE") exhaustive
 }
 
 private fun raiseUnderMinToast(context: android.content.Context, underMinCount: Int, total: Int) {

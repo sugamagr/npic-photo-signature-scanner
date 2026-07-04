@@ -29,6 +29,14 @@ interface StudentRepository {
     suspend fun getById(id: String): StudentRecord?
 
     /**
+     * Cold flow of one record by ID — emits the current value on subscribe and re-emits
+     * whenever that record changes (Oracle #5 A5, qc-round-10). Emits `null` if the row
+     * is deleted or never existed. Backed by a `WHERE id = :id` query on the DAO so it
+     * doesn't wake up on unrelated writes.
+     */
+    fun observeById(id: String): Flow<StudentRecord?>
+
+    /**
      * Next available serial for [classNum] — `max(existingSerials) + 1`, floor 1. The
      * Save dialog uses this to auto-populate the serial input.
      */

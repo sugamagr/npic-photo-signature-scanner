@@ -9,6 +9,7 @@ import com.npic.photoandsignscanner.data.storage.SourceStore
 import com.npic.photoandsignscanner.domain.model.AppSettings
 import com.npic.photoandsignscanner.domain.model.ExportMime
 import com.npic.photoandsignscanner.domain.model.MotionPreference
+import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +34,7 @@ import java.io.File
 class SettingsViewModel(
     private val settingsRepository: AppSettingsRepository,
     private val database: NpicDatabase,
+    private val draftRepository: DraftRepository,
     private val sourceStore: SourceStore,
     private val cacheDir: File,
 ) : ViewModel() {
@@ -61,7 +63,7 @@ class SettingsViewModel(
             val success = withContext(Dispatchers.IO) {
                 runCatching {
                     database.studentDao().clearAll()
-                    database.draftDao().clear()
+                    draftRepository.clear()
                     sourceStore.deleteAll()
                     deleteCacheSubdir("drafts")
                     deleteCacheSubdir("exports")
@@ -82,6 +84,7 @@ class SettingsViewModel(
     class Factory(
         private val settingsRepository: AppSettingsRepository,
         private val database: NpicDatabase,
+        private val draftRepository: DraftRepository,
         private val sourceStore: SourceStore,
         private val cacheDir: File,
     ) : ViewModelProvider.Factory {
@@ -90,6 +93,7 @@ class SettingsViewModel(
             return SettingsViewModel(
                 settingsRepository = settingsRepository,
                 database = database,
+                draftRepository = draftRepository,
                 sourceStore = sourceStore,
                 cacheDir = cacheDir,
             ) as T

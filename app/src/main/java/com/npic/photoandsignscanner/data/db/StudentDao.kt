@@ -21,6 +21,16 @@ interface StudentDao {
     @Query("SELECT * FROM students WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): StudentEntity?
 
+    /**
+     * Oracle #5 A5 (qc-round-10): scoped Flow subscription that emits only when THIS
+     * row changes. DetailViewModel previously listened on `observeAll()` and filtered
+     * client-side — every unrelated insert/update/delete woke the Detail screen up.
+     * Room invalidates this Flow only on writes touching `students.id = :id`.
+     * Emits `null` when the row is missing (never removed, or deleted after view).
+     */
+    @Query("SELECT * FROM students WHERE id = :id LIMIT 1")
+    fun observeById(id: String): Flow<StudentEntity?>
+
     @Query(
         "SELECT * FROM students WHERE classNum = :classNum AND serial = :serial LIMIT 1",
     )
@@ -69,6 +79,33 @@ interface StudentDao {
     suspend fun replace(existingId: String, incoming: StudentEntity) {
         delete(existingId)
         insert(incoming)
+    }
+
+    /**
+     * Oracle #2 D2 (qc-round-10): PRD §4.7 replace + optional counter advance in one
+     * transaction. Serial-mode replace paths must bump the counter when the new serial
+     * exceeds the current lastSerial, otherwise the next auto-populate collides. Passing
+     * null skips the counter update (Name-mode already bumped via [nextSerialAndBump]).
+     */
+    @Transaction
+    suspend fun replaceWithCounter(
+        existingId: String,
+        incoming: StudentEntity,
+        advanceCounterTo: Int?,
+    ) {
+        delete(existingId)
+        insert(incoming)
+        if (advanceCounterTo != null) {
+            val current = getLastSerial(incoming.classNum) ?: 0
+            if (advanceCounterTo > current) {
+                setCounter(
+                    ClassCounterEntity(
+                        classNum = incoming.classNum,
+                        lastSerial = advanceCounterTo,
+                    ),
+                )
+            }
+        }
     }
 
     /**

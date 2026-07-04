@@ -8,12 +8,12 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.npic.photoandsignscanner.domain.model.AppSettings
 import com.npic.photoandsignscanner.domain.model.MotionPreference
 import kotlinx.coroutines.flow.Flow
@@ -153,7 +153,7 @@ fun NpicTheme(
 ) {
     val context = LocalContext.current
     val systemReduce = remember(context) { context.resolveReduceMotion() }
-    val settings by settingsFlow.collectAsState(initial = AppSettings.Default)
+    val settings by settingsFlow.collectAsStateWithLifecycle(initialValue = AppSettings.Default)
     // Motion override layers on the system reading (user m1551 S3): explicit `On`/`Off`
     // wins over Settings.Global; `System` defers to the platform. This means a user who
     // wants full motion on a device with system reduce-motion enabled can force it, and

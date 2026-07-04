@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import java.util.UUID
@@ -60,23 +61,36 @@ class SharedCaptureHolder(
             // returns from the lambda, not the collect call, so the coroutine would
             // otherwise stay alive fighting in-memory writes. `firstOrNull()` closes
             // the collector after the first value (or immediate null on empty DB).
+            //
+            // Oracle #1 C3 (qc-round-10): use atomic `update { current -> ... }` rather
+            // than a check-then-set on `.value`. Between the disk read completing and
+            // this coroutine resuming on Main, a Camera destination could have called
+            // pushCapture and populated _draft. `update` retries on lost race so the
+            // in-memory writer wins over a stale disk read.
             val persisted = draftRepository.observeActive().firstOrNull()
-            if (_draft.value == null && persisted != null) {
-                _draft.value = persisted
+            if (persisted != null) {
+                _draft.update { current -> current ?: persisted }
             }
             // Oracle O1-7: also rehydrate the raw CameraCapture so a killed process
             // between shutter press and Edit's commit can pick up the same rawPath +
             // guide-box. latestCapture() returns null when the persisted draft has no
             // rawPath (drawn-signature-first flows) — treat as "no capture yet".
-            if (_capture.value == null) {
-                val restored = runCatching { draftRepository.latestCapture() }.getOrNull()
-                if (restored != null) _capture.value = restored
+            val restored = runCatching { draftRepository.latestCapture() }.getOrNull()
+            if (restored != null) {
+                _capture.update { current -> current ?: restored }
             }
         }
     }
 
     fun pushCapture(capture: CameraCapture) {
         _capture.value = capture
+        // Oracle #5 A2 (qc-round-10): a fresh Camera capture must clear _target so nav
+        // routes to Save, not stale UpdateConfirm. Reproducer: Detail → edit-media
+        // (target set via beginUpdate) → user backs out to Gallery → Camera →
+        // Capture. Without this line, target still holds the old record and Edit's
+        // commit branch nav-routes to UpdateConfirm which then tries to repo.replace()
+        // an unrelated record.
+        _target.value = null
         // Persist to survive process kill. Mint a draft if none exists so latestCapture()
         // has a row to hang the rawPath columns off. Oracle O1-7.
         val next = currentOrNew()

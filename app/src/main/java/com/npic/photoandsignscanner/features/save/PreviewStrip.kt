@@ -20,11 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,8 +29,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -42,11 +38,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
+import java.io.File
 
 /**
  * The Save-sheet preview row (PRD §4.6, DESIGN §7.4). Renders the captured photo (left)
@@ -106,13 +104,6 @@ private fun PreviewTile(
         Stroke(width = with(density) { 1.5.dp.toPx() }, pathEffect = dashEffect)
     }
 
-    var thumb by remember(path) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(path) {
-        thumb = null
-        // TODO(save): decode the actual bitmap via Coil once the Save layer lands. Layer 8b
-        // renders the "Ready" placeholder to stay honest about the media not being loaded.
-    }
-
     Box(
         modifier = modifier
             .clip(shape)
@@ -162,27 +153,16 @@ private fun PreviewTile(
                     )
                 }
             }
-        } else if (thumb != null) {
-            androidx.compose.foundation.Image(
-                bitmap = thumb!!.asImageBitmap(),
+        } else {
+            // Oracle #5 A8 (qc-round-10): Coil AsyncImage replaces the "Ready" stub.
+            // File-model bypasses Coil's URI resolver — direct BitmapFactory.decodeFile
+            // path is fastest for our on-disk SourceStore assets.
+            AsyncImage(
+                model = File(path),
                 contentDescription = null,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().clip(shape),
             )
-        } else {
-            // Path exists but bitmap hasn't been decoded (Layer 8b keeps this honest);
-            // render the icon in Ink so the tile still looks "filled".
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
-            ) {
-                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { icon() }
-                Text(
-                    text = "Ready",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = chrome.inkMuted,
-                )
-            }
         }
     }
 }

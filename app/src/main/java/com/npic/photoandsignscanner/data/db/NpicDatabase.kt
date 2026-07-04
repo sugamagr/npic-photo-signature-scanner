@@ -61,12 +61,24 @@ abstract class NpicDatabase : RoomDatabase() {
                 // Two passes handle any input up to ~64 consecutive spaces — well beyond
                 // any real name. Oracle qc-round-8 flagged the single-pass version as
                 // leaving 2 spaces on 9+ space runs.
+                // Oracle #2 D1 (qc-round-10): Kotlin's normalizeNameKey uses `\s+` which
+                // matches ALL Unicode whitespace (tab 0x09, LF 0x0A, CR 0x0D, ASCII space
+                // 0x20, plus U+00A0 NBSP etc.). SQLite REPLACE only substitutes literal
+                // strings, so we must FIRST fold tab / LF / CR / NBSP down to plain space,
+                // THEN run the two-pass REPLACE chain to collapse runs. Without the
+                // pre-pass, a name saved as "John\tDoe" in v1 would migrate to
+                // "john\tdoe" and mismatch the runtime lookup "john doe".
                 db.execSQL(
                     """
                     UPDATE students SET nameKey = LOWER(TRIM(
                         REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
                             REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                displayName,
+                                REPLACE(REPLACE(REPLACE(REPLACE(
+                                    displayName,
+                                    char(9), ' '),
+                                    char(10), ' '),
+                                    char(13), ' '),
+                                    char(160), ' '),
                                 '        ', ' '),
                                 '       ', ' '),
                                 '      ', ' '),

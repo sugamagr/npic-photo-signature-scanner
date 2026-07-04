@@ -88,6 +88,20 @@ class DuplicateAssetsUseCase(private val sourceStore: SourceStore) {
             return@withContext null
         }
 
+        // Oracle #2 D6 (qc-round-10): partial-success rollback. If the source had BOTH
+        // assets but only one copy succeeded, delete the successful copy and abort so
+        // the caller doesn't land a record advertising a signature (or photo) it can't
+        // actually render. Duplicate is an all-or-nothing operation from the user's
+        // perspective — better to fail cleanly than to silently drop half the data.
+        val sourceHadBoth = sourcePhoto != null && sourceSig != null
+        val copyIncomplete = newPhoto == null || newSig == null
+        if (sourceHadBoth && copyIncomplete) {
+            Log.w(TAG, "duplicate partial-fail: rolling back stray copies for ${source.id}")
+            newPhoto?.let { runCatching { File(it).delete() } }
+            newSig?.let { runCatching { File(it).delete() } }
+            return@withContext null
+        }
+
         StudentDraft(
             id = newId,
             photoPath = newPhoto,

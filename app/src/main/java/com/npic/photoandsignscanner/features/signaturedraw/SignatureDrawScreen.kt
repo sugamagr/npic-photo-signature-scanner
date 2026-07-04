@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -144,6 +145,7 @@ fun SignatureDrawScreen(
  * projects [strokes] through the on-screen canvas size onto the 1500×500 export bitmap via
  * [SignatureRasterizer.rasterize].
  */
+@Immutable
 data class SignatureDrawResult(
     val strokes: List<com.npic.photoandsignscanner.domain.model.DrawStroke>,
 )

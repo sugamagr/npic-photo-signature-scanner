@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -654,6 +655,15 @@ private fun GalleryGrid(
     onRecordClick: (String) -> Unit,
     onRecordLongPress: (String) -> Unit,
 ) {
+    // Oracle #5 A3 (qc-round-10): capture the mutable selection axes into
+    // rememberUpdatedState so the per-item onClick / onLongPress lambdas hold a
+    // stable reference. Without this, toggling selection mode changed the `state`
+    // capture inside each item block and Compose re-invoked the block for every
+    // thumbnail in the grid — an O(N) re-render on a single-bit UI toggle.
+    val selectionModeRef = rememberUpdatedState(state.isSelectionMode)
+    val selectedIdsRef   = rememberUpdatedState(state.selectedIds)
+    val clickRef         = rememberUpdatedState(onRecordClick)
+    val longPressRef     = rememberUpdatedState(onRecordLongPress)
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         contentPadding = PaddingValues(
@@ -667,16 +677,16 @@ private fun GalleryGrid(
         verticalArrangement   = Arrangement.spacedBy(NpicSpacing.sm),
     ) {
         items(items = state.records, key = { it.id }) { record ->
-            val selected = record.id in state.selectedIds
+            val selected = record.id in selectedIdsRef.value
             NpicThumbnail(
                 classLabel = record.classNum.label,
                 selected = selected,
                 missingSignature = !record.hasSignature,
                 onClick = {
-                    if (state.isSelectionMode) onRecordLongPress(record.id)
-                    else onRecordClick(record.id)
+                    if (selectionModeRef.value) longPressRef.value(record.id)
+                    else clickRef.value(record.id)
                 },
-                onLongPress = { onRecordLongPress(record.id) },
+                onLongPress = { longPressRef.value(record.id) },
                 content = {
                     // Bug#1+#2: render the saved photo from SourceStore (`filesDir/sources/`).
                     // Coil handles missing-file / decode failure by leaving the slot blank,

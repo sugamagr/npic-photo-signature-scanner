@@ -519,6 +519,132 @@ Bundle-safe form.
 **Priority:** low. Signature draw sessions are short (<30s typically);
 Android rarely kills a foreground process mid-draw.
 
+### C5. Crop overlay coordinate-space transform (image-space ↔ view-space)
+
+**Deferred as:** "quad in `EditState.crop` is logically image-space (from
+`PhotoEdgeDetector` output or `guideBoxImageSpace`) but `NpicCropOverlay`
+draws + hit-tests in Canvas-local px."
+
+**Why it works empirically today:** `moveCorner` / `translated` clamp to
+`size.width/height` (viewport px), so after any user drag the quad collapses
+into view-space. Initial placement is technically wrong but the golden path
+(user always drags at least once before Save) hides it. Detection quads
+happen to land inside viewport when the image aspect matches the guide.
+
+**Real failure mode:** a fresh capture where `guideBoxImageSpace` is
+non-null (Camera set it) and `initialCropFor` places corners at image-space
+coords like (1600, 3200) that never intersect the 360dp viewport — user
+sees no handles on entry. Doesn't repro on the A35 test device because our
+capture flow always seeds a viewport-fittable quad, but is a landmine for
+different aspect ratios or `PickVisualMedia` imports.
+
+**Correct fix (~3-4h):** apply a bidirectional transform in EditScreen
+ImageViewport: store quad in image-space (source of truth for Save's
+`EditRenderer.render`), transform via `sourceW/viewW` + `sourceH/viewH`
+scale factors for display, transform back on `onQuadChange`. Requires
+threading source dims + overlay layout size through `NpicCropOverlay`.
+
+**Priority:** high for v1.1 (hidden data-integrity bug on non-standard
+imports). Deferred out of v1.0 because current golden path works and the
+architectural plumbing is non-trivial.
+
+**Anchored source finding:** qc-round-10 Oracle #3 BLOCKER-I2.
+
+### C6. `BuildConfig.DEBUG` gate for production `Log.*` calls
+
+**Deferred as:** "we log file paths + bitmap dimensions in a few dozen
+places; harmless in dev but a supply-chain smell in a release APK."
+
+**Scope:** wrap every `Log.d/i/w/e` in `if (BuildConfig.DEBUG) { ... }`
+or introduce a thin `Logger` façade that no-ops in release. ~30 sites
+across `EditViewModel`, `CameraViewModel`, `OpenCvBridge`,
+`PhotoEdgeDetector`, `SignatureInkIsolator`, `NpicDatabase`,
+`RoomDraftRepository`, `MediaStoreExporter`, `DuplicateAssetsUseCase`.
+
+**Estimated cost:** ~1 hour, mostly search-and-replace.
+
+**Priority:** low. Zero user-visible impact. Deferred because v1.0 is not
+shipping to Play Store — sideloaded APKs are debug-signed anyway.
+
+**Anchored source finding:** qc-round-10 Oracle #4 LOW-S1.
+
+### C7. `SettingsViewModel` inlines `NpicDatabase` — extract `ClearAllDataUseCase`
+
+**Deferred as:** "the Settings VM imports Room's DAO layer directly instead
+of going through a domain-layer use case."
+
+**Scope:** create `domain/usecase/ClearAllDataUseCase(studentRepo,
+draftRepo, sourceStore, cacheDir)` and inject that into `SettingsViewModel`
+instead of `NpicDatabase`. Removes the `data.db` import from the features
+layer.
+
+**Estimated cost:** ~45 min.
+
+**Priority:** low. Pure architectural cleanup — user-facing behavior stays
+identical. Deferred because the layer bleed is contained to one file and
+we've already reworked SettingsViewModel through `DraftRepository` (fix
+MINOR-D5 landed in qc-round-10).
+
+**Anchored source finding:** qc-round-10 Oracle #5 MINOR-A6.
+
+### C8. `LocalAppSettings` — `staticCompositionLocalOf` vs `compositionLocalOf`
+
+**Deferred as:** "AppSettings can change at runtime (user toggles a switch)
+but `NpicTheme` provides it via `staticCompositionLocalOf`."
+
+**Why it works empirically:** `staticCompositionLocalOf` DOES propagate
+updates — it just skips subtree invalidation as an optimization when the
+value is stable. Since we re-provide with a fresh `AppSettings` instance
+on every `settingsFlow` emission, the whole subtree recomposes anyway,
+so the "static" optimization is moot.
+
+**Correct fix:** switch to `compositionLocalOf` for semantic honesty.
+Sub-tree invalidation would then be scoped instead of theme-wide.
+
+**Priority:** very low. Behavioral difference is invisible for our
+current consumers (`Haptics`, `handleExportResult`). Deferred as
+pure semantics.
+
+**Anchored source finding:** qc-round-10 Oracle #5 MINOR-A11.
+
+### C9. Unique constraint on `(students.classNum, students.nameKey)`
+
+**Deferred as:** "duplicate detection for Name mode is currently a check-
+then-insert TOCTOU. Serial mode has a UNIQUE index closing the race; Name
+mode does not."
+
+**Scope:** add `Index(value = ["classNum", "nameKey"], unique = true)` to
+`StudentEntity` + schema v3 migration + `SQLiteConstraintException` catch
+on the Name path mirroring Serial's backstop in `RoomStudentRepository.save()`.
+
+**Estimated cost:** ~1 hour including schema migration + tests.
+
+**Priority:** low. Concurrent-save-on-same-name is vanishingly rare (one
+teacher, one device, one form at a time). Deferred because it needs a v3
+schema bump and the current check-then-insert works for the actual usage
+pattern.
+
+**Anchored source finding:** qc-round-10 Oracle #2 MINOR-D7.
+
+### C10. `ExportViewModel` — split IO decode from CPU-bound compress dispatchers
+
+**Deferred as:** "`renderPayloads` runs the entire pipeline on
+`Dispatchers.IO` including the CPU-bound `combinedRenderer.render` +
+`jpegCompressor.compress` calls. That pins one IO thread per record
+during compression."
+
+**Scope:** split into three stages: decode (IO), render + compress
+(Default), MediaStore write (IO). Use `withContext(Dispatchers.Default)`
+around the CPU work.
+
+**Estimated cost:** ~30 min.
+
+**Priority:** very low. Batch exports on A35 5G measure ~250ms per
+record end-to-end; even mispinning IO threads has zero user-visible
+impact at the scale we're at (typical bulk export ≤50 records).
+
+**Anchored source finding:** qc-round-10 Oracle #1 MINOR-C5.
+
 ---
 
 ## How to extend this doc

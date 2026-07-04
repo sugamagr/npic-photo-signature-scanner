@@ -76,8 +76,13 @@ data class StudentEntity(
  * queries route through the same function — any change here must be reflected on both.
  * Devanagari support is DEFERRED-DECISIONS B10 (NFKC when Hindi ships).
  */
+// Oracle #4 S2 (qc-round-10): hoisted so writes + queries share one compiled Regex
+// instead of allocating on every normalizeNameKey call. Any migration change must
+// mirror this pattern — see NpicDatabase.MIGRATION_1_2 backfill.
+private val NAME_WHITESPACE_RUN = Regex("\\s+")
+
 internal fun normalizeNameKey(displayName: String): String =
-    displayName.trim().replace(Regex("\\s+"), " ").lowercase()
+    displayName.trim().replace(NAME_WHITESPACE_RUN, " ").lowercase()
 
 /** Room entity → domain read-model. */
 internal fun StudentEntity.toRecord(): StudentRecord = StudentRecord(
