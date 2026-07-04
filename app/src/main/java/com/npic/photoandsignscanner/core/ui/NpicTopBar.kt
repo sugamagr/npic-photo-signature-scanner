@@ -83,7 +83,7 @@ fun NpicTopBar(
             Text(
                 text  = title,
                 color = contentColor,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = NpicSpacing.xs),

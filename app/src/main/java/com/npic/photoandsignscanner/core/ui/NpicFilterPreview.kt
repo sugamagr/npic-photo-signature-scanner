@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,10 +32,11 @@ import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
 
 /**
- * A single filter chip in the Edit ⇢ Filter strip. 88dp wide × ~120dp tall (aspect 3:4
- * preview). The [content] slot receives a Box constrained to the preview area so callers
- * can paint an actual thumbnail — this component owns the frame, selection ring, and label
- * only.
+ * A single filter chip in the Edit ⇢ Filter strip. Per DESIGN §6.18: 72dp wide × 96dp tall
+ * Column; the image itself is a 72dp square clipped to [NpicShapes.sm]; label sits below.
+ *
+ * The [content] slot receives a Box already sized to the 72dp square so callers just paint
+ * the thumbnail — this component owns the frame, selection ring, and label only.
  *
  * On dark chrome (Edit is dark by DESIGN §7.6), unselected label is CameraInkMuted; selected
  * is CameraInk on a 2dp Saffron ring.
@@ -70,15 +70,13 @@ fun NpicFilterPreview(
     )
 
     Column(
-        modifier = modifier.width(88.dp).clickable(onClick = onClick),
+        modifier = modifier.width(72.dp).clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .width(88.dp)
-                .aspectRatio(3f / 4f)
+                .size(72.dp)
                 .clip(NpicShapes.sm)
                 .background(NpicColors.SurfaceRaised, NpicShapes.sm)
                 .border(2.dp, ringColor, NpicShapes.sm),

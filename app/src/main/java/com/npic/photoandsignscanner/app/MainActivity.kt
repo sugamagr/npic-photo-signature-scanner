@@ -58,6 +58,9 @@ class MainActivity : ComponentActivity() {
                         onOverflowClick = {
                             Toast.makeText(context, "Overflow menu (next layer)", Toast.LENGTH_SHORT).show()
                         },
+                        onSearchClick = {
+                            Toast.makeText(context, "Search (next layer)", Toast.LENGTH_SHORT).show()
+                        },
                     )
                 }
             }

@@ -98,7 +98,7 @@ fun NpicCaptureFab(
                 Text(
                     text  = label,
                     color = NpicColors.Ink,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight(600)),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(600)),
                 )
             }
         }

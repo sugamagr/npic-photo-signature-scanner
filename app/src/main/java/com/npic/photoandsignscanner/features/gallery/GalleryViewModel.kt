@@ -20,6 +20,13 @@ import kotlinx.coroutines.flow.update
  * All derivation runs on the caller (Main). The dataset is bounded (max ~2000 records for
  * a two-year school; median 200–400) so filter+sort in-memory is fine — no LazyPagingSource
  * required.
+ *
+ * TODO(repo): When [StudentRepository] lands, replace the `seed` constructor arg with an
+ * injected repository interface and introduce a [androidx.lifecycle.ViewModelProvider.Factory]
+ * so `MainActivity` can hand the repo in. At the same time, drop the synchronous `recompute()`
+ * for a `combine(all, classFilter, sortMode, selected)` pipeline `.stateIn(viewModelScope,
+ * SharingStarted.WhileSubscribed(5_000), initial)`. Kept synchronous now because (a) mock
+ * seed is static and (b) it makes the state trace trivially readable during the shell phase.
  */
 class GalleryViewModel(
     private val seed: List<StudentRecord> = MockGalleryData.records(),
@@ -81,18 +88,24 @@ class GalleryViewModel(
         val sorted = when (_sortMode.value) {
             SortMode.Newest -> filtered.sortedByDescending { it.createdAt }
             SortMode.Oldest -> filtered.sortedBy { it.createdAt }
-            SortMode.ClassAscending ->
-                filtered.sortedWith(compareBy({ it.classNum.ordinal }, { it.serial }))
             SortMode.NameAscending ->
                 filtered.sortedBy { it.displayName.lowercase() }
+            SortMode.NameDescending ->
+                filtered.sortedByDescending { it.displayName.lowercase() }
+            SortMode.ClassAscending ->
+                filtered.sortedWith(compareBy({ it.classNum.ordinal }, { it.serial }))
+            SortMode.ClassDescending ->
+                filtered.sortedWith(compareByDescending<StudentRecord> { it.classNum.ordinal }.thenBy { it.serial })
         }
+        val counts = all.groupingBy { it.classNum }.eachCount()
         return GalleryUiState(
-            records     = sorted,
-            totalCount  = all.size,
-            classFilter = filter,
-            sortMode    = _sortMode.value,
-            selectedIds = _selected.value,
-            isLoading   = false,
+            records        = sorted,
+            totalCount     = all.size,
+            countsByClass  = counts,
+            classFilter    = filter,
+            sortMode       = _sortMode.value,
+            selectedIds    = _selected.value,
+            isLoading      = false,
         )
     }
 }

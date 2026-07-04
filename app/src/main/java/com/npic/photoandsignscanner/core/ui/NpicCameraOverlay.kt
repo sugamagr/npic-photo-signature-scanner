@@ -10,11 +10,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.NpicColors
@@ -22,8 +22,11 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
 
 /**
  * Static camera guide-box overlay. Draws a black 60% scrim across the whole preview area
- * with a rectangular cut-out matching the mode's aspect (3:4 photo, 3:1 signature). A 2dp
- * Saffron stroke traces the cut-out edge (DESIGN §7).
+ * with a rectangular cut-out matching the mode's aspect (3:4 photo, 3:1 signature).
+ *
+ * Per DESIGN §6.16, framing is indicated by four Saffron corner brackets (Halide/ProCam
+ * style) — 24dp arms × 3dp stroke with rounded caps — NOT a full-perimeter stroke. This
+ * keeps the guide unobtrusive at the edges while still telegraphing the crop.
  *
  * The [aspect] is the ratio `width / height`. The guide box takes 88% of the shorter axis.
  * Center is fixed.
@@ -45,16 +48,48 @@ fun NpicCameraOverlay(
             val scrim = Path().apply { op(outer, cut, PathOperation.Difference) }
             drawPath(scrim, color = Color.Black.copy(alpha = 0.60f))
 
-            // Saffron stroke around the cut-out.
-            drawRect(
-                color = NpicColors.Saffron,
-                topLeft = boxRect.topLeft,
-                size    = boxRect.size,
-                style   = Stroke(width = 2.dp.toPx()),
-            )
+            // Saffron corner brackets around the cut-out (DESIGN §6.16).
+            drawCornerBrackets(boxRect)
         }
     }
 }
+
+/**
+ * Draws four Saffron L-shaped brackets at the corners of [rect]. Each bracket has a 24dp
+ * arm along both axes with a 3dp stroke and rounded caps. Per DESIGN §6.16. The [hDir] and
+ * [vDir] fields on [Bracket] are ±1 and encode which direction each arm extends from the
+ * anchor corner.
+ */
+private fun DrawScope.drawCornerBrackets(rect: Rect) {
+    val armPx    = 24.dp.toPx()
+    val strokePx = 3.dp.toPx()
+    val color    = NpicColors.Saffron
+
+    val brackets = listOf(
+        Bracket(anchor = Offset(rect.left,  rect.top),    hDir = +1f, vDir = +1f),
+        Bracket(anchor = Offset(rect.right, rect.top),    hDir = -1f, vDir = +1f),
+        Bracket(anchor = Offset(rect.right, rect.bottom), hDir = -1f, vDir = -1f),
+        Bracket(anchor = Offset(rect.left,  rect.bottom), hDir = +1f, vDir = -1f),
+    )
+    for (b in brackets) {
+        drawLine(
+            color = color,
+            start = b.anchor,
+            end   = Offset(b.anchor.x + b.hDir * armPx, b.anchor.y),
+            strokeWidth = strokePx,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = color,
+            start = b.anchor,
+            end   = Offset(b.anchor.x, b.anchor.y + b.vDir * armPx),
+            strokeWidth = strokePx,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+private data class Bracket(val anchor: Offset, val hDir: Float, val vDir: Float)
 
 private fun computeGuideBox(canvas: Size, aspect: Float, fill: Float): Rect {
     // Try width-limited first

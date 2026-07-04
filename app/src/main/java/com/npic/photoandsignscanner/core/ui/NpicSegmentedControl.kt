@@ -55,16 +55,18 @@ fun <T> NpicSegmentedControl(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .clip(NpicShapes.md)
-            .background(NpicColors.Surface, NpicShapes.md)
-            .border(1.dp, chrome.borderStrong, NpicShapes.md)
-            .padding(4.dp),
+            .height(44.dp)
+            .clip(NpicShapes.sm)
+            .background(NpicColors.Ivory, NpicShapes.sm)
+            .border(1.dp, chrome.borderStrong, NpicShapes.sm)
+            .padding(NpicSpacing.xxs),
     ) {
         options.forEach { option ->
             val isSelected = option == selected
+            // DESIGN §6.9: Selected segment fill Surface (not SaffronSoft), 1dp BorderStrong all around,
+            // small shadow (Level 1). Unselected segments transparent.
             val container by animateColorAsState(
-                targetValue = if (isSelected) chrome.saffronSoft else Color.Transparent,
+                targetValue = if (isSelected) NpicColors.Surface else Color.Transparent,
                 animationSpec = NpicMotion.standard(),
                 label = "segment_container",
             )
@@ -81,8 +83,11 @@ fun <T> NpicSegmentedControl(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(NpicShapes.sm)
-                    .background(container, NpicShapes.sm)
+                    .clip(NpicShapes.xs)
+                    .background(container, NpicShapes.xs)
+                    .let { m ->
+                        if (isSelected) m.border(1.dp, chrome.borderStrong, NpicShapes.xs) else m
+                    }
                     .clickable(enabled = enabled) { onSelect(option) },
                 contentAlignment = Alignment.Center,
             ) {

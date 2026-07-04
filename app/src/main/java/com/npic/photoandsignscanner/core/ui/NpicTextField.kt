@@ -18,9 +18,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,14 +72,14 @@ fun NpicTextField(
 ) {
     val chrome = LocalNpicChrome.current
     val hasError = errorText != null
-    val focused = remember { androidx.compose.runtime.mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
 
     val border by animateColorAsState(
         targetValue = when {
-            hasError       -> chrome.terracotta
-            focused.value  -> NpicColors.Saffron
-            !enabled       -> chrome.borderSoft
-            else           -> chrome.borderStrong
+            hasError -> chrome.terracotta
+            focused  -> NpicColors.Saffron
+            !enabled -> chrome.borderSoft
+            else     -> chrome.borderStrong
         },
         animationSpec = NpicMotion.fast(),
         label = "field_border",
@@ -89,7 +92,7 @@ fun NpicTextField(
                 color = if (enabled) chrome.inkMuted else chrome.inkFaint,
                 style = MaterialTheme.typography.labelMedium,
             )
-            androidx.compose.foundation.layout.Spacer(Modifier.size(NpicSpacing.xxs))
+            Spacer(Modifier.size(NpicSpacing.xxs))
         }
 
         Row(
@@ -135,7 +138,7 @@ fun NpicTextField(
                     visualTransformation = visualTransformation,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .onFocusChanged { focused.value = it.isFocused },
+                        .onFocusChanged { focused = it.isFocused },
                 )
             }
 
@@ -157,7 +160,7 @@ fun NpicTextField(
 
         val subText = errorText ?: helper
         if (subText != null) {
-            androidx.compose.foundation.layout.Spacer(Modifier.size(NpicSpacing.xxs))
+            Spacer(Modifier.size(NpicSpacing.xxs))
             Text(
                 text  = subText,
                 color = if (hasError) chrome.terracotta else chrome.inkMuted,

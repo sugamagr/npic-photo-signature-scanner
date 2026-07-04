@@ -14,10 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntSize
@@ -26,17 +23,14 @@ import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicTheme
 
 /**
- * Draggable crop quadrilateral. Four corners as 16dp Saffron dots with 3dp white ring; each
- * has a 44dp invisible hit area (DESIGN §7.16). Grid lines are 1dp white at 40% alpha
- * (rule-of-thirds). This overlay draws on top of a caller-provided image surface.
+ * Draggable crop quadrilateral. Per DESIGN §6.15:
+ *   • Four corner handles: 16dp Saffron dot inside a 3dp white ring, 44dp hit slop.
+ *   • Four edge-midpoint handles: 12dp Saffron dot inside a 2dp white ring, 40dp hit slop.
+ *   • Rule-of-thirds grid: 1dp Saffron 30% alpha, visible ONLY while dragging.
+ * Magnifier bubble is intentionally deferred to the Edit feature (it needs the bitmap).
  *
- * Coordinates are stored in the overlay's own layout box in [Offset]s (px). Callers are
- * responsible for translating to source-image coordinates using [onQuadChange] and the box
- * size delivered on layout.
- *
- * Deliberately does NOT implement magnifier bubble here — that's a follow-up hookup in the
- * Edit feature because it needs the actual bitmap. The 3-zoom bubble spec is left as a TODO
- * anchor.
+ * Coordinates are stored in the overlay's own layout box in [Offset]s (px). Callers translate
+ * to source-image coordinates via [onQuadChange] and [onLayoutSize].
  */
 @Composable
 fun NpicCropOverlay(
@@ -46,16 +40,30 @@ fun NpicCropOverlay(
     modifier: Modifier = Modifier,
 ) {
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
+    var dragging by remember { mutableStateOf(false) }
+    var activeHandle by remember { mutableStateOf<CropHandle?>(null) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(quad) {
                 detectDragGestures(
+                    onDragStart = { pos ->
+                        activeHandle = quad.nearestHandle(pos)
+                        dragging = true
+                    },
+                    onDragEnd = {
+                        dragging = false
+                        activeHandle = null
+                    },
+                    onDragCancel = {
+                        dragging = false
+                        activeHandle = null
+                    },
                     onDrag = { change, drag ->
                         change.consume()
-                        val corner = quad.nearestCorner(change.position)
-                        val moved = quad.moveCorner(corner, drag)
+                        val handle = activeHandle ?: quad.nearestHandle(change.position)
+                        val moved = quad.moveHandle(handle, drag)
                         onQuadChange(moved.clampedTo(size.width.toFloat(), size.height.toFloat()))
                     },
                 )
@@ -68,39 +76,55 @@ fun NpicCropOverlay(
                 onLayoutSize(boxSize)
             }
 
-            // Rule-of-thirds grid inside the bounding rect of the quad.
-            val minX = minOf(quad.tl.x, quad.bl.x)
-            val maxX = maxOf(quad.tr.x, quad.br.x)
-            val minY = minOf(quad.tl.y, quad.tr.y)
-            val maxY = maxOf(quad.bl.y, quad.br.y)
-            val w = maxX - minX
-            val h = maxY - minY
-            val gridColor = Color.White.copy(alpha = 0.40f)
-            val gridStroke = Stroke(width = 1.dp.toPx(), pathEffect = null)
-            for (i in 1..2) {
-                val x = minX + w * i / 3f
-                drawLine(gridColor, Offset(x, minY), Offset(x, maxY), strokeWidth = gridStroke.width)
-                val y = minY + h * i / 3f
-                drawLine(gridColor, Offset(minX, y), Offset(maxX, y), strokeWidth = gridStroke.width)
+            if (dragging) {
+                val minX = minOf(quad.tl.x, quad.bl.x)
+                val maxX = maxOf(quad.tr.x, quad.br.x)
+                val minY = minOf(quad.tl.y, quad.tr.y)
+                val maxY = maxOf(quad.bl.y, quad.br.y)
+                val w = maxX - minX
+                val h = maxY - minY
+                val gridColor = NpicColors.Saffron.copy(alpha = 0.30f)
+                val gridStrokePx = 1.dp.toPx()
+                for (i in 1..2) {
+                    val x = minX + w * i / 3f
+                    drawLine(gridColor, Offset(x, minY), Offset(x, maxY), strokeWidth = gridStrokePx)
+                    val y = minY + h * i / 3f
+                    drawLine(gridColor, Offset(minX, y), Offset(maxX, y), strokeWidth = gridStrokePx)
+                }
             }
 
-            // Quad edges.
             val edgeColor = NpicColors.Saffron
-            val edgeStroke = Stroke(width = 2.dp.toPx())
-            drawLine(edgeColor, quad.tl, quad.tr, strokeWidth = edgeStroke.width)
-            drawLine(edgeColor, quad.tr, quad.br, strokeWidth = edgeStroke.width)
-            drawLine(edgeColor, quad.br, quad.bl, strokeWidth = edgeStroke.width)
-            drawLine(edgeColor, quad.bl, quad.tl, strokeWidth = edgeStroke.width)
+            val edgeStrokePx = 2.dp.toPx()
+            drawLine(edgeColor, quad.tl, quad.tr, strokeWidth = edgeStrokePx)
+            drawLine(edgeColor, quad.tr, quad.br, strokeWidth = edgeStrokePx)
+            drawLine(edgeColor, quad.br, quad.bl, strokeWidth = edgeStrokePx)
+            drawLine(edgeColor, quad.bl, quad.tl, strokeWidth = edgeStrokePx)
 
-            // Corner handles (3dp white ring around 16dp Saffron dot).
-            val handleR = 8.dp.toPx()
-            val ringR   = handleR + 3.dp.toPx()
+            val cornerDotR  = 8.dp.toPx()
+            val cornerRingR = cornerDotR + 3.dp.toPx()
             listOf(quad.tl, quad.tr, quad.br, quad.bl).forEach { p ->
-                drawCircle(Color.White, radius = ringR, center = p)
-                drawCircle(NpicColors.Saffron, radius = handleR, center = p)
+                drawCircle(Color.White,        radius = cornerRingR, center = p)
+                drawCircle(NpicColors.Saffron, radius = cornerDotR,  center = p)
+            }
+
+            val edgeDotR  = 6.dp.toPx()
+            val edgeRingR = edgeDotR + 2.dp.toPx()
+            listOf(quad.topMid, quad.rightMid, quad.bottomMid, quad.leftMid).forEach { p ->
+                drawCircle(Color.White,        radius = edgeRingR, center = p)
+                drawCircle(NpicColors.Saffron, radius = edgeDotR,  center = p)
             }
         }
     }
+}
+
+/**
+ * A grabbable point on the crop overlay: one of the four corners or one of the four edge
+ * midpoints. Corners translate a single vertex; edge midpoints translate both endpoints of
+ * the corresponding edge together (parallel move).
+ */
+sealed interface CropHandle {
+    enum class Corner : CropHandle { TL, TR, BR, BL }
+    enum class Edge   : CropHandle { Top, Right, Bottom, Left }
 }
 
 /** Four corners in overlay-local pixel coordinates. Anchored top-left is [tl]. */
@@ -110,29 +134,40 @@ data class CropQuad(
     val br: Offset,
     val bl: Offset,
 ) {
-    fun nearestCorner(p: Offset): Corner {
-        val d = listOf(
-            Corner.TL to (tl - p).getDistance(),
-            Corner.TR to (tr - p).getDistance(),
-            Corner.BR to (br - p).getDistance(),
-            Corner.BL to (bl - p).getDistance(),
+    val topMid:    Offset get() = (tl + tr) / 2f
+    val rightMid:  Offset get() = (tr + br) / 2f
+    val bottomMid: Offset get() = (br + bl) / 2f
+    val leftMid:   Offset get() = (bl + tl) / 2f
+
+    fun nearestHandle(p: Offset): CropHandle {
+        val candidates: List<Pair<CropHandle, Float>> = listOf(
+            CropHandle.Corner.TL     to (tl        - p).getDistance(),
+            CropHandle.Corner.TR     to (tr        - p).getDistance(),
+            CropHandle.Corner.BR     to (br        - p).getDistance(),
+            CropHandle.Corner.BL     to (bl        - p).getDistance(),
+            CropHandle.Edge.Top      to (topMid    - p).getDistance(),
+            CropHandle.Edge.Right    to (rightMid  - p).getDistance(),
+            CropHandle.Edge.Bottom   to (bottomMid - p).getDistance(),
+            CropHandle.Edge.Left     to (leftMid   - p).getDistance(),
         )
-        return d.minBy { it.second }.first
+        return candidates.minBy { it.second }.first
     }
 
-    fun moveCorner(corner: Corner, delta: Offset): CropQuad = when (corner) {
-        Corner.TL -> copy(tl = tl + delta)
-        Corner.TR -> copy(tr = tr + delta)
-        Corner.BR -> copy(br = br + delta)
-        Corner.BL -> copy(bl = bl + delta)
+    fun moveHandle(handle: CropHandle, delta: Offset): CropQuad = when (handle) {
+        CropHandle.Corner.TL   -> copy(tl = tl + delta)
+        CropHandle.Corner.TR   -> copy(tr = tr + delta)
+        CropHandle.Corner.BR   -> copy(br = br + delta)
+        CropHandle.Corner.BL   -> copy(bl = bl + delta)
+        CropHandle.Edge.Top    -> copy(tl = tl + delta, tr = tr + delta)
+        CropHandle.Edge.Right  -> copy(tr = tr + delta, br = br + delta)
+        CropHandle.Edge.Bottom -> copy(br = br + delta, bl = bl + delta)
+        CropHandle.Edge.Left   -> copy(bl = bl + delta, tl = tl + delta)
     }
 
     fun clampedTo(w: Float, h: Float): CropQuad {
         fun c(o: Offset) = Offset(o.x.coerceIn(0f, w), o.y.coerceIn(0f, h))
         return copy(tl = c(tl), tr = c(tr), br = c(br), bl = c(bl))
     }
-
-    enum class Corner { TL, TR, BR, BL }
 
     companion object {
         /** Full-frame quad for the given box size. */
@@ -162,10 +197,6 @@ data class CropQuad(
         }
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Previews
-// ─────────────────────────────────────────────────────────────────────────────
 
 @Preview(name = "CropOverlay — over a mock photo")
 @Composable

@@ -120,7 +120,7 @@ fun NpicButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled && !loading) 0.97f else 1f,
+        targetValue = if (isPressed && enabled && !loading) 0.96f else 1f,
         label = "npicButton_pressScale",
     )
 

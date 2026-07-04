@@ -12,6 +12,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -96,14 +100,14 @@ fun NpicSlider(
 @Composable
 private fun SliderPreviewLight() {
     NpicTheme {
-        var v = 12f
+        var v by remember { mutableFloatStateOf(12f) }
         Box(Modifier.background(NpicColors.Ivory).padding(NpicSpacing.md).fillMaxWidth()) {
             NpicSlider(
                 label = "Brightness",
                 value = v,
                 onValueChange = { v = it },
                 valueRange = -50f..50f,
-                valueLabel = "+12",
+                valueLabel = "+${v.toInt()}",
             )
         }
     }
@@ -114,14 +118,14 @@ private fun SliderPreviewLight() {
 private fun SliderPreviewDark() {
     NpicTheme {
         val chrome = LocalNpicChrome.current
-        var v = -8f
+        var v by remember { mutableFloatStateOf(-8f) }
         Box(Modifier.background(chrome.cameraBg).padding(NpicSpacing.md).fillMaxWidth()) {
             NpicSlider(
                 label = "Contrast",
                 value = v,
                 onValueChange = { v = it },
                 valueRange = -50f..50f,
-                valueLabel = "-8",
+                valueLabel = v.toInt().toString(),
                 onDark = true,
             )
         }

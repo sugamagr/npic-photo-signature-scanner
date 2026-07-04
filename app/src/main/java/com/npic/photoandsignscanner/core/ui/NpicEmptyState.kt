@@ -21,6 +21,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
 import com.npic.photoandsignscanner.core.theme.NpicColors
+import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
 
@@ -51,7 +52,7 @@ fun NpicEmptyState(
             Box(
                 modifier = Modifier
                     .size(96.dp)
-                    .background(chrome.saffronSoft, shape = androidx.compose.foundation.shape.CircleShape),
+                    .background(chrome.saffronSoft, shape = NpicShapes.full),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

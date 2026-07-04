@@ -79,17 +79,17 @@ fun NpicChip(
     Box(
         modifier = modifier
             .semantics { role = Role.Button }
-            .defaultMinSize(minHeight = 36.dp)
-            .clip(NpicShapes.full)
-            .background(container, NpicShapes.full)
-            .border(width = 1.dp, color = border, shape = NpicShapes.full)
+            .defaultMinSize(minHeight = 34.dp)
+            .clip(NpicShapes.xs)
+            .background(container, NpicShapes.xs)
+            .border(width = 1.dp, color = border, shape = NpicShapes.xs)
             .clickable(
                 interactionSource = interactionSource,
                 indication = ripple(bounded = true, color = label_),
                 enabled = enabled,
                 onClick = onClick,
             )
-            .padding(PaddingValues(horizontal = NpicSpacing.md, vertical = NpicSpacing.xs)),
+            .padding(PaddingValues(horizontal = 14.dp, vertical = NpicSpacing.xxs)),
         contentAlignment = Alignment.Center,
     ) {
         Row(

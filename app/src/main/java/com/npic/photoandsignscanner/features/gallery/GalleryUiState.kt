@@ -16,6 +16,7 @@ import com.npic.photoandsignscanner.domain.model.StudentRecord
 data class GalleryUiState(
     val records: List<StudentRecord> = emptyList(),
     val totalCount: Int = 0,
+    val countsByClass: Map<ClassNum, Int> = emptyMap(),
     val classFilter: ClassNum? = null,
     val sortMode: SortMode = SortMode.Newest,
     val selectedIds: Set<Long> = emptySet(),
