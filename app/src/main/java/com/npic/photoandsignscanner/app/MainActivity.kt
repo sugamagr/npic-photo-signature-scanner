@@ -171,7 +171,13 @@ class MainActivity : ComponentActivity() {
 
 private object Route {
     const val Gallery         = "gallery"
+    // Layer 12: Camera now accepts an optional `?mode=Photo|Signature` query so
+    // SignaturePromptSheet's Capture branch can land the user directly in Signature mode
+    // (was previously stuck on the Photo default). Nav-arg is a String because
+    // NavType.EnumType isn't stable across the compose-nav versions we're on.
+    const val CameraPattern   = "camera?mode={mode}"
     const val Camera          = "camera"
+    fun camera(mode: CameraMode): String = "camera?mode=${mode.name}"
     const val Edit            = "edit"
     const val SignaturePrompt = "signature_prompt"
     const val SignatureDraw   = "signature_draw"
@@ -223,9 +229,13 @@ private fun NpicNavHost(
             val id = backStackEntry.arguments?.getString("id").orEmpty()
             DetailDestination(
                 studentRepository = studentRepository,
+                captureHolder = captureHolder,
                 recordId = id,
                 onBack = { navController.popBackStack() },
                 onExport = { navController.navigate(Route.export(listOf(id))) },
+                onNavigateToEdit = { navController.navigate(Route.Edit) },
+                onNavigateToCamera = { mode -> navController.navigate(Route.camera(mode)) },
+                onNavigateToDraw = { navController.navigate(Route.SignatureDraw) },
             )
         }
         composable(
@@ -244,8 +254,19 @@ private fun NpicNavHost(
                 onCancel = { navController.popBackStack() },
             )
         }
-        composable(Route.Camera) {
+        composable(
+            route = Route.CameraPattern,
+            arguments = listOf(
+                navArgument("mode") {
+                    type = NavType.StringType
+                    defaultValue = CameraMode.Photo.name
+                },
+            ),
+        ) { backStackEntry ->
+            val modeName = backStackEntry.arguments?.getString("mode") ?: CameraMode.Photo.name
+            val initialMode = runCatching { CameraMode.valueOf(modeName) }.getOrDefault(CameraMode.Photo)
             CameraDestination(
+                initialMode = initialMode,
                 onBack = { navController.popBackStack() },
                 onCaptureComplete = { capture ->
                     captureHolder.pushCapture(capture)
@@ -275,7 +296,11 @@ private fun NpicNavHost(
         }
         composable(Route.SignaturePrompt) {
             SignaturePromptSheet(
-                onCapture = { navController.navigate(Route.Camera) },
+                // Layer 12 fix: route to Camera in Signature mode so the guide-box is 3:1
+                // and the shutter routes captures to the ink-isolation pipeline. Was
+                // previously landing on the Photo default — user then had to tap the
+                // Signature mode pill manually, defeating the prompt.
+                onCapture = { navController.navigate(Route.camera(CameraMode.Signature)) },
                 onDraw = { navController.navigate(Route.SignatureDraw) },
                 onSkip = { navController.navigate(Route.Save) },
                 onDismiss = { navController.popBackStack() },
@@ -345,19 +370,96 @@ private fun GalleryDestination(
     val activeDraft = draft
     val shouldPrompt = !promptShown && activeDraft != null && activeDraft.hasAnyMedia
 
+    // Layer 12: multi-select Delete confirm + Overflow menu (Select all / Delete all).
+    // Dialogs live at the destination level (not in GalleryScreen) so GalleryScreen stays
+    // presentation-only and destructive-action wiring stays adjacent to the nav graph.
+    var pendingDelete by remember { mutableStateOf<Set<String>?>(null) }
+    var overflowMenuOpen by remember { mutableStateOf(false) }
+    var pendingDeleteAll by remember { mutableStateOf(false) }
+
     GalleryScreen(
         viewModel = viewModel,
         onCaptureClick = onCaptureClick,
         onRecordClick = onRecordClick,
         onExportSelection = onExportSelection,
-        onDeleteSelection = { ids ->
-            Toast.makeText(context, "Delete ${ids.size} record(s) → Confirm dialog (next layer)", Toast.LENGTH_SHORT).show()
-        },
-        onOverflowClick = {
-            Toast.makeText(context, "Overflow menu (next layer)", Toast.LENGTH_SHORT).show()
-        },
+        onDeleteSelection = { ids -> if (ids.isNotEmpty()) pendingDelete = ids },
+        onOverflowClick = { overflowMenuOpen = true },
         onSearchClick = onSearchClick,
     )
+
+    val currentDelete = pendingDelete
+    if (currentDelete != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { androidx.compose.material3.Text("Delete ${currentDelete.size} record${if (currentDelete.size == 1) "" else "s"}?") },
+            text = { androidx.compose.material3.Text("This cannot be undone.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    viewModel.deleteSelection(currentDelete)
+                    pendingDelete = null
+                }) { androidx.compose.material3.Text("Delete", color = com.npic.photoandsignscanner.core.theme.NpicColors.Terracotta) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingDelete = null }) {
+                    androidx.compose.material3.Text("Keep")
+                }
+            },
+        )
+    }
+
+    if (pendingDeleteAll) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingDeleteAll = false },
+            title = { androidx.compose.material3.Text("Delete all records?") },
+            text = { androidx.compose.material3.Text("Every student record on this device will be removed. This cannot be undone.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    val everyId = viewModel.state.value.records.map { it.id }.toSet()
+                    viewModel.deleteSelection(everyId)
+                    pendingDeleteAll = false
+                }) { androidx.compose.material3.Text("Delete all", color = com.npic.photoandsignscanner.core.theme.NpicColors.Terracotta) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingDeleteAll = false }) {
+                    androidx.compose.material3.Text("Cancel")
+                }
+            },
+        )
+    }
+
+    if (overflowMenuOpen) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { overflowMenuOpen = false },
+            title = { androidx.compose.material3.Text("Gallery menu") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    androidx.compose.material3.TextButton(onClick = {
+                        viewModel.selectAll()
+                        overflowMenuOpen = false
+                    }, modifier = Modifier.fillMaxSize()) {
+                        androidx.compose.material3.Text("Select all", modifier = Modifier.fillMaxSize())
+                    }
+                    androidx.compose.material3.TextButton(onClick = {
+                        overflowMenuOpen = false
+                        pendingDeleteAll = true
+                    }, modifier = Modifier.fillMaxSize()) {
+                        androidx.compose.material3.Text("Delete all", color = com.npic.photoandsignscanner.core.theme.NpicColors.Terracotta, modifier = Modifier.fillMaxSize())
+                    }
+                    androidx.compose.material3.TextButton(onClick = {
+                        overflowMenuOpen = false
+                        Toast.makeText(context, "Settings — coming soon", Toast.LENGTH_SHORT).show()
+                    }, modifier = Modifier.fillMaxSize()) {
+                        androidx.compose.material3.Text("Settings", modifier = Modifier.fillMaxSize())
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { overflowMenuOpen = false }) {
+                    androidx.compose.material3.Text("Close")
+                }
+            },
+        )
+    }
 
     if (shouldPrompt) {
         ResumeDraftDialog(
@@ -406,42 +508,126 @@ private fun ResumeDraftDialog(
 @Composable
 private fun DetailDestination(
     studentRepository: StudentRepository,
+    captureHolder: SharedCaptureHolder,
     recordId: String,
     onBack: () -> Unit,
     onExport: () -> Unit,
+    onNavigateToEdit: () -> Unit,
+    onNavigateToCamera: (CameraMode) -> Unit,
+    onNavigateToDraw: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val factory = remember(studentRepository, recordId) {
         DetailViewModel.Factory(studentRepository, recordId)
     }
     val viewModel: DetailViewModel = viewModel(key = "detail-$recordId", factory = factory)
+
+    // Layer 12: system photo picker for Import Photo / Import Signature. On Uri return
+    // we copy the SAF-only stream into a cache/drafts/ file so downstream reads use the
+    // same File-based rawPath contract as CameraX. Uri lifetime past the picker is
+    // undefined on some OEMs — cheaper to snapshot the bytes than to fight persist
+    // permission grants.
+    var pendingImportMode by remember { mutableStateOf<CameraMode?>(null) }
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri: android.net.Uri? ->
+        val mode = pendingImportMode ?: return@rememberLauncherForActivityResult
+        pendingImportMode = null
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val cachedPath = withContext(Dispatchers.IO) {
+                copyUriToDraftsCache(context, uri)
+            } ?: return@launch
+            // Detail edit-existing-record path: mint a fresh draft so the standard
+            // Save-side duplicate check finds the current record via findByClassSerial
+            // and routes user through the DuplicateSheet's "Keep new" replace path.
+            captureHolder.clear()
+            captureHolder.pushCapture(
+                com.npic.photoandsignscanner.domain.model.CameraCapture(
+                    rawPath = cachedPath,
+                    mode = mode,
+                    guideBoxImageSpace = null,
+                    capturedAt = Clock.System.now(),
+                )
+            )
+            onNavigateToEdit()
+        }
+    }
+
     DetailScreen(
         viewModel = viewModel,
         onBack = onBack,
-        onEditPhoto = {
-            Toast.makeText(context, "Edit photo (next layer)", Toast.LENGTH_SHORT).show()
+        onEditPhoto = { record ->
+            // Re-edit an existing record's photo: seed Edit with the SourceStore JPEG
+            // (Layer 9 long-side-1600 q92 asset). Same rawPath-in / sourcePath-out
+            // pipeline as a fresh capture; Save's duplicate check then routes the user
+            // to the "replace existing" branch.
+            if (record.photoPath.isBlank()) {
+                Toast.makeText(context, "No photo to edit", Toast.LENGTH_SHORT).show()
+                return@DetailScreen
+            }
+            captureHolder.clear()
+            captureHolder.pushCapture(
+                com.npic.photoandsignscanner.domain.model.CameraCapture(
+                    rawPath = record.photoPath,
+                    mode = CameraMode.Photo,
+                    guideBoxImageSpace = null,
+                    capturedAt = Clock.System.now(),
+                )
+            )
+            onNavigateToEdit()
         },
-        onEditSignature = {
-            Toast.makeText(context, "Edit signature (next layer)", Toast.LENGTH_SHORT).show()
+        onEditSignature = { record ->
+            val existing = record.signaturePath
+            if (existing.isNullOrBlank()) {
+                Toast.makeText(context, "No signature to edit", Toast.LENGTH_SHORT).show()
+                return@DetailScreen
+            }
+            captureHolder.clear()
+            captureHolder.pushCapture(
+                com.npic.photoandsignscanner.domain.model.CameraCapture(
+                    rawPath = existing,
+                    mode = CameraMode.Signature,
+                    guideBoxImageSpace = null,
+                    capturedAt = Clock.System.now(),
+                )
+            )
+            onNavigateToEdit()
         },
         onCapturePhoto = {
-            Toast.makeText(context, "Capture photo (next layer)", Toast.LENGTH_SHORT).show()
+            captureHolder.clear()
+            onNavigateToCamera(CameraMode.Photo)
         },
         onImportPhoto = {
-            Toast.makeText(context, "Import photo (next layer)", Toast.LENGTH_SHORT).show()
+            pendingImportMode = CameraMode.Photo
+            importLauncher.launch(
+                androidx.activity.result.PickVisualMediaRequest(
+                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                )
+            )
         },
         onCaptureSignature = {
-            Toast.makeText(context, "Capture signature (next layer)", Toast.LENGTH_SHORT).show()
+            captureHolder.clear()
+            onNavigateToCamera(CameraMode.Signature)
         },
         onDrawSignature = {
-            Toast.makeText(context, "Draw signature (next layer)", Toast.LENGTH_SHORT).show()
+            captureHolder.clear()
+            onNavigateToDraw()
         },
         onImportSignature = {
-            Toast.makeText(context, "Import signature (next layer)", Toast.LENGTH_SHORT).show()
+            pendingImportMode = CameraMode.Signature
+            importLauncher.launch(
+                androidx.activity.result.PickVisualMediaRequest(
+                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                )
+            )
         },
         onExport = { _ -> onExport() },
         onDuplicateToAnotherClass = {
-            Toast.makeText(context, "Duplicate to another class (next layer)", Toast.LENGTH_SHORT).show()
+            // DEFERRED (post-v1.0): PRD §4.9 does not require this — leaving as a
+            // clearly-labeled stub. Logged in docs/DEFERRED-DECISIONS.md.
+            Toast.makeText(context, "Duplicate to another class — coming soon", Toast.LENGTH_SHORT).show()
         },
         onDeleted = {
             Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
@@ -450,13 +636,38 @@ private fun DetailDestination(
     )
 }
 
+/**
+ * Copy a SAF Uri into `cache/drafts/{uuid}.jpg` so downstream Edit / Save code can rely on
+ * a File-based path. Returns null if the source can't be opened. Runs on the IO dispatcher.
+ */
+private fun copyUriToDraftsCache(context: android.content.Context, uri: android.net.Uri): String? {
+    val dir = File(context.cacheDir, "drafts").apply { mkdirs() }
+    val out = File(dir, "${UUID.randomUUID()}.jpg")
+    return try {
+        context.contentResolver.openInputStream(uri).use { input ->
+            if (input == null) return null
+            FileOutputStream(out).use { output -> input.copyTo(output) }
+        }
+        out.absolutePath
+    } catch (t: Throwable) {
+        Log.w("Detail.import", "Failed to copy Uri $uri: ${t.message}")
+        null
+    }
+}
+
 @Composable
 private fun CameraDestination(
+    initialMode: CameraMode,
     onBack: () -> Unit,
     onCaptureComplete: (com.npic.photoandsignscanner.domain.model.CameraCapture) -> Unit,
     onDrawInsteadClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val viewModel: com.npic.photoandsignscanner.features.camera.CameraViewModel = viewModel()
+    // Layer 12: honor the nav-arg by seeding the mode ONCE per destination entry.
+    // Keyed on initialMode so a follow-on navigation with a different mode also re-seeds;
+    // NOT on Unit because that would prevent re-entry after the user manually flipped modes.
+    LaunchedEffect(initialMode) { viewModel.setMode(initialMode) }
     CameraScreen(
         onBack = onBack,
         onCaptureComplete = onCaptureComplete,
@@ -464,6 +675,7 @@ private fun CameraDestination(
         onImportFromGalleryClick = {
             Toast.makeText(context, "Import from Photos (next layer)", Toast.LENGTH_SHORT).show()
         },
+        viewModel = viewModel,
     )
 }
 

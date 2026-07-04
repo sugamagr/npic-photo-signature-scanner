@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * Gallery presenter.
@@ -61,6 +62,19 @@ class GalleryViewModel(
 
     fun selectAll() {
         _selected.value = state.value.records.map { it.id }.toSet()
+    }
+
+    /**
+     * Best-effort delete of every id in [ids]. Per-id failures are swallowed
+     * ([StudentRepository.delete] is idempotent for unknown ids), and the selection is
+     * unconditionally cleared on completion so the multi-select toolbar dismisses.
+     */
+    fun deleteSelection(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            ids.forEach { runCatching { repository.delete(it) } }
+            _selected.value = emptySet()
+        }
     }
 
     private fun compute(
