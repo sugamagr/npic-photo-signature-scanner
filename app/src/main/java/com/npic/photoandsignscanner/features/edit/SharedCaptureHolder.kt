@@ -58,15 +58,14 @@ class SharedCaptureHolder(
 
     fun pushCapture(capture: CameraCapture) {
         _capture.value = capture
-        // Oracle #5 A2 (qc-round-10): a fresh Camera capture must clear _target so nav
-        // routes to Save, not stale UpdateConfirm. Reproducer: Detail → edit-media
-        // (target set via beginUpdate) → user backs out to Gallery → Camera →
-        // Capture. Without this line, target still holds the old record and Edit's
-        // commit branch nav-routes to UpdateConfirm which then tries to repo.replace()
-        // an unrelated record.
-        _target.value = null
-        // Persist to survive process kill. Mint a draft if none exists so latestCapture()
-        // has a row to hang the rawPath columns off. Oracle O1-7.
+        // m2403 Bugs R+S: do NOT null _target here. The Oracle #5 A2 fix (qc-round-10)
+        // clobbered target on every capture, which broke m2232 add-signature-via-Camera
+        // for existing records: user tapped "Add signature via camera" from Detail →
+        // beginUpdate set _target → shutter fired pushCapture → target was nulled →
+        // Edit's onNext branch routed to Save (not UpdateConfirm) → repo.save() with
+        // draft.id == existing record.id → PK conflict crash. The Oracle A2 reproducer
+        // (Detail → edit-media → back → Camera → Capture) is now handled by clearing
+        // target when the Gallery Capture FAB is tapped — see MainActivity nav wire.
         val next = currentOrNew()
         _draft.value = next
         persist(next, capture)

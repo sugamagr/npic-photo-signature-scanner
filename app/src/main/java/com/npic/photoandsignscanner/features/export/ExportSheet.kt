@@ -392,14 +392,18 @@ private fun ExportActionRow(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
     ) {
+        // m2475: Share is the primary action per user directive — teachers upload the
+        // JPEG to the portal 100% of the time; Save-to-Gallery is a rare "keep a copy"
+        // sink. Big filled Share button on top; Save & Share + Save-to-Gallery drop
+        // to the Ghost row below.
         val primaryLabel = when {
             effectiveCount <= 0 -> "Nothing to export"
-            effectiveCount == 1 -> "Save & Share"
-            else                -> "Save & Share $effectiveCount"
+            effectiveCount == 1 -> "Share"
+            else                -> "Share $effectiveCount"
         }
         NpicButton(
             label = primaryLabel,
-            onClick = onSaveAndShare,
+            onClick = onShare,
             modifier = Modifier.fillMaxWidth(),
             enabled = canExport,
         )
@@ -416,8 +420,8 @@ private fun ExportActionRow(
                 enabled = canExport,
             )
             NpicButton(
-                label = "Share",
-                onClick = onShare,
+                label = "Save & Share",
+                onClick = onSaveAndShare,
                 style = NpicButtonStyle.Ghost,
                 modifier = Modifier.weight(1f),
                 enabled = canExport,

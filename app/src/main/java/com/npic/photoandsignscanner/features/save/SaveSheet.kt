@@ -85,14 +85,9 @@ fun SaveSheet(
     ) {
         val chrome = LocalNpicChrome.current
 
-        // Subtitle per DESIGN §7.4.
-        Text(
-            text  = "Class selection is required",
-            color = chrome.inkMuted,
-            style = MaterialTheme.typography.bodySmall,
-        )
-
-        // Class row.
+        // Class row. m2403 Bug Q: classNum is now non-nullable with default Nine per
+        // SaveUiState. The old "Pick a class to continue" hint + subtitle became dead
+        // branches since state.classNum can never be null now.
         Column {
             Text(
                 text  = "Class",
@@ -102,18 +97,10 @@ fun SaveSheet(
             Spacer(Modifier.size(NpicSpacing.xxs))
             NpicSegmentedControl(
                 options = ClassNum.entries,
-                selected = state.classNum ?: ClassNum.Nine,
+                selected = state.classNum,
                 onSelect = viewModel::setClass,
                 labelOf = { it.label },
             )
-            if (state.classNum == null) {
-                Spacer(Modifier.size(NpicSpacing.xxs))
-                Text(
-                    text  = "Pick a class to continue",
-                    color = chrome.inkMuted,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
         }
 
         // Naming mode row.

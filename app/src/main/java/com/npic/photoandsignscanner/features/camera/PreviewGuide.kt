@@ -1,6 +1,7 @@
 package com.npic.photoandsignscanner.features.camera
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import com.npic.photoandsignscanner.domain.model.RectI
@@ -9,8 +10,21 @@ import com.npic.photoandsignscanner.domain.model.RectI
  * The overlay guide box measured in PREVIEW-space pixels together with the size of the
  * preview canvas that produced it. Passed from [CameraScreen] through to
  * [CameraViewModel.capture] so the VM can compute the correct FILL_CENTER inverse against
- * the actual captured-JPEG dimensions — Layer 11's fix for the pre-Layer-11 identity stub
- * that silently gave EditRenderer a garbage seed rect (PRD §7.1 step 9 / §7.2 step 1).
+ * the actual captured-JPEG dimensions.
+ *
+ * ### Coordinate space
+ *
+ * m2475 Bug U: [rect] is measured in the OVERLAY's local canvas coordinates (weighted
+ * middle cell of CameraScreen — excludes top + bottom bars), while CameraX's PreviewView
+ * fills the ENTIRE screen. Passing overlay-local rect + overlay-local canvas size to the
+ * FILL_CENTER inverse projects onto the wrong image pixels — the captured photo appears
+ * shrunk and vertically shifted vs. what the user framed. Fix: also carry
+ *
+ *   - [previewSize]: the FULL PreviewView pixel size (screen-space)
+ *   - [previewOffset]: the overlay canvas's top-left position expressed in PreviewView
+ *     coordinates (positive Y = below the top bar).
+ *
+ * [toImageSpace] adds [previewOffset] to every rect corner before running the inverse.
  *
  * Lives in the `features/camera/` module because [Rect] and [Size] are Compose types; the
  * domain layer (which owns [RectI]) stays framework-free.
@@ -19,6 +33,7 @@ import com.npic.photoandsignscanner.domain.model.RectI
 data class PreviewGuide(
     val rect: Rect,
     val previewSize: Size,
+    val previewOffset: Offset = Offset.Zero,
 )
 
 /**
@@ -47,8 +62,10 @@ fun PreviewGuide.toImageSpace(imageWidth: Int, imageHeight: Int): RectI? {
     val offsetY = (scaledImageH - previewSize.height) / 2f
 
     // Inverse mapping: preview point (px,py) → image point ((px + offsetX)/scale, (py + offsetY)/scale).
-    fun px(x: Float) = ((x + offsetX) / scale).toInt().coerceIn(0, imageWidth)
-    fun py(y: Float) = ((y + offsetY) / scale).toInt().coerceIn(0, imageHeight)
+    // m2475 Bug U: rect corners are OVERLAY-local so we add previewOffset to lift them
+    // into PreviewView-local coordinates before inverting the FILL_CENTER scale.
+    fun px(x: Float) = ((x + previewOffset.x + offsetX) / scale).toInt().coerceIn(0, imageWidth)
+    fun py(y: Float) = ((y + previewOffset.y + offsetY) / scale).toInt().coerceIn(0, imageHeight)
 
     val left   = px(rect.left)
     val top    = py(rect.top)

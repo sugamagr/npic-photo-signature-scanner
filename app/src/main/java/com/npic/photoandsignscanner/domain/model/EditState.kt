@@ -36,14 +36,16 @@ data class EditState(
                 crop != initialCropFor(source, aspectLock)
 
     /**
-     * Effective filter after Auto-routing (PRD §5): Auto → SchoolId for photo, InkBoost for
-     * signature. Anything else passes through untouched.
+     * Effective filter after Auto-routing (PRD §5): Auto → SchoolId for photo, Original for
+     * signature (m1682: teachers reported InkBoost darkened faint ink to unreadable —
+     * Original is the safer default; InkBoost stays available as an explicit pick).
+     * Anything else passes through untouched.
      */
     val effectiveFilter: FilterPreset
         get() = when (filter) {
             FilterPreset.Auto -> when (mode) {
                 CameraMode.Photo     -> FilterPreset.SchoolId
-                CameraMode.Signature -> FilterPreset.InkBoost
+                CameraMode.Signature -> FilterPreset.Original
             }
             else -> filter
         }

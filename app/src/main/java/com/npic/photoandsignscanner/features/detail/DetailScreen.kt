@@ -360,8 +360,11 @@ private fun PhotoCard(
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
                 )
             } else {
+                // m2403 Bug T: taller photo card (0.72 ≈ passport 35×45mm ratio) —
+                // was 0.8 (~1.25× width tall), now ~1.39× width tall. Paired with
+                // shorter signature strip 3.6f below.
                 DashedPlaceholder(
-                    aspectRatio = 0.8f,
+                    aspectRatio = 0.72f,
                     label = "No photo yet",
                     icon = Icons.Outlined.CameraAlt,
                 )
@@ -418,8 +421,10 @@ private fun SignatureCard(
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
                 )
             } else {
+                // m2403 Bug T: shorter signature strip (3.6f — 0.28× width tall)
+                // was 3f (0.33× width). Paired with taller photo card 0.72 above.
                 DashedPlaceholder(
-                    aspectRatio = 3f,
+                    aspectRatio = 3.6f,
                     label = "No signature yet",
                     icon = Icons.Outlined.Draw,
                 )
@@ -457,15 +462,18 @@ private fun SignatureCard(
 }
 
 /**
- * Present-photo card image (DESIGN §7.7 8:10 aspect). Bug#1+#2: loads the SourceStore
- * asset via Coil. Falls back to a SaffronSoft-tinted placeholder if the file is missing.
+ * Present-photo card image (m2403 Bug T: 0.72 aspect ≈ passport 35×45mm — was 0.8/DESIGN
+ * §7.7 8:10). Bug#1+#2: loads the SourceStore asset via Coil. Falls back to a
+ * SaffronSoft-tinted placeholder if the file is missing.
  */
 @Composable
 private fun PhotoPlaceholder(path: String) {
+    // m2403 Bug T: matches DashedPlaceholder's 0.72 so filled + unfilled cards stay
+    // the same height.
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.8f)
+            .aspectRatio(0.72f)
             .clip(NpicShapes.md)
             .background(NpicColors.SaffronSoft.copy(alpha = 0.35f)),
         contentAlignment = Alignment.Center,
@@ -494,10 +502,12 @@ private fun PhotoPlaceholder(path: String) {
  */
 @Composable
 private fun SignaturePlaceholder(path: String) {
+    // m2403 Bug T: matches DashedPlaceholder's 3.6 so filled + unfilled cards stay
+    // the same height.
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(3f)
+            .aspectRatio(3.6f)
             .clip(NpicShapes.md)
             .background(NpicColors.SaffronSoft.copy(alpha = 0.35f)),
         contentAlignment = Alignment.Center,
@@ -589,8 +599,12 @@ private fun DetailExportBar(
     onExport: (StudentRecord) -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
+    // m2475: Detail Export button label stays a plain "Export". The Export sheet
+    // itself surfaces the missing-media warning (MissingMediaWarning) with the exact
+    // count + polite live region, so redundant "(needs both media)" hint on the
+    // button was noise. canExportCombined still gates the disabled state.
     val canExportCombined = record.photoPath.isNotBlank() && record.hasSignature
-    val label = if (canExportCombined) "Export" else "Export (needs both media)"
+    val label = "Export"
     Box(
         modifier = Modifier
             .fillMaxWidth()

@@ -32,6 +32,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.npic.photoandsignscanner.BuildConfig
@@ -202,8 +203,21 @@ class MainActivity : ComponentActivity() {
                     BackHandler(enabled = drawerState.isOpen) {
                         drawerScope.launch { drawerState.close() }
                     }
+                    // m2392: disable edge-swipe drawer on Camera + Edit. The user
+                    // reported opening it by accident while framing / cropping. Gallery
+                    // (start destination) keeps swipe as the primary Settings affordance.
+                    // Route.CameraPattern includes the ?mode= query, so match by prefix.
+                    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = currentBackStackEntry?.destination?.route
+                    val drawerGesturesEnabled = when {
+                        currentRoute == null -> true
+                        currentRoute.startsWith(Route.Camera) -> false
+                        currentRoute == Route.Edit -> false
+                        else -> true
+                    }
                     ModalNavigationDrawer(
                         drawerState = drawerState,
+                        gesturesEnabled = drawerGesturesEnabled,
                         drawerContent = {
                             SettingsDrawer(
                                 viewModel     = settingsVm,
@@ -288,7 +302,16 @@ private fun NpicNavHost(
         composable(Route.Gallery) {
             GalleryDestination(
                 studentRepository = studentRepository,
-                onCaptureClick = { navController.navigate(Route.Camera) },
+                onCaptureClick = {
+                    // m2403 Bugs R+S: Gallery FAB is the canonical "start a fresh record"
+                    // entry point. Clear any stale beginUpdate() target so a leaked
+                    // Detail→edit-media→back→FAB path doesn't accidentally route the
+                    // fresh capture through UpdateConfirm. Compensates for the removed
+                    // target-clear inside SharedCaptureHolder.pushCapture (which broke
+                    // add-signature-via-Camera for existing records).
+                    captureHolder.clear()
+                    navController.navigate(Route.Camera)
+                },
                 onRecordClick = { id -> navController.navigate(Route.detail(id)) },
                 onExportSelection = { ids -> navController.navigate(Route.export(ids.toList())) },
                 onSearchClick = { navController.navigate(Route.Search) },

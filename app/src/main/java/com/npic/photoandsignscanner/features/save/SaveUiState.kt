@@ -10,11 +10,16 @@ import com.npic.photoandsignscanner.domain.model.StudentDraft
 /**
  * View state for the Save bottom sheet (DESIGN §7.4, PRD §4.6).
  *
- * `classNum == null` while the user hasn't picked yet — Save button stays disabled
- * (validation matches PRD §4.6: Class is required). The serial input is auto-populated
- * from [StudentRepository.nextSerial] whenever the class or naming mode changes; the raw
- * text field lives in [serialText] so the user can freely edit / clear it without losing
- * their in-progress digits.
+ * m2403 Bug Q: [classNum] defaults to [ClassNum.Nine] (not null) so users can save just
+ * by typing a serial number without first tapping the Class segmented control. Previously
+ * the visual selection showed Nine but state.classNum stayed null → saveInput null →
+ * Save button disabled → user had to tap another class and back to activate. Now defaults
+ * are truly selected on entry.
+ *
+ * m2403 Bug P: serial input starts BLANK. The auto-fill behavior (populating serialText
+ * from repo.nextSerial on class change) was removed per user directive 'no need for it'.
+ * autoSerialForClass cache still populated for the duplicate check but never writes to
+ * serialText. User types the serial themselves every time.
  *
  * `duplicate` is populated when a `save()` call returned [SaveResult.DuplicateFound]; the
  * screen shows the Duplicate Dialog (PRD §4.7) on top and blocks the sheet until the user
@@ -24,7 +29,7 @@ import com.npic.photoandsignscanner.domain.model.StudentDraft
 @Immutable
 data class SaveUiState(
     val draft: StudentDraft,
-    val classNum: ClassNum? = null,
+    val classNum: ClassNum = ClassNum.Nine,
     val namingKind: NamingMode.Kind = NamingMode.Kind.Serial,
     val serialText: String = "",
     val nameText: String = "",
@@ -72,9 +77,8 @@ data class SaveUiState(
     /** Resolved [SaveInput] when all fields validate; drives the Save button's enabled state. */
     val saveInput: SaveInput?
         get() {
-            val c = classNum ?: return null
             val n = naming ?: return null
-            return SaveInput(classNum = c, naming = n)
+            return SaveInput(classNum = classNum, naming = n)
         }
 
     /** Live filename preview shown as helper text under the input (DESIGN §7.4). */

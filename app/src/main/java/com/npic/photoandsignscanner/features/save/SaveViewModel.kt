@@ -53,31 +53,25 @@ class SaveViewModel(
     fun setClass(classNum: ClassNum) {
         val current = _state.value
         _state.value = current.copy(classNum = classNum, errorMessage = null)
+        // m2403 Bug P: cache autoSerialForClass for the duplicate-check pathway but do
+        // NOT write to serialText. User directive verbatim: "no need for it". The user
+        // types the serial themselves every time.
         if (classNum !in current.autoSerialForClass) {
             nextSerialJob?.cancel()
             nextSerialJob = viewModelScope.launch {
                 val next = repo.nextSerial(classNum)
                 _state.update { s ->
                     if (s.classNum != classNum) return@update s
-                    s.copy(
-                        autoSerialForClass = s.autoSerialForClass + (classNum to next),
-                        serialText = if (s.namingKind == NamingMode.Kind.Serial && s.serialText.isBlank())
-                            formatSerial(next)
-                        else s.serialText,
-                    )
+                    s.copy(autoSerialForClass = s.autoSerialForClass + (classNum to next))
                 }
             }
         }
     }
 
     fun setNamingKind(kind: NamingMode.Kind) {
-        val current = _state.value
-        val next = current.copy(namingKind = kind, errorMessage = null)
-        // On first switch to Serial, seed the field from cached auto-serial for the picked class.
-        val patched = if (kind == NamingMode.Kind.Serial && next.serialText.isBlank()) {
-            next.classNum?.let { next.autoSerialForClass[it] }?.let { next.copy(serialText = formatSerial(it)) } ?: next
-        } else next
-        _state.value = patched
+        // m2403 Bug P: no auto-populate. serialText stays whatever the user typed
+        // (or blank on first entry).
+        _state.value = _state.value.copy(namingKind = kind, errorMessage = null)
     }
 
     fun setSerialText(text: String) {

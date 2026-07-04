@@ -43,10 +43,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -165,6 +168,18 @@ private fun CameraGranted(
     // px == image px.
     var guideBoxState by remember { mutableStateOf<Pair<Rect, Size>?>(null) }
 
+    // m2475 Bug U: PreviewView renders full-bleed (entire screen) while the guide-box
+    // overlay lives in an inset middle-cell (excludes top+bottom bars). The overlay's
+    // Rect + canvas Size are OVERLAY-LOCAL coords, but PreviewGuide's FILL_CENTER inverse
+    // must run in PREVIEW-LOCAL coords (matching the pixel space that CameraX actually
+    // captured). Track the PreviewView's window-space position + size and the overlay
+    // Box's window-space position; the delta becomes previewOffset. Without this, the
+    // top bar (~56dp + status bar) shifts the captured photo upward and clips both
+    // top and bottom (user's photos m2475: crop rect shifted UP vs the guide box).
+    var previewViewPos by remember { mutableStateOf(Offset.Zero) }
+    var previewViewSize by remember { mutableStateOf(Size.Zero) }
+    var overlayBoxPos by remember { mutableStateOf(Offset.Zero) }
+
     // DESIGN §7.2: mode swap reshapes the guide box 3:4 ↔ 3:1 over 220ms EaseInOutCubic
     // instead of snapping. Animate the two overlay props, not the enum itself.
     // WCAG 2.3.3: when reduce-motion is on, snap to the new aspect instead of morphing.
@@ -187,7 +202,15 @@ private fun CameraGranted(
     // to punch through the 96dp shutter row (user bug report, 2024-12).
     Box(Modifier.fillMaxSize()) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coords ->
+                    // m2475 Bug U: capture PreviewView's window-space rect. Size feeds
+                    // FILL_CENTER inverse scale; position becomes the anchor that the
+                    // overlay's offset is measured against.
+                    previewViewPos = coords.positionInWindow()
+                    previewViewSize = Size(coords.size.width.toFloat(), coords.size.height.toFloat())
+                },
             factory = { ctx ->
                 PreviewView(ctx).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -208,7 +231,14 @@ private fun CameraGranted(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .onGloballyPositioned { coords ->
+                        // m2475 Bug U: overlay Box's window-space top-left. The overlay's
+                        // rect + canvas Size are LOCAL to this Box, so PreviewGuide needs
+                        // (overlayBoxPos - previewViewPos) to translate rect corners into
+                        // PreviewView-local space where FILL_CENTER inverse actually applies.
+                        overlayBoxPos = coords.positionInWindow()
+                    },
             ) {
                 NpicCameraOverlay(
                     aspect            = guideAspectAnim,
@@ -233,10 +263,17 @@ private fun CameraGranted(
                     haptics.performClick()
                     val target = File(context.cacheDir, "drafts").apply { mkdirs() }
                         .resolve("${UUID.randomUUID()}.jpg")
-                    // Null when overlay hasn't laid out yet (first-frame shutter). VM
-                    // treats null as "no seed available; detectors fall back to full-image
-                    // bounds" (PRD §7.1 step 9 / §7.2 step 1).
-                    val previewGuide = guideBoxState?.let { (r, s) -> PreviewGuide(r, s) }
+                    // m2475 Bug U: PreviewGuide now takes PREVIEW-view size (not overlay
+                    // canvas size) plus the overlay-vs-preview offset. Null when either
+                    // side hasn't laid out yet — VM falls back to full-image bounds.
+                    val previewGuide = guideBoxState?.let { (r, _) ->
+                        if (previewViewSize == Size.Zero) return@let null
+                        PreviewGuide(
+                            rect          = r,
+                            previewSize   = previewViewSize,
+                            previewOffset = overlayBoxPos - previewViewPos,
+                        )
+                    }
                     viewModel.capture(
                         controller   = controller,
                         target       = target,
