@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Splash theme only.
+    Actual app theming is Compose-driven via NpicTheme in core/theme/. Feature code MUST NOT
+    inherit these values; they exist ONLY to bridge the pre-Compose splash window per
+    Android 12+ splash API (androidx.core:core-splashscreen).
+-->
+<resources>
+    <style name="Theme.Npic.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/npic_ivory</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimationDuration">200</item>
+        <item name="postSplashScreenTheme">@style/Theme.Npic</item>
+    </style>
+
+    <!-- Post-splash bare theme. Compose owns the real chrome; this only silences the system UI
+         before setContent runs. -->
+    <style name="Theme.Npic" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/npic_ivory</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

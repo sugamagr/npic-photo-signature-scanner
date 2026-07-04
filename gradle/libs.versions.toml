@@ -1,0 +1,174 @@
+[versions]
+# --- Build tooling ---
+agp                     = "8.9.1"
+kotlin                  = "2.0.21"
+ksp                     = "2.0.21-1.0.28"
+
+# --- SDK ---
+compileSdk              = "36"
+targetSdk               = "35"
+minSdk                  = "24"
+
+# --- AndroidX core / lifecycle ---
+androidxCore            = "1.15.0"
+androidxLifecycle       = "2.8.7"
+androidxActivity        = "1.9.3"
+androidxSplashscreen    = "1.0.1"
+
+# --- Compose ---
+composeBom              = "2024.12.01"
+composeNavigation       = "2.8.5"
+composeMaterial3        = "1.3.1"
+
+# --- CameraX ---
+cameraX                 = "1.4.1"
+
+# --- Room ---
+room                    = "2.6.1"
+
+# --- Coroutines ---
+kotlinxCoroutines       = "1.9.0"
+kotlinxSerialization    = "1.7.3"
+kotlinxDatetime         = "0.6.1"
+
+# --- Coil (image loading) ---
+coil                    = "2.7.0"
+
+# --- OpenCV (Android) ---
+# We use the community-maintained Maven distribution to avoid the .aar-in-libs mess.
+# Verified via https://central.sonatype.com/artifact/org.opencv/opencv
+opencv                  = "4.10.0"
+
+# --- DataStore ---
+datastore               = "1.1.1"
+
+# --- Testing ---
+junit                   = "4.13.2"
+androidxJunit           = "1.2.1"
+androidxEspresso        = "3.6.1"
+androidxTestRunner      = "1.6.2"
+androidxTestRules       = "1.6.1"
+turbine                 = "1.2.0"
+truth                   = "1.4.4"
+mockk                   = "1.13.13"
+
+[libraries]
+# --- AndroidX core / lifecycle ---
+androidx-core-ktx                 = { group = "androidx.core",            name = "core-ktx",                    version.ref = "androidxCore" }
+androidx-lifecycle-runtime-ktx    = { group = "androidx.lifecycle",       name = "lifecycle-runtime-ktx",       version.ref = "androidxLifecycle" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle",      name = "lifecycle-runtime-compose",   version.ref = "androidxLifecycle" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle",    name = "lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
+androidx-activity-compose         = { group = "androidx.activity",        name = "activity-compose",            version.ref = "androidxActivity" }
+androidx-splashscreen             = { group = "androidx.core",            name = "core-splashscreen",           version.ref = "androidxSplashscreen" }
+
+# --- Compose (via BOM) ---
+compose-bom                       = { group = "androidx.compose",         name = "compose-bom",                 version.ref = "composeBom" }
+compose-ui                        = { group = "androidx.compose.ui",      name = "ui" }
+compose-ui-graphics               = { group = "androidx.compose.ui",      name = "ui-graphics" }
+compose-ui-tooling                = { group = "androidx.compose.ui",      name = "ui-tooling" }
+compose-ui-tooling-preview        = { group = "androidx.compose.ui",      name = "ui-tooling-preview" }
+compose-ui-test-manifest          = { group = "androidx.compose.ui",      name = "ui-test-manifest" }
+compose-ui-test-junit4            = { group = "androidx.compose.ui",      name = "ui-test-junit4" }
+compose-foundation                = { group = "androidx.compose.foundation", name = "foundation" }
+compose-material3                 = { group = "androidx.compose.material3", name = "material3",                 version.ref = "composeMaterial3" }
+compose-material-icons-extended   = { group = "androidx.compose.material", name = "material-icons-extended" }
+compose-animation                 = { group = "androidx.compose.animation", name = "animation" }
+compose-animation-graphics        = { group = "androidx.compose.animation", name = "animation-graphics" }
+compose-navigation                = { group = "androidx.navigation",      name = "navigation-compose",          version.ref = "composeNavigation" }
+
+# --- CameraX ---
+camera-core                       = { group = "androidx.camera",          name = "camera-core",                 version.ref = "cameraX" }
+camera-camera2                    = { group = "androidx.camera",          name = "camera-camera2",              version.ref = "cameraX" }
+camera-lifecycle                  = { group = "androidx.camera",          name = "camera-lifecycle",            version.ref = "cameraX" }
+camera-view                       = { group = "androidx.camera",          name = "camera-view",                 version.ref = "cameraX" }
+camera-extensions                 = { group = "androidx.camera",          name = "camera-extensions",           version.ref = "cameraX" }
+
+# --- Room ---
+room-runtime                      = { group = "androidx.room",            name = "room-runtime",                version.ref = "room" }
+room-ktx                          = { group = "androidx.room",            name = "room-ktx",                    version.ref = "room" }
+room-compiler                     = { group = "androidx.room",            name = "room-compiler",               version.ref = "room" }
+
+# --- Coroutines / Serialization / Datetime ---
+kotlinx-coroutines-android        = { group = "org.jetbrains.kotlinx",    name = "kotlinx-coroutines-android",  version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-core           = { group = "org.jetbrains.kotlinx",    name = "kotlinx-coroutines-core",     version.ref = "kotlinxCoroutines" }
+kotlinx-serialization-json        = { group = "org.jetbrains.kotlinx",    name = "kotlinx-serialization-json",  version.ref = "kotlinxSerialization" }
+kotlinx-datetime                  = { group = "org.jetbrains.kotlinx",    name = "kotlinx-datetime",            version.ref = "kotlinxDatetime" }
+
+# --- Coil ---
+coil-compose                      = { group = "io.coil-kt",               name = "coil-compose",                version.ref = "coil" }
+
+# --- OpenCV ---
+opencv                            = { group = "org.opencv",               name = "opencv",                      version.ref = "opencv" }
+
+# --- DataStore ---
+datastore-preferences             = { group = "androidx.datastore",       name = "datastore-preferences",       version.ref = "datastore" }
+
+# --- Testing ---
+junit                             = { group = "junit",                    name = "junit",                       version.ref = "junit" }
+androidx-junit                    = { group = "androidx.test.ext",        name = "junit",                       version.ref = "androidxJunit" }
+androidx-espresso-core            = { group = "androidx.test.espresso",   name = "espresso-core",               version.ref = "androidxEspresso" }
+androidx-test-runner              = { group = "androidx.test",            name = "runner",                      version.ref = "androidxTestRunner" }
+androidx-test-rules               = { group = "androidx.test",            name = "rules",                       version.ref = "androidxTestRules" }
+kotlinx-coroutines-test           = { group = "org.jetbrains.kotlinx",    name = "kotlinx-coroutines-test",     version.ref = "kotlinxCoroutines" }
+turbine                           = { group = "app.cash.turbine",         name = "turbine",                     version.ref = "turbine" }
+truth                             = { group = "com.google.truth",         name = "truth",                       version.ref = "truth" }
+mockk                             = { group = "io.mockk",                 name = "mockk",                       version.ref = "mockk" }
+mockk-android                     = { group = "io.mockk",                 name = "mockk-android",               version.ref = "mockk" }
+room-testing                      = { group = "androidx.room",            name = "room-testing",                version.ref = "room" }
+
+[plugins]
+android-application               = { id = "com.android.application",                     version.ref = "agp" }
+android-library                   = { id = "com.android.library",                         version.ref = "agp" }
+kotlin-android                    = { id = "org.jetbrains.kotlin.android",                version.ref = "kotlin" }
+kotlin-compose                    = { id = "org.jetbrains.kotlin.plugin.compose",         version.ref = "kotlin" }
+kotlin-serialization              = { id = "org.jetbrains.kotlin.plugin.serialization",   version.ref = "kotlin" }
+ksp                               = { id = "com.google.devtools.ksp",                     version.ref = "ksp" }
+
+[bundles]
+compose = [
+    "compose-ui",
+    "compose-ui-graphics",
+    "compose-ui-tooling-preview",
+    "compose-foundation",
+    "compose-material3",
+    "compose-material-icons-extended",
+    "compose-animation",
+    "compose-animation-graphics",
+    "compose-navigation",
+]
+
+camera = [
+    "camera-core",
+    "camera-camera2",
+    "camera-lifecycle",
+    "camera-view",
+    "camera-extensions",
+]
+
+room = [
+    "room-runtime",
+    "room-ktx",
+]
+
+lifecycle = [
+    "androidx-lifecycle-runtime-ktx",
+    "androidx-lifecycle-runtime-compose",
+    "androidx-lifecycle-viewmodel-compose",
+]
+
+test-unit = [
+    "junit",
+    "truth",
+    "mockk",
+    "kotlinx-coroutines-test",
+    "turbine",
+]
+
+test-android = [
+    "androidx-junit",
+    "androidx-espresso-core",
+    "androidx-test-runner",
+    "androidx-test-rules",
+    "mockk-android",
+    "truth",
+]

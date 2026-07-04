@@ -1,0 +1,53 @@
+# --- Gradle ---
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# --- Kotlin compiler cache ---
+.kotlin/
+
+# --- Android Studio / IntelliJ ---
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# --- Android build outputs ---
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+release/
+
+# --- Signing (never commit) ---
+*.jks
+*.keystore
+keystore.properties
+release-keystore.properties
+
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+
+# --- Logs / temp ---
+*.log
+*.tmp
+hs_err_pid*
+
+# --- Local secrets ---
+.env
+.env.local
+secrets.properties
+
+# --- Coverage / test outputs ---
+*.exec
+jacoco.exec
