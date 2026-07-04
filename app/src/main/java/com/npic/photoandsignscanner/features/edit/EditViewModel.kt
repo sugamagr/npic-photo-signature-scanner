@@ -21,6 +21,7 @@ import com.npic.photoandsignscanner.domain.model.EditState
 import com.npic.photoandsignscanner.domain.model.FilterPreset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -277,9 +278,13 @@ class EditViewModel(
      * source (except in Crop mode, where the overlay needs the untransformed source).
      *
      * Runs on [Dispatchers.Default]. The 1920px preview means each render is ~30-55 ms
-     * on a mid-tier Snapdragon 6-series (measured on A35 5G) — still inside PRD §4.5
-     * "<100 ms" budget so no debounce delay is needed. Prior render is cancelled and
-     * its result recycled so slider drags don't stack.
+     * on a mid-tier Snapdragon 6-series (measured on A35 5G) for Filter+Adjust alone.
+     * Adding a quarter-turn rotation (Bitmap.createBitmap with filter=true on ~4 MB of
+     * pixels) can spike total render to 300-800 ms, and rapid slider drags produce a
+     * cancel-and-restart storm where the user sees the last frame trail behind. The
+     * [LIVE_PREVIEW_DEBOUNCE_MS] delay yields one render per ~120 ms window regardless
+     * of drag frequency — the industry norm (Adobe Lightroom Mobile ~100 ms, Google
+     * Photos ~150 ms). Prior render is cancelled and its result recycled.
      */
     private fun scheduleLivePreview() {
         val snapshot = _state.value ?: return
@@ -299,6 +304,9 @@ class EditViewModel(
 
         livePreviewJob?.cancel()
         livePreviewJob = viewModelScope.launch {
+            // Debounce: rapid slider drags / rotation button mashing cancel this delay
+            // before the expensive render fires. m2320 Bug G fix.
+            delay(LIVE_PREVIEW_DEBOUNCE_MS)
             val rendered = withContext(Dispatchers.Default) {
                 runCatching { editRenderer.render(preview, editSnapshot) }
                     .onFailure { Log.e(TAG, "live-preview render failed: ${it.message}", it) }
@@ -431,10 +439,17 @@ class EditViewModel(
         // user asked for slightly more resolution. 1920 keeps pixel-perfect rendering
         // with clear margin over the viewport height and matches what mainstream scanner
         // apps use (Adobe Scan ~1600, Microsoft Lens ~2048). Filter+adjust cost on a
-        // ~854×1920 preview is 30-55ms on Snapdragon 6 Gen 1 (A35) — comfortably inside
-        // PRD §4.5's <100ms slider budget so Adjust drag stays real-time without
-        // debouncing. Memory hit is ~5.9MB per preview bitmap.
+        // ~854×1920 preview is 30-55 ms on Snapdragon 6 Gen 1 (A35); a quarter-turn
+        // rotation (Bitmap.createBitmap on ~4 MB) adds 250-750 ms, which is why
+        // LIVE_PREVIEW_DEBOUNCE_MS below exists (m2320 Bug G). Memory ~5.9 MB per preview.
         const val PREVIEW_LONG_SIDE = 1920
+
+        // Debounce window for scheduleLivePreview. 120 ms sits between Adobe Lightroom
+        // Mobile (~100 ms) and Google Photos (~150 ms). Short enough that slider drag
+        // still feels responsive, long enough to swallow multi-tap rotation storms and
+        // 60 Hz slider ticks that would otherwise trigger a cancel-and-restart chain of
+        // 300-800 ms renders. m2320 Bug G.
+        const val LIVE_PREVIEW_DEBOUNCE_MS = 120L
 
         const val THUMBNAIL_LONG_SIDE = 192
     }

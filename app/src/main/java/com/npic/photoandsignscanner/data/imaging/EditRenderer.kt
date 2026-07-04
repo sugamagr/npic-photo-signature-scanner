@@ -54,21 +54,22 @@ class EditRenderer(
         val straightened = applyStraighten(rotated, state.rotation.straightenDegrees)
         if (straightened !== rotated && rotated !== source) rotated.recycle()
 
-        val mappedQuad = mapQuadThroughRotation(
-            state.crop,
-            source.width,
-            source.height,
-            state.rotation.quarterTurnsCw,
-        )
-        // Sentinel remap: EditState.seedFrom falls back to a NORMALIZED unit-square quad
-        // (0..1 in every ordinate) when the CameraCapture has no guide box — the domain
-        // layer can't know the source dimensions there. Detect that sentinel here and
-        // remap to full-source bounds BEFORE applyCrop runs; otherwise applyPerspectiveCrop
-        // would round widths/heights of ~1 pixel and produce a 1×1 output bitmap that the
-        // viewport upscales into a uniform gray blob (m1653 root cause).
-        val effectiveQuad = if (isNormalizedSentinel(mappedQuad)) {
-            val w = source.width.toFloat()
-            val h = source.height.toFloat()
+        // Sentinel FIRST, then rotate. mapQuadThroughRotation moves normalized (0..1) ordinates
+        // through h-y and w-x math anchored at the SOURCE dimensions, so a "1500×1000" source
+        // maps sentinel `(0,0)` to `(1500, 0)` — the ordinate escapes the < 1.5f threshold and
+        // isNormalizedSentinel returns false, defeating the full-source remap. applyPerspectiveCrop
+        // then samples the ROTATED bitmap at (1500, 0..1) which is outside its buffer, producing a
+        // 1×1 gray output that the viewport upscales into the gray/black blob user reports on
+        // quarter-turn rotation (m2320 Bug F).
+        //
+        // Fix: detect sentinel on the ORIGINAL quad (before rotation mapping), and when true skip
+        // rotation mapping entirely and remap to full bounds of the ALREADY-ROTATED bitmap. Its
+        // dimensions match `straightened.width/height` (which is `rotated.width/height`) — width
+        // and height are swapped versus source for odd quarter-turns, so we must read them from
+        // the rotated bitmap, not the source.
+        val effectiveQuad = if (isNormalizedSentinel(state.crop)) {
+            val w = straightened.width.toFloat()
+            val h = straightened.height.toFloat()
             CropQuad(
                 tl = Offset(0f, 0f),
                 tr = Offset(w,  0f),
@@ -76,7 +77,12 @@ class EditRenderer(
                 bl = Offset(0f, h),
             )
         } else {
-            mappedQuad
+            mapQuadThroughRotation(
+                state.crop,
+                source.width,
+                source.height,
+                state.rotation.quarterTurnsCw,
+            )
         }
         val cropped = applyCrop(straightened, effectiveQuad, state.source.mode)
         if (straightened !== cropped && straightened !== source) straightened.recycle()
