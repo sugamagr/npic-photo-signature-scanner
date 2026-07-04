@@ -137,15 +137,24 @@ class RoomStudentRepository(
         // collides with N and the user hits DuplicateFound on a fresh save. Name mode
         // already bumped via nextSerialAndBump above so passes null.
         val advanceTo = (input.naming as? NamingMode.Serial)?.number
+        // qc-round-12 Oracle #3 MAJOR #1: two callers reach replace() with different id
+        // invariants:
+        //   (a) UpdateConfirm flow (m2232 signature-flow): SharedCaptureHolder.beginUpdate
+        //       mints draft.id == existingId so SourceStore files are overwritten in place
+        //       by the Edit-time writePhoto/writeSignature. No orphan cleanup needed.
+        //   (b) SaveViewModel.resolveDuplicateReplacingExisting (Keep-new): existingId is
+        //       dupe.existing.id (the OLD record's UUID) while draft.id is dupe.incoming.id
+        //       (the NEW record's UUID). sources/{existingId}_photo.jpg + _signature.jpg
+        //       would be orphaned forever without an explicit delete — every Keep-new
+        //       leaked ~200-400 KB. deleteFor() is idempotent (missing file → no-op).
+        if (existingId != draft.id) {
+            sourceStore.deleteFor(existingId)
+        }
         dao.replaceWithCounter(
             existingId       = existingId,
             incoming         = record.toEntity(namingKind = input.naming.kind.name),
             advanceCounterTo = advanceTo,
         )
-        // Oracle #2 D3: replace() reuses the SAME id (draft.id == existingId when the
-        // UpdateConfirm flow is in play, per SharedCaptureHolder.beginUpdate). SourceStore
-        // files are keyed by id so they're overwritten by the fresh writePhoto/writeSignature
-        // that ran during Edit commit — no orphan cleanup needed here.
         return SaveResult.Success(record)
     }
 

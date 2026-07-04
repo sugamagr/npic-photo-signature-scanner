@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     FileProvider paths used by the export ShareSheet.
-    - export/  holds transient combined/photo/signature JPEGs generated for a single share event.
+    - exports/  holds transient combined/photo/signature JPEGs generated for a single share event.
     - cache/exports/  fallback for share flows that route via the cache dir.
-    Both roots are inside app-internal storage; no external storage permission needed.
+    - sources/  qc-round-12 Oracle #5 MEDIUM #3: future-proof. Current flows always render
+      a fresh compressed JPEG to exports/ before sharing, so sources/{id}_photo.jpg is
+      never handed to a third-party intent today. But if any future code path shares a
+      source file directly (e.g. Detail "Share raw" v1.1), FileProvider would throw
+      IllegalArgumentException without this entry. Declaring it now costs zero at
+      runtime and prevents a latent crash.
+    All roots are inside app-internal storage; no external storage permission needed.
 -->
 <paths>
     <files-path name="internal_exports" path="exports/" />
     <cache-path name="cache_exports"   path="exports/" />
+    <files-path name="internal_sources" path="sources/" />
 </paths>

@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,9 +113,15 @@ private fun SearchContent(
                     verticalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
                 ) {
                     items(items = results, key = { it.id }) { record ->
+                        // qc-round-12 Oracle #6 MINOR #10: wrap onRecordClick via
+                        // rememberUpdatedState inside the items block so lambda identity
+                        // stays stable across recompositions of the row. Matches the
+                        // GalleryScreen:623-626 O(N) recomp fix pattern. m1597 industry
+                        // standard anti-regression trail.
+                        val currentOnRecordClick by rememberUpdatedState(onRecordClick)
                         SearchResultRow(
                             record = record,
-                            onClick = { onRecordClick(record.id) },
+                            onClick = { currentOnRecordClick(record.id) },
                         )
                     }
                 }

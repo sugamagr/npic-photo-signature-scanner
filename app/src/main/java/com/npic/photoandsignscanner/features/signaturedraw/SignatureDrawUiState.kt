@@ -1,6 +1,6 @@
 package com.npic.photoandsignscanner.features.signaturedraw
 
-import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import com.npic.photoandsignscanner.domain.model.DrawStroke
 
 /**
@@ -17,8 +17,15 @@ import com.npic.photoandsignscanner.domain.model.DrawStroke
  * range is 2..12 px per PRD §4.4, default 4 px.
  *
  * [showClearConfirm] drives the "Clear all strokes?" confirmation dialog.
+ *
+ * qc-round-12 Oracle #6 MAJOR #1: annotated `@Stable` (not `@Immutable`) because Kotlin's
+ * read-only `List<DrawStroke>` type can be backed by a mutable implementation — the
+ * `@Immutable` contract requires DEEP unchangeability, which we can't guarantee at the
+ * type level. Runtime is correct: SignatureDrawViewModel publishes fresh instances via
+ * `_state.update { ... }`, so equals-based skip-recomp (which `@Stable` enables) is sound.
+ * Matches EditUiState exemplary pattern. m1597 industry standard.
  */
-@Immutable
+@Stable
 data class SignatureDrawUiState(
     val strokes: List<DrawStroke> = emptyList(),
     val inFlightStroke: DrawStroke? = null,

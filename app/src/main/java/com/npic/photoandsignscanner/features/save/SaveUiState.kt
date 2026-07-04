@@ -1,6 +1,6 @@
 package com.npic.photoandsignscanner.features.save
 
-import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.NamingMode
 import com.npic.photoandsignscanner.domain.model.SaveInput
@@ -25,8 +25,15 @@ import com.npic.photoandsignscanner.domain.model.StudentDraft
  * screen shows the Duplicate Dialog (PRD §4.7) on top and blocks the sheet until the user
  * resolves it. `completedRecord` is set on [SaveResult.Success] so the destination knows
  * to dismiss + navigate + toast.
+ *
+ * qc-round-12 Oracle #6 MAJOR #3: annotated `@Stable`, NOT `@Immutable`. Kotlin's
+ * read-only `Map<ClassNum, Int>` (autoSerialForClass) can be backed by a mutable
+ * implementation at runtime, so `@Immutable` would over-promise field immutability.
+ * The ViewModel emits fresh instances via `_state.update {}` so equals-based
+ * skip-recomposition (`@Stable`'s contract) is accurate. Matches the exemplary
+ * `EditUiState` pattern. m1597 industry standard.
  */
-@Immutable
+@Stable
 data class SaveUiState(
     val draft: StudentDraft,
     val classNum: ClassNum = ClassNum.Nine,

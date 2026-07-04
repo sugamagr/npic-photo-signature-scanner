@@ -484,7 +484,7 @@ private fun GalleryZeroState(onCapture: () -> Unit) {
                 ZeroStateHintTile(
                     icon  = Icons.Outlined.CameraAlt,
                     title = "Photo",
-                    body  = "Auto edge + filter",
+                    body  = "Crop + filter",
                     modifier = Modifier.weight(1f),
                 )
                 ZeroStateHintTile(

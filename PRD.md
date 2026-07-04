@@ -262,7 +262,7 @@ Samsung-Gallery-inspired but flat (per your decision). This is the app's launch 
 
 | # | Name | Photo default? | Sig default? | Effect Summary |
 |---|---|---|---|---|
-| 0 | **Auto** | ✅ (default) | ✅ (default) | Context-aware: routes to School ID for photo, Ink Boost for signature. Shown as "Auto" in UI. |
+| 0 | **Auto** | ✅ (default) | ✅ (default) | Context-aware: routes to School ID for photo, Original for signature (per m1682 — Ink Boost darkened faint ink to unreadable). Shown as "Auto" in UI. |
 | 1 | Original | | | No processing. |
 | 2 | Color Boost | | | Saturation +15, Contrast +10, skin-tone preserve. |
 | 3 | Document B&W | | | Grayscale + threshold-adaptive contrast + background whitening. |
@@ -273,7 +273,7 @@ Samsung-Gallery-inspired but flat (per your decision). This is the app's launch 
 
 **Auto routing logic (deterministic, no ML):**
 - If capture flow was Photo camera → applies School ID preset.
-- If capture flow was Signature camera or Signature draw → applies Ink Boost preset.
+- If capture flow was Signature camera or Signature draw → applies Original preset (no post-processing, per m1682 — Ink Boost darkened faint ink to unreadable in field testing).
 - User can switch to any other preset; the switch is remembered per-item (not globally).
 
 ---

@@ -692,6 +692,54 @@ impact at the scale we're at (typical bulk export ≤50 records).
 
 ---
 
+### C11 — `StudentEntity.photoPath` nullable schema
+
+**Deferred as:** `StudentEntity.photoPath` is declared `String` (NOT
+NULL) even though PRD §4.6 allows signature-only records. The workaround
+in `RoomStudentRepository.save()` stores `draft.photoPath.orEmpty()` so
+signature-only rows persist an empty string, and every read site
+handles `photoPath.isNotBlank()` before treating it as a real file
+path.
+
+**Scope:** promote `photoPath` to nullable (`String?`) in
+`StudentEntity` + `StudentRecord`, drop the `.orEmpty()` workaround,
+add a `MIGRATION_2_3` that keeps existing "" rows or rewrites them to
+NULL, update every consumer to null-check instead of blank-check.
+
+**Estimated cost:** ~1 hour (mostly ripple through call sites, plus a
+short migration).
+
+**Priority:** low. The empty-string sentinel is honest at every read
+site today and doesn't leak into filenames or exports. Cosmetic schema
+tidiness only.
+
+**Anchored source finding:** qc-round-12 Oracle #3 MINOR #3.
+
+---
+
+### C12 — Sentinel-threshold util deduplication
+
+**Deferred as:** the `NORMALIZED_SENTINEL_THRESHOLD = 1.5f` check
+`maxOf(q.tl.x, q.tr.x, q.br.x, q.bl.x, q.tl.y, q.tr.y, q.br.y, q.bl.y)
+< 1.5f` is inlined in two places: `EditScreen.kt` letterbox bridge
+(m2228 Bug C) and `EditRenderer.render` sentinel remap block (m2320
+Bug F). Both must stay in lockstep with `EditState.NORMALIZED = 1f` +
+`NORMALIZED_SENTINEL_THRESHOLD = 1.5f`.
+
+**Scope:** extract to a shared extension on `CropQuad`, e.g.
+`fun CropQuad.isNormalizedSentinel(): Boolean = maxOf(...) < EditState.NORMALIZED_SENTINEL_THRESHOLD`,
+and route both call sites through it. Domain-layer purity intact
+(CropQuad lives in `domain.model`, EditState too).
+
+**Estimated cost:** ~15 min.
+
+**Priority:** low. Code smell only; both current sites match. If a
+third consumer appears (e.g. Save-time re-render), extract then.
+
+**Anchored source finding:** qc-round-12 Oracle #4 MINOR #18.
+
+---
+
 ## How to extend this doc
 
 When a Section B item resolves, promote it to Section A with the choice

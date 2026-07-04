@@ -1,6 +1,6 @@
 package com.npic.photoandsignscanner.features.search
 
-import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -16,7 +16,17 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.stateIn
 
-@Immutable
+/**
+ * Search UI state.
+ *
+ * qc-round-12 Oracle #6 MAJOR #6: annotated `@Stable`, NOT `@Immutable`. Kotlin's
+ * read-only `List<StudentRecord>` (results) can be backed by a mutable implementation
+ * at runtime, so `@Immutable` would over-promise field immutability. The ViewModel
+ * emits fresh instances via `stateIn` on each combine emission so equals-based
+ * skip-recomposition (`@Stable`'s contract) is accurate. Matches the exemplary
+ * `EditUiState` pattern. m1597 industry standard.
+ */
+@Stable
 data class SearchUiState(
     val query: String = "",
     val results: List<StudentRecord> = emptyList(),

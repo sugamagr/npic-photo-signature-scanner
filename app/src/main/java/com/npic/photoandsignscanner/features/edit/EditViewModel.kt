@@ -435,13 +435,16 @@ class EditViewModel(
     }
 
     override fun onCleared() {
-        // Recycle cached bitmaps so leaving Edit reclaims the ~10-30 MB working set.
-        _state.value?.let { s ->
-            s.sourceBitmap?.recycle()
-            s.previewBitmap?.recycle()
-            s.livePreviewBitmap?.recycle()
-            s.filterThumbnails.values.forEach { it.recycle() }
-        }
+        // qc-round-12 Oracle #2 MAJOR #7: do NOT recycle cached bitmaps here. Compose
+        // may still hold references from the previous frame (livePreviewBitmap is drawn
+        // in ImageViewport, filterThumbnails in FilterTool); recycling synchronously in
+        // onCleared() races against a mid-frame draw pass on fast nav-away and crashes
+        // with "trying to use a recycled bitmap". viewModelScope is already cancelled
+        // by the time onCleared() runs, so we can't defer via Dispatchers.Main.immediate
+        // either. The ~10-30 MB working set is small enough for GC to reclaim on the
+        // next moderate allocation — Android's Bitmap allocator uses native heap on
+        // API 28+ so this doesn't even count against the Java heap ceiling. m1597: no
+        // cheap fixes, and a rare crash is not an acceptable trade for ~20 MB of GC lag.
         super.onCleared()
     }
 
