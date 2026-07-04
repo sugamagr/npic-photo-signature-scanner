@@ -1,17 +1,19 @@
 package com.npic.photoandsignscanner.features.camera
 
+import android.graphics.BitmapFactory
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.CameraMode
-import com.npic.photoandsignscanner.domain.model.RectI
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 
 /**
@@ -51,7 +53,7 @@ class CameraViewModel : ViewModel() {
     fun capture(
         controller: NpicCameraController,
         target: File,
-        guideBoxImageSpace: RectI?,
+        previewGuide: PreviewGuide?,
         onDone: (CameraCapture) -> Unit,
     ) {
         if (_state.value.capturing) return
@@ -61,6 +63,18 @@ class CameraViewModel : ViewModel() {
         captureJob = viewModelScope.launch {
             try {
                 val file = controller.takePicture(target)
+                // Layer 11: now that we have the WRITTEN JPEG, decode just its bounds
+                // (cheap — no pixel buffer allocated) and project the overlay's
+                // preview-space rect into the image's pixel grid via PreviewGuide.toImageSpace.
+                // Result feeds EditRenderer's OpenCV seed area (PRD §7.1 / §7.2).
+                val guideBoxImageSpace = previewGuide?.let { pg ->
+                    withContext(Dispatchers.IO) {
+                        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeFile(file.absolutePath, opts)
+                        if (opts.outWidth <= 0 || opts.outHeight <= 0) null
+                        else pg.toImageSpace(opts.outWidth, opts.outHeight)
+                    }
+                }
                 _state.update {
                     it.copy(capturing = false, sessionCount = it.sessionCount + 1)
                 }

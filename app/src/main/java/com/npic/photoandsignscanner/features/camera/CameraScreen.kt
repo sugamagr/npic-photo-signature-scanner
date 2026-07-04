@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -70,7 +71,6 @@ import com.npic.photoandsignscanner.core.ui.NpicIconButtonStyle
 import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.FlashMode
-import com.npic.photoandsignscanner.domain.model.RectI
 import java.io.File
 import java.util.UUID
 
@@ -138,14 +138,17 @@ private fun CameraGranted(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val density = LocalDensity.current
     val reduceMotion = LocalReduceMotion.current
 
     val controller = remember { NpicCameraController(context) }
     LaunchedEffect(lifecycleOwner) { controller.bindTo(lifecycleOwner) }
     LaunchedEffect(state.flash) { controller.applyFlash(state.flash) }
 
-    var guideBoxPx by remember { mutableStateOf<Rect?>(null) }
+    // Layer 11: overlay reports BOTH the guide rect and the canvas Size it laid out in.
+    // The canvas size lets the VM run the FILL_CENTER inverse against the captured JPEG's
+    // real dimensions instead of the pre-Layer-11 identity-stub that pretended preview
+    // px == image px.
+    var guideBoxState by remember { mutableStateOf<Pair<Rect, Size>?>(null) }
 
     // DESIGN §7.2: mode swap reshapes the guide box 3:4 ↔ 3:1 over 220ms EaseInOutCubic
     // instead of snapping. Animate the two overlay props, not the enum itself.
@@ -194,12 +197,12 @@ private fun CameraGranted(
                 NpicCameraOverlay(
                     aspect            = guideAspectAnim,
                     fillFraction      = guideFillAnim,
-                    onGuideBoxChanged = { guideBoxPx = it },
+                    onGuideBoxChanged = { rect, size -> guideBoxState = rect to size },
                 )
                 HintText(
                     visible    = state.hintVisible,
                     mode       = state.mode,
-                    guideBoxPx = guideBoxPx,
+                    guideBoxPx = guideBoxState?.first,
                     onDismiss  = viewModel::dismissHint,
                 )
             }
@@ -212,16 +215,15 @@ private fun CameraGranted(
                 onShutter = {
                     val target = File(context.cacheDir, "drafts").apply { mkdirs() }
                         .resolve("${UUID.randomUUID()}.jpg")
-                    // Null when overlay hasn't laid out yet (first-frame shutter). Domain
-                    // model accepts null and detectors substitute full-image bounds — no
-                    // (0,0,0,0) sentinel needed anymore.
-                    val guideBoxImageSpace: RectI? =
-                        guideBoxPx?.let { rectPxToImageSpace(it, density) }
+                    // Null when overlay hasn't laid out yet (first-frame shutter). VM
+                    // treats null as "no seed available; detectors fall back to full-image
+                    // bounds" (PRD §7.1 step 9 / §7.2 step 1).
+                    val previewGuide = guideBoxState?.let { (r, s) -> PreviewGuide(r, s) }
                     viewModel.capture(
-                        controller         = controller,
-                        target             = target,
-                        guideBoxImageSpace = guideBoxImageSpace,
-                        onDone             = onCaptureComplete,
+                        controller   = controller,
+                        target       = target,
+                        previewGuide = previewGuide,
+                        onDone       = onCaptureComplete,
                     )
                 },
             )
@@ -507,18 +509,4 @@ private fun CameraDeniedPermanent(onBack: () -> Unit) {
     }
 }
 
-/**
- * TODO(pipeline): map the overlay's on-screen Rect (in preview-space pixels) to the raw
- * image-space pixel rect via CameraX's OutputTransform / MLKit ImageProxy analyzer. For the
- * scaffold we pass the on-screen rect through so Edit has a non-null seed area to render;
- * OpenCV edge detection currently treats the whole image so the seed is advisory only.
- */
-private fun rectPxToImageSpace(rectPx: Rect, density: androidx.compose.ui.unit.Density): RectI {
-    @Suppress("UNUSED_PARAMETER") val d = density
-    return RectI(
-        left   = rectPx.left.toInt(),
-        top    = rectPx.top.toInt(),
-        right  = rectPx.right.toInt(),
-        bottom = rectPx.bottom.toInt(),
-    )
-}
+

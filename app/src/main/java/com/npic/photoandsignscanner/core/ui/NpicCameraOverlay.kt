@@ -42,13 +42,16 @@ fun NpicCameraOverlay(
     modifier: Modifier = Modifier,
     fillFraction: Float = 0.88f,
     tiltDegrees: Float? = null,
-    onGuideBoxChanged: ((Rect) -> Unit)? = null,
+    onGuideBoxChanged: ((rect: Rect, canvasSize: Size) -> Unit)? = null,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
             val s = this.size
             val boxRect = computeGuideBox(canvas = s, aspect = aspect, fill = fillFraction)
-            onGuideBoxChanged?.invoke(boxRect)
+            // Layer 11: emit the CANVAS size alongside the guide box so the capture side can
+            // compute the FILL_CENTER preview↔image transform without guessing (or worse,
+            // pretending preview-space equals image-space, which the pre-Layer-11 stub did).
+            onGuideBoxChanged?.invoke(boxRect, s)
 
             val outer = Path().apply { addRect(Rect(Offset.Zero, s)) }
             val cut   = Path().apply { addRect(boxRect) }
