@@ -449,7 +449,9 @@ private fun FabRegion(
 @Composable
 private fun GalleryPreviewPopulated() {
     NpicTheme {
-        val vm = remember { GalleryViewModel() }
+        val vm = remember {
+            GalleryViewModel(com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository())
+        }
         GalleryScreen(
             viewModel = vm,
             onCaptureClick = {},
@@ -464,7 +466,11 @@ private fun GalleryPreviewPopulated() {
 @Composable
 private fun GalleryPreviewEmpty() {
     NpicTheme {
-        val vm = remember { GalleryViewModel(seed = emptyList()) }
+        val vm = remember {
+            GalleryViewModel(
+                com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository(seed = emptyList()),
+            )
+        }
         GalleryScreen(
             viewModel = vm,
             onCaptureClick = {},
@@ -480,7 +486,7 @@ private fun GalleryPreviewEmpty() {
 private fun GalleryPreviewSelection() {
     NpicTheme {
         val vm = remember {
-            GalleryViewModel().apply {
+            GalleryViewModel(com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository()).apply {
                 toggleSelect(1); toggleSelect(4); toggleSelect(9)
             }
         }

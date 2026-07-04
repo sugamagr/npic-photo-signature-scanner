@@ -37,6 +37,18 @@ class InMemoryStudentRepository(
 
     override fun observeAll(): Flow<List<StudentRecord>> = _records.asStateFlow()
 
+    override suspend fun getById(id: Long): StudentRecord? =
+        _records.value.firstOrNull { it.id == id }
+
+    override suspend fun delete(id: Long): Unit = mutex.withLock {
+        val filtered = _records.value.filterNot { it.id == id }
+        // Only emit if we actually removed something so subscribers don't see spurious
+        // list-identity changes.
+        if (filtered.size != _records.value.size) {
+            _records.value = filtered
+        }
+    }
+
     override suspend fun nextSerial(classNum: ClassNum): Int = mutex.withLock {
         val existing = _records.value.filter { it.classNum == classNum }
         if (existing.isEmpty()) 1 else existing.maxOf { it.serial } + 1

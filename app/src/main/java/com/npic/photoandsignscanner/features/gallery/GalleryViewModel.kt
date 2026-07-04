@@ -1,91 +1,76 @@
 package com.npic.photoandsignscanner.features.gallery
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.SortMode
 import com.npic.photoandsignscanner.domain.model.StudentRecord
+import com.npic.photoandsignscanner.domain.repo.StudentRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 
 /**
  * Gallery presenter.
  *
- * At shell stage this reads from [MockGalleryData]. When the Room-backed repository lands
- * (Layer 5), swap the [seed] source for a `Flow<List<StudentRecord>>` injected via
- * constructor and collect it into [_all]. The mutation methods (filter / sort / select)
- * stay identical.
- *
- * All derivation runs on the caller (Main). The dataset is bounded (max ~2000 records for
- * a two-year school; median 200–400) so filter+sort in-memory is fine — no LazyPagingSource
- * required.
- *
- * TODO(repo): When [StudentRepository] lands, replace the `seed` constructor arg with an
- * injected repository interface and introduce a [androidx.lifecycle.ViewModelProvider.Factory]
- * so `MainActivity` can hand the repo in. At the same time, drop the synchronous `recompute()`
- * for a `combine(all, classFilter, sortMode, selected)` pipeline `.stateIn(viewModelScope,
- * SharingStarted.WhileSubscribed(5_000), initial)`. Kept synchronous now because (a) mock
- * seed is static and (b) it makes the state trace trivially readable during the shell phase.
+ * Reads from a [StudentRepository] — Layer 8b's `InMemoryStudentRepository` today,
+ * Room-backed impl slots in behind the same interface later. Filter + sort + selection
+ * state live in local [MutableStateFlow]s and are combined with the repo's
+ * `observeAll()` on `Dispatchers.Default`, so recomputes never touch Main. Compose
+ * subscribes via `state.collectAsState` and gets a fresh [GalleryUiState] on every
+ * upstream emission.
  */
 class GalleryViewModel(
-    private val seed: List<StudentRecord> = MockGalleryData.records(),
+    private val repository: StudentRepository,
 ) : ViewModel() {
-
-    /** Full population — never filtered. Selection references IDs, so this is the source of truth. */
-    private val _all = MutableStateFlow(seed)
 
     private val _classFilter = MutableStateFlow<ClassNum?>(null)
     private val _sortMode    = MutableStateFlow(SortMode.Newest)
     private val _selected    = MutableStateFlow<Set<Long>>(emptySet())
 
-    private val _state = MutableStateFlow(compute())
-    val state: StateFlow<GalleryUiState> = _state.asStateFlow()
+    val state: StateFlow<GalleryUiState> = combine(
+        repository.observeAll(),
+        _classFilter,
+        _sortMode,
+        _selected,
+    ) { all, filter, sort, selected ->
+        compute(all, filter, sort, selected)
+    }.stateIn(
+        scope        = viewModelScope,
+        started      = SharingStarted.WhileSubscribed(STATE_TIMEOUT_MS),
+        initialValue = GalleryUiState(isLoading = true),
+    )
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Actions
-    // ─────────────────────────────────────────────────────────────────────────
+    fun setClassFilter(classNum: ClassNum?) { _classFilter.value = classNum }
 
-    fun setClassFilter(classNum: ClassNum?) {
-        _classFilter.value = classNum
-        recompute()
-    }
-
-    fun setSortMode(mode: SortMode) {
-        _sortMode.value = mode
-        recompute()
-    }
+    fun setSortMode(mode: SortMode) { _sortMode.value = mode }
 
     fun toggleSelect(id: Long) {
         _selected.update { current ->
             if (id in current) current - id else current + id
         }
-        recompute()
     }
 
     fun clearSelection() {
-        if (_selected.value.isNotEmpty()) {
-            _selected.value = emptySet()
-            recompute()
-        }
+        if (_selected.value.isNotEmpty()) _selected.value = emptySet()
     }
 
     fun selectAll() {
-        _selected.value = _state.value.records.map { it.id }.toSet()
-        recompute()
+        _selected.value = state.value.records.map { it.id }.toSet()
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Derivation
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private fun recompute() { _state.value = compute() }
-
-    private fun compute(): GalleryUiState {
-        val all = _all.value
-        val filter = _classFilter.value
+    private fun compute(
+        all: List<StudentRecord>,
+        filter: ClassNum?,
+        sort: SortMode,
+        selected: Set<Long>,
+    ): GalleryUiState {
         val filtered = if (filter == null) all else all.filter { it.classNum == filter }
-        val sorted = when (_sortMode.value) {
+        val sorted = when (sort) {
             SortMode.Newest -> filtered.sortedByDescending { it.createdAt }
             SortMode.Oldest -> filtered.sortedBy { it.createdAt }
             SortMode.NameAscending ->
@@ -95,17 +80,34 @@ class GalleryViewModel(
             SortMode.ClassAscending ->
                 filtered.sortedWith(compareBy({ it.classNum.ordinal }, { it.serial }))
             SortMode.ClassDescending ->
-                filtered.sortedWith(compareByDescending<StudentRecord> { it.classNum.ordinal }.thenBy { it.serial })
+                filtered.sortedWith(
+                    compareByDescending<StudentRecord> { it.classNum.ordinal }.thenBy { it.serial },
+                )
         }
         val counts = all.groupingBy { it.classNum }.eachCount()
+        // Prune selection IDs that no longer exist (e.g. after Delete). Prevents phantom
+        // selection state after upstream records vanish.
+        val existingIds = all.mapTo(HashSet(all.size)) { it.id }
+        val liveSelected = if (selected.all { it in existingIds }) selected
+                           else selected.intersect(existingIds)
         return GalleryUiState(
             records        = sorted,
             totalCount     = all.size,
             countsByClass  = counts,
             classFilter    = filter,
-            sortMode       = _sortMode.value,
-            selectedIds    = _selected.value,
+            sortMode       = sort,
+            selectedIds    = liveSelected,
             isLoading      = false,
         )
+    }
+
+    class Factory(private val repository: StudentRepository) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            GalleryViewModel(repository) as T
+    }
+
+    private companion object {
+        const val STATE_TIMEOUT_MS = 5_000L
     }
 }

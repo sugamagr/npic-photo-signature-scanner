@@ -22,9 +22,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.npic.photoandsignscanner.core.theme.NpicTheme
 import com.npic.photoandsignscanner.data.imaging.BitmapAdjustments
 import com.npic.photoandsignscanner.data.imaging.BitmapFilters
@@ -37,6 +39,8 @@ import com.npic.photoandsignscanner.domain.model.SignatureSource
 import com.npic.photoandsignscanner.domain.model.StudentDraft
 import com.npic.photoandsignscanner.domain.repo.StudentRepository
 import com.npic.photoandsignscanner.features.camera.CameraScreen
+import com.npic.photoandsignscanner.features.detail.DetailScreen
+import com.npic.photoandsignscanner.features.detail.DetailViewModel
 import com.npic.photoandsignscanner.features.edit.EditScreen
 import com.npic.photoandsignscanner.features.edit.EditViewModel
 import com.npic.photoandsignscanner.features.edit.SharedCaptureHolder
@@ -125,6 +129,8 @@ private object Route {
     const val SignaturePrompt = "signature_prompt"
     const val SignatureDraw   = "signature_draw"
     const val Save            = "save"
+    const val DetailPattern   = "detail/{id}"
+    fun detail(id: Long): String = "detail/$id"
 }
 
 @Composable
@@ -137,7 +143,20 @@ private fun NpicNavHost(
     NavHost(navController = navController, startDestination = Route.Gallery) {
         composable(Route.Gallery) {
             GalleryDestination(
+                studentRepository = studentRepository,
                 onCaptureClick = { navController.navigate(Route.Camera) },
+                onRecordClick = { id -> navController.navigate(Route.detail(id)) },
+            )
+        }
+        composable(
+            route = Route.DetailPattern,
+            arguments = listOf(navArgument("id") { type = NavType.LongType }),
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getLong("id") ?: 0L
+            DetailDestination(
+                studentRepository = studentRepository,
+                recordId = id,
+                onBack = { navController.popBackStack() },
             )
         }
         composable(Route.Camera) {
@@ -225,15 +244,18 @@ private fun NpicNavHost(
 }
 
 @Composable
-private fun GalleryDestination(onCaptureClick: () -> Unit) {
+private fun GalleryDestination(
+    studentRepository: StudentRepository,
+    onCaptureClick: () -> Unit,
+    onRecordClick: (Long) -> Unit,
+) {
     val context = LocalContext.current
-    val viewModel: GalleryViewModel = viewModel()
+    val factory = remember(studentRepository) { GalleryViewModel.Factory(studentRepository) }
+    val viewModel: GalleryViewModel = viewModel(factory = factory)
     GalleryScreen(
         viewModel = viewModel,
         onCaptureClick = onCaptureClick,
-        onRecordClick = { id ->
-            Toast.makeText(context, "Open record #$id → Detail (next layer)", Toast.LENGTH_SHORT).show()
-        },
+        onRecordClick = onRecordClick,
         onExportSelection = { ids ->
             Toast.makeText(context, "Export ${ids.size} record(s) → Share sheet (next layer)", Toast.LENGTH_SHORT).show()
         },
@@ -245,6 +267,54 @@ private fun GalleryDestination(onCaptureClick: () -> Unit) {
         },
         onSearchClick = {
             Toast.makeText(context, "Search (next layer)", Toast.LENGTH_SHORT).show()
+        },
+    )
+}
+
+@Composable
+private fun DetailDestination(
+    studentRepository: StudentRepository,
+    recordId: Long,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    val factory = remember(studentRepository, recordId) {
+        DetailViewModel.Factory(studentRepository, recordId)
+    }
+    val viewModel: DetailViewModel = viewModel(key = "detail-$recordId", factory = factory)
+    DetailScreen(
+        viewModel = viewModel,
+        onBack = onBack,
+        onEditPhoto = {
+            Toast.makeText(context, "Edit photo (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onEditSignature = {
+            Toast.makeText(context, "Edit signature (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onCapturePhoto = {
+            Toast.makeText(context, "Capture photo (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onImportPhoto = {
+            Toast.makeText(context, "Import photo (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onCaptureSignature = {
+            Toast.makeText(context, "Capture signature (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onDrawSignature = {
+            Toast.makeText(context, "Draw signature (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onImportSignature = {
+            Toast.makeText(context, "Import signature (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onExport = {
+            Toast.makeText(context, "Export → Format sheet (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onDuplicateToAnotherClass = {
+            Toast.makeText(context, "Duplicate to another class (next layer)", Toast.LENGTH_SHORT).show()
+        },
+        onDeleted = {
+            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+            onBack()
         },
     )
 }

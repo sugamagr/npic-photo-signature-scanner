@@ -25,6 +25,9 @@ interface StudentRepository {
     /** Cold flow of all records; observers get the current snapshot on subscribe. */
     fun observeAll(): Flow<List<StudentRecord>>
 
+    /** Single-record lookup by ID for the Detail screen (PRD §4.9). Returns null if missing. */
+    suspend fun getById(id: Long): StudentRecord?
+
     /**
      * Next available serial for [classNum] — `max(existingSerials) + 1`, floor 1. The
      * Save dialog uses this to auto-populate the serial input.
@@ -50,4 +53,10 @@ interface StudentRepository {
      * ID.
      */
     suspend fun replace(existingId: Long, draft: StudentDraft, input: SaveInput): SaveResult
+
+    /**
+     * Delete a single record by ID (PRD §4.9 Detail overflow "Delete", §4.8 Gallery
+     * selection-mode "Delete"). Idempotent — deleting a missing ID is a no-op.
+     */
+    suspend fun delete(id: Long)
 }
