@@ -2,7 +2,6 @@ package com.npic.photoandsignscanner.features.edit
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.SignatureSource
@@ -12,9 +11,6 @@ import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import java.util.UUID
 
@@ -26,17 +22,17 @@ import java.util.UUID
  * All destinations obtain the SAME instance via `viewModel(activityOwner)` so navigation
  * stays stringly-typed without shoving objects into route args.
  *
- * ### Persistence (PRD §8.3)
- * Every draft mutation is fire-and-forget-persisted to [DraftRepository] on
- * [viewModelScope]. On construction, the newest active draft is loaded back into the
- * in-memory [StateFlow] so a warm start immediately sees the last work. The raw
- * [CameraCapture] intentionally stays in memory only — it holds an OpenCV-detected guide
- * box plus a `rawPath` pointing at `cache/drafts/` which itself doesn't survive an OS
- * cache purge; the persistent story is `draft.photoPath` / `draft.signaturePath`, which
- * point at Layer-9 `SourceStore` assets in `filesDir/sources/` that DO survive.
+ * ### Persistence
+ * m2354 Bug H (user directive m2355 option 1): draft persistence is DISABLED. The
+ * [DraftRepository] param stays wired so the Factory/DI shape doesn't ripple — but the
+ * internal [persist] helper is now a no-op and the constructor skips warm-start
+ * rehydrate. Every launch starts from an empty in-memory state. Users reported the old
+ * resume-prompt as buggy ("even if i was not workign on a photo it shows so") and
+ * decided they don't need draft survival across process death. DraftEntity + Room v2
+ * schema stay unchanged for a future revival (auto-save UX v2) without a migration.
  */
 class SharedCaptureHolder(
-    private val draftRepository: DraftRepository,
+    @Suppress("unused") private val draftRepository: DraftRepository,
 ) : ViewModel() {
 
     private val _capture = MutableStateFlow<CameraCapture?>(null)
@@ -54,33 +50,11 @@ class SharedCaptureHolder(
     private val _target = MutableStateFlow<StudentRecord?>(null)
     val target: StateFlow<StudentRecord?> = _target.asStateFlow()
 
-    init {
-        viewModelScope.launch {
-            // Warm-start rehydrate: read ONE emission and terminate. `observeActive()`
-            // is a cold Flow that emits indefinitely; a `collect{return@collect}` only
-            // returns from the lambda, not the collect call, so the coroutine would
-            // otherwise stay alive fighting in-memory writes. `firstOrNull()` closes
-            // the collector after the first value (or immediate null on empty DB).
-            //
-            // Oracle #1 C3 (qc-round-10): use atomic `update { current -> ... }` rather
-            // than a check-then-set on `.value`. Between the disk read completing and
-            // this coroutine resuming on Main, a Camera destination could have called
-            // pushCapture and populated _draft. `update` retries on lost race so the
-            // in-memory writer wins over a stale disk read.
-            val persisted = draftRepository.observeActive().firstOrNull()
-            if (persisted != null) {
-                _draft.update { current -> current ?: persisted }
-            }
-            // Oracle O1-7: also rehydrate the raw CameraCapture so a killed process
-            // between shutter press and Edit's commit can pick up the same rawPath +
-            // guide-box. latestCapture() returns null when the persisted draft has no
-            // rawPath (drawn-signature-first flows) — treat as "no capture yet".
-            val restored = runCatching { draftRepository.latestCapture() }.getOrNull()
-            if (restored != null) {
-                _capture.update { current -> current ?: restored }
-            }
-        }
-    }
+    // m2354 Bug H (m2355 option 1): no warm-start rehydrate. Every process launch starts
+    // with empty _capture / _draft / _target. Prior Oracle O1-7 + C3 rationale was
+    // sound but the persistence UX had a false-positive rate the user found worse than
+    // losing occasional in-flight work. Restore this block along with persist() if a
+    // future auto-save UX (v2) is revived.
 
     fun pushCapture(capture: CameraCapture) {
         _capture.value = capture
@@ -183,13 +157,9 @@ class SharedCaptureHolder(
 
     /** Clear everything — call after Save success or explicit user cancel. */
     fun clear() {
-        val existingId = _draft.value?.id
         _capture.value = null
         _draft.value = null
         _target.value = null
-        if (existingId != null) {
-            viewModelScope.launch { draftRepository.delete(existingId) }
-        }
     }
 
     /**
@@ -216,9 +186,11 @@ class SharedCaptureHolder(
         )
     }
 
-    private fun persist(draft: StudentDraft, capture: CameraCapture? = _capture.value) {
-        viewModelScope.launch { draftRepository.upsert(draft, capture) }
-    }
+    // m2354 Bug H (m2355 option 1): no-op. Kept as a function so every call site's
+    // `persist(next)` / `persist(next, capture)` continues to compile — restoring
+    // persistence in a future auto-save UX revival is a single-line change here.
+    @Suppress("UNUSED_PARAMETER")
+    private fun persist(draft: StudentDraft, capture: CameraCapture? = _capture.value) = Unit
 
     // ────────────────────────────────────────────────────────────────────────
     // Back-compat shim: [current] and [push] preserve the pre-8b Camera→Edit

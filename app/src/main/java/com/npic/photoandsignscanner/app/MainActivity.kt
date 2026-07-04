@@ -6,6 +6,7 @@ import android.util.Log
 import android.util.Size
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -196,6 +196,12 @@ class MainActivity : ComponentActivity() {
                     // cycles. Inside the drawer's content lambda it would be re-remembered
                     // each time the drawer scope rebuilds — silently resetting nav state.
                     val navController = rememberNavController()
+                    // m2354 Bug K (Oracle bg_2df7cd7b BLOCKER #2): ModalNavigationDrawer
+                    // does NOT auto-intercept back — with drawer open, system back would
+                    // fall through to NavHost then Activity.finish(). Close drawer instead.
+                    BackHandler(enabled = drawerState.isOpen) {
+                        drawerScope.launch { drawerState.close() }
+                    }
                     ModalNavigationDrawer(
                         drawerState = drawerState,
                         drawerContent = {
@@ -282,21 +288,11 @@ private fun NpicNavHost(
         composable(Route.Gallery) {
             GalleryDestination(
                 studentRepository = studentRepository,
-                captureHolder = captureHolder,
                 onCaptureClick = { navController.navigate(Route.Camera) },
                 onRecordClick = { id -> navController.navigate(Route.detail(id)) },
                 onExportSelection = { ids -> navController.navigate(Route.export(ids.toList())) },
                 onSearchClick = { navController.navigate(Route.Search) },
                 onOpenSettings = onOpenSettings,
-                onResumeDraft = { draft ->
-                    // PRD §8.3: route the user back to the earliest missing-media step so
-                    // they finish where they left off. Photo first, then signature.
-                    when {
-                        draft.photoPath == null -> navController.navigate(Route.Camera)
-                        draft.signaturePath == null -> navController.navigate(Route.SignaturePrompt)
-                        else -> navController.navigate(Route.Save)
-                    }
-                },
             )
         }
         composable(
@@ -426,7 +422,14 @@ private fun NpicNavHost(
                 captureHolder = captureHolder,
                 studentRepository = studentRepository,
                 sourceStore = sourceStore,
-                onCancel = { navController.popBackStack() },
+                // m2354 Bug K (Oracle bg_2df7cd7b MAJOR #3): cancel MUST clear the holder,
+                // else stale _target survives → next Camera capture nav-routes to
+                // UpdateConfirm instead of Save and tries to repo.replace() an unrelated
+                // record. Symmetric with the onUpdated branch which also clears.
+                onCancel = {
+                    captureHolder.clear()
+                    navController.popBackStack()
+                },
                 onUpdated = { recordId ->
                     captureHolder.clear()
                     navController.popBackStack(Route.Gallery, inclusive = false)
@@ -482,31 +485,26 @@ private fun NpicNavHost(
 @Composable
 private fun GalleryDestination(
     studentRepository: StudentRepository,
-    captureHolder: SharedCaptureHolder,
     onCaptureClick: () -> Unit,
     onRecordClick: (String) -> Unit,
     onExportSelection: (Set<String>) -> Unit,
-    onResumeDraft: (StudentDraft) -> Unit,
     onSearchClick: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val factory = remember(studentRepository) { GalleryViewModel.Factory(studentRepository) }
     val viewModel: GalleryViewModel = viewModel(factory = factory)
 
-    // PRD §8.3 resume-prompt. Only fires once per Gallery mount and only for the initial
-    // warm-start draft — subsequent in-session draft mutations should NOT re-prompt.
-    val draft by captureHolder.draft.collectAsStateWithLifecycle()
-    var promptShown by rememberSaveable { mutableStateOf(false) }
-    val activeDraft = draft
-    val shouldPrompt = !promptShown && activeDraft != null && activeDraft.hasAnyMedia
+    // m2354 Bug H: draft resume-prompt removed per user directive m2355 (option 1 —
+    // "Just remove UI + persist"). SharedCaptureHolder + DraftEntity/DraftRepository
+    // schema stay intact for the in-session Camera→Edit→Save hand-off, but no draft
+    // ever survives process death. Rationale: users mistook the resume-prompt for
+    // corruption ("even if i was not workign on a photo it shows so"). Cleaner UX:
+    // fresh start every launch. See SharedCaptureHolder.persist() — now a no-op.
 
     // Layer 12 + m1551 S3 restructure: destructive-action AlertDialogs live at the
     // destination level (not in GalleryScreen) so GalleryScreen stays presentation-only.
     // Overflow itself is now an anchored DropdownMenu inside GalleryTopBar; only the
     // two confirm dialogs it can raise still live here.
-    // Haptics hoisted here so BOTH confirm dialogs (single + delete-all) share one
-    // instance — matches m1551 S3 spec ("long-press feedback for destructive confirms")
-    // and NpicHaptics.performLongPress no-ops when the user's toggle is off.
     val haptics = com.npic.photoandsignscanner.core.theme.rememberNpicHaptics()
     var pendingDelete by remember { mutableStateOf<Set<String>?>(null) }
     var pendingDeleteAll by remember { mutableStateOf(false) }
@@ -564,48 +562,6 @@ private fun GalleryDestination(
         )
     }
 
-    if (shouldPrompt) {
-        ResumeDraftDialog(
-            draft = activeDraft,
-            onResume = {
-                promptShown = true
-                onResumeDraft(activeDraft)
-            },
-            onDiscard = {
-                promptShown = true
-                captureHolder.clear()
-            },
-        )
-    }
-}
-
-@Composable
-private fun ResumeDraftDialog(
-    draft: StudentDraft,
-    onResume: () -> Unit,
-    onDiscard: () -> Unit,
-) {
-    val summary = buildString {
-        if (draft.photoPath != null) append("photo")
-        if (draft.photoPath != null && draft.signaturePath != null) append(" + ")
-        if (draft.signaturePath != null) append("signature")
-    }.ifEmpty { "capture" }
-
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDiscard,
-        title = { androidx.compose.material3.Text("Resume capture in progress?") },
-        text = { androidx.compose.material3.Text("You have an unsaved $summary. Continue where you left off, or discard it?") },
-        confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onResume) {
-                androidx.compose.material3.Text("Resume")
-            }
-        },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDiscard) {
-                androidx.compose.material3.Text("Discard")
-            }
-        },
-    )
 }
 
 @Composable

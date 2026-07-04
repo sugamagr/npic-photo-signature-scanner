@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -99,8 +99,12 @@ fun NpicThumbnail(
                     .background(NpicColors.Saffron, NpicShapes.full),
                 contentAlignment = Alignment.Center,
             ) {
+                // m2354 Bug I: was Icons.Outlined.Edit (pencil), which users mistook for
+                // an "edit" affordance and tapped by accident. Icons.Outlined.Draw is the
+                // Material 3 "hand drawing a signature" glyph — matches DESIGN §6.7's
+                // intent ("this record has a signature captured") without inviting misuse.
                 Icon(
-                    imageVector = Icons.Outlined.Edit,
+                    imageVector = Icons.Outlined.Draw,
                     contentDescription = "Has signature",
                     tint = NpicColors.Ivory,
                     modifier = Modifier.size(14.dp),

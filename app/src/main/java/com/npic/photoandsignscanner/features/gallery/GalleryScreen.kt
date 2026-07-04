@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.features.gallery
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -148,6 +149,13 @@ private fun GalleryContent(
     onSearchClick: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    // m2354 Bug K (Oracle bg_2df7cd7b BLOCKER #1): back in selection mode must clear the
+    // selection, not exit the app. Gallery is startDestination so without this handler the
+    // system back press falls through to Activity.finish(). Mirrors the X in
+    // GallerySelectionTopBar so muscle memory + a11y flow through the same path.
+    BackHandler(enabled = state.isSelectionMode) {
+        onClearSelection()
+    }
     Box(Modifier.fillMaxSize().background(NpicColors.Ivory)) {
         Column(Modifier.fillMaxSize()) {
 
@@ -378,6 +386,10 @@ private fun GallerySelectionTopBar(
 // Filter row
 // ─────────────────────────────────────────────────────────────────────────────
 
+// m2354 Bug J: user reported the old ClassFilterTile (two-line count-dominant tile from
+// Bug#12/m1319) as "way too big". Reverted to compact NpicChip filter chips matching the
+// design system — same affordance as Edit's filter preset picker and Sort mode picker so
+// the class filter reads as "just another filter row" rather than a hero surface.
 @Composable
 private fun ClassFilterRow(
     selected: ClassNum?,
@@ -391,74 +403,22 @@ private fun ClassFilterRow(
             .fillMaxWidth()
             .horizontalScroll(scroll)
             .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
-        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ClassFilterTile(
-            title = "All",
-            count = totalCount,
+        NpicChip(
+            label = "All · $totalCount",
             selected = selected == null,
             onClick = { onSelect(null) },
         )
         ClassNum.entries.forEach { c ->
-            ClassFilterTile(
-                title = "Class ${c.label}",
-                count = countsByClass[c] ?: 0,
+            val n = countsByClass[c] ?: 0
+            NpicChip(
+                label = "Class ${c.label} · $n",
                 selected = selected == c,
                 onClick = { onSelect(c) },
             )
         }
-    }
-}
-
-/**
- * Bug#12: replaces the single-line "Class X · N" chip with a two-line tile — the count
- * dominates as a display numeral, the class label whispers beneath. Selection swaps the
- * container to SaffronSoft with a Saffron border, matching [NpicChip] tokens so both
- * affordances share the design system.
- */
-@Composable
-private fun ClassFilterTile(
-    title: String,
-    count: Int,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val chrome = LocalNpicChrome.current
-    val container = if (selected) chrome.saffronSoft else NpicColors.Surface
-    val border    = if (selected) NpicColors.Saffron else chrome.borderStrong
-    val titleColor = if (selected) NpicColors.SaffronDeep else chrome.inkMuted
-    val countColor = NpicColors.Ink
-    Column(
-        modifier = Modifier
-            .semantics(mergeDescendants = true) {
-                role = Role.Tab
-                this.selected = selected
-                contentDescription = "$title, $count ${if (count == 1) "record" else "records"}"
-            }
-            .clip(com.npic.photoandsignscanner.core.theme.NpicShapes.sm)
-            .background(container, com.npic.photoandsignscanner.core.theme.NpicShapes.sm)
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = border,
-                shape = com.npic.photoandsignscanner.core.theme.NpicShapes.sm,
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.xs)
-            .defaultMinSize(minWidth = 68.dp, minHeight = 56.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text  = count.toString(),
-            color = countColor,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight(700)),
-        )
-        Text(
-            text  = title,
-            color = titleColor,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight(500)),
-        )
     }
 }
 
