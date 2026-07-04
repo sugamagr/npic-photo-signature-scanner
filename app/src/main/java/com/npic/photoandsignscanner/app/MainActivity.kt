@@ -44,8 +44,6 @@ import com.npic.photoandsignscanner.data.imaging.CombinedRenderer
 import com.npic.photoandsignscanner.data.imaging.EditRenderer
 import com.npic.photoandsignscanner.data.imaging.JpegCompressor
 import com.npic.photoandsignscanner.data.imaging.OpenCvBridge
-import com.npic.photoandsignscanner.data.imaging.PhotoEdgeDetector
-import com.npic.photoandsignscanner.data.imaging.SignatureInkIsolator
 import com.npic.photoandsignscanner.data.db.NpicDatabase
 import com.npic.photoandsignscanner.data.repo.RoomDraftRepository
 import com.npic.photoandsignscanner.data.repo.RoomStudentRepository
@@ -105,9 +103,9 @@ class MainActivity : ComponentActivity() {
     // Activity-scoped imaging graph. All Edit destinations share the same OpenCV bridge
     // and pipeline instances so Mat allocations don't churn per screen transition. Room
     // + full DI wiring lands with the Save layer; until then this is the composition root.
+    // OpenCV stays wired — EditRenderer.applyPerspectiveCrop still uses warpPerspective
+    // at commit time. Auto edge / ink detection was removed per user directive m2154.
     private val openCvBridge by lazy { OpenCvBridge() }
-    private val photoEdgeDetector by lazy { PhotoEdgeDetector(openCvBridge) }
-    private val signatureInkIsolator by lazy { SignatureInkIsolator(openCvBridge) }
     private val bitmapAdjustments by lazy { BitmapAdjustments(openCvBridge) }
     private val bitmapFilters by lazy { BitmapFilters(openCvBridge, bitmapAdjustments) }
     private val editRenderer by lazy { EditRenderer(openCvBridge, bitmapFilters, bitmapAdjustments) }
@@ -164,8 +162,6 @@ class MainActivity : ComponentActivity() {
                     // the user re-enters Edit for a follow-up capture in the same session.
                     val editVmFactory = remember(captureHolder) {
                         EditViewModel.Factory(
-                            detectPhotoEdges = photoEdgeDetector,
-                            detectSignatureInk = signatureInkIsolator,
                             bitmapFilters = bitmapFilters,
                             bitmapAdjustments = bitmapAdjustments,
                             editRenderer = editRenderer,

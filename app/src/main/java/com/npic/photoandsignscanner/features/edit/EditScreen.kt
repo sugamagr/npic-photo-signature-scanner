@@ -2,7 +2,6 @@ package com.npic.photoandsignscanner.features.edit
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,9 +24,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,9 +41,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -278,44 +272,6 @@ private fun ImageViewport(
                 )
             }
         }
-        AnimatedVisibility(
-            visible = state.showInkFallbackBanner,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .semantics { liveRegion = LiveRegionMode.Polite },
-        ) {
-            InkFallbackBanner()
-        }
-    }
-}
-
-/**
- * "Couldn't detect ink automatically. Adjust the crop manually." — PRD §7.2 fallback banner.
- * Shown as a floating pill at the top of the viewport when [DetectSignatureInk] returned no
- * components. Terracotta accent so it reads as an advisory, not an error.
- */
-@Composable
-private fun InkFallbackBanner() {
-    val chrome = LocalNpicChrome.current
-    Row(
-        modifier = Modifier
-            .padding(top = NpicSpacing.md, start = NpicSpacing.md, end = NpicSpacing.md)
-            .clip(NpicShapes.md)
-            .background(NpicColors.Terracotta.copy(alpha = 0.92f))
-            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Info,
-            contentDescription = null,
-            tint = chrome.cameraInk,
-            modifier = Modifier.padding(end = NpicSpacing.xs),
-        )
-        Text(
-            text = "Couldn't detect ink automatically. Adjust the crop manually.",
-            color = chrome.cameraInk,
-            style = MaterialTheme.typography.labelMedium,
-        )
     }
 }
 

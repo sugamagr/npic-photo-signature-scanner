@@ -8,7 +8,6 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.npic.photoandsignscanner.domain.model.CropQuad
 import com.npic.photoandsignscanner.data.imaging.BitmapAdjustments
 import com.npic.photoandsignscanner.data.imaging.BitmapFilters
 import com.npic.photoandsignscanner.data.imaging.EditRenderer
@@ -17,13 +16,9 @@ import com.npic.photoandsignscanner.domain.model.Adjustments
 import com.npic.photoandsignscanner.domain.model.AspectLock
 import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.CameraMode
-import com.npic.photoandsignscanner.domain.model.DetectedCrop
+import com.npic.photoandsignscanner.domain.model.CropQuad
 import com.npic.photoandsignscanner.domain.model.EditState
 import com.npic.photoandsignscanner.domain.model.FilterPreset
-import com.npic.photoandsignscanner.domain.model.RectI
-import com.npic.photoandsignscanner.domain.usecase.DetectPhotoEdges
-import com.npic.photoandsignscanner.domain.usecase.DetectSignatureInk
-import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,21 +32,20 @@ import kotlinx.coroutines.withContext
  * Edit presenter. Non-destructive: every knob mutates [EditState] in-memory only. The final
  * render pipeline (PRD §5.5 / §7) runs on Save when the user commits.
  *
- * Seeding fans out to three parallel jobs on background dispatchers:
+ * Seeding fans out to two parallel jobs on background dispatchers:
  *   1. Decode the source JPEG (Dispatchers.IO) → publishes [EditUiState.sourceBitmap] +
- *      [EditUiState.previewBitmap] (384px longest-side downsample for Adjust drag).
- *   2. Run [DetectPhotoEdges] / [DetectSignatureInk] on Dispatchers.Default → publishes
- *      the detected crop with a 220ms crossfade origin flag. Falls back to the guide-box
- *      quad seeded synchronously at mount so the user never sees an empty overlay.
- *   3. Render 8 filter thumbnails at 192px (DESIGN §6.18) on Dispatchers.Default → publishes
+ *      [EditUiState.previewBitmap] (1920px longest-side downsample for Adjust drag).
+ *   2. Render 8 filter thumbnails at 192px (DESIGN §6.18) on Dispatchers.Default → publishes
  *      [EditUiState.filterThumbnails] map, keyed by [FilterPreset].
  *
- * TODO(repo): Save flow (Room insert + JPEG binary-search compression per PRD §5.5 / §6) is
- * left as a stub via [next] until the Save layer lands.
+ * Auto edge / ink detection was removed per user directive m2154. The crop quad opens at
+ * full-image bounds via the normalized-sentinel path in [EditState.initialCropFor]; users
+ * always drag corners manually. The two former OpenCV detectors (`PhotoEdgeDetector` and
+ * `SignatureInkIsolator`) and their use-case interfaces are gone from the codebase.
+ * OpenCV itself stays wired because [EditRenderer.applyPerspectiveCrop] still uses
+ * `warpPerspective` at commit time.
  */
 class EditViewModel(
-    private val detectPhotoEdges: DetectPhotoEdges,
-    private val detectSignatureInk: DetectSignatureInk,
     private val bitmapFilters: BitmapFilters,
     private val bitmapAdjustments: BitmapAdjustments,
     private val editRenderer: EditRenderer,
@@ -63,7 +57,6 @@ class EditViewModel(
     val state: StateFlow<EditUiState?> = _state.asStateFlow()
 
     private var loadJob: Job? = null
-    private var detectionJob: Job? = null
     private var thumbnailsJob: Job? = null
     private var commitJob: Job? = null
     private var livePreviewJob: Job? = null
@@ -77,7 +70,6 @@ class EditViewModel(
         if (current != null && current.edit.source.rawPath == capture.rawPath) return
 
         loadJob?.cancel()
-        detectionJob?.cancel()
         thumbnailsJob?.cancel()
 
         // Oracle O1-2: DO NOT recycle prior bitmaps synchronously here. A Compose frame may
@@ -123,7 +115,6 @@ class EditViewModel(
                         s.copy(sourceBitmap = decoded, previewBitmap = preview)
                     }
                 }
-                launchDetection(capture, decoded, activeRawPath)
                 launchThumbnails(preview, activeRawPath)
                 // Bug#3: prime the live preview so Filter/Adjust/Rotate tabs show a
                 // meaningful image (Auto filter applied) the first time the user opens them.
@@ -134,29 +125,6 @@ class EditViewModel(
                         s.copy(lastError = "Couldn't decode capture")
                     } else s
                 }
-            }
-        }
-    }
-
-    private fun launchDetection(capture: CameraCapture, source: Bitmap, activeRawPath: String) {
-        detectionJob = viewModelScope.launch {
-            // Null guide-box → user shuttered before overlay laid out. Use full decoded-image
-            // bounds as the seed rect so IoU scoring still runs against a real region rather
-            // than the (0,0,0,0) sentinel that Layer 6 originally passed through.
-            val seed = capture.guideBoxImageSpace
-                ?: RectI(0, 0, source.width, source.height)
-            val detected = when (capture.mode) {
-                CameraMode.Photo -> detectPhotoEdges(source, seed)
-                CameraMode.Signature -> detectSignatureInk(source, seed)
-            }
-            val quad = detectedToQuad(detected, seed)
-            _state.update { s ->
-                // Discard the result if a newer seed replaced the state under us.
-                if (s == null || s.edit.source.rawPath != activeRawPath) s
-                else s.copy(
-                    edit = s.edit.copy(crop = quad),
-                    detectionOrigin = detected.origin,
-                )
             }
         }
     }
@@ -242,28 +210,6 @@ class EditViewModel(
         val h = (source.height * scale).toInt().coerceAtLeast(1)
         return Bitmap.createScaledBitmap(source, w, h, true)
     }
-
-    private fun detectedToQuad(detected: DetectedCrop, fallback: RectI): CropQuad =
-        when (detected) {
-            is DetectedCrop.Quad -> CropQuad(
-                tl = Offset(detected.topLeft.x.toFloat(), detected.topLeft.y.toFloat()),
-                tr = Offset(detected.topRight.x.toFloat(), detected.topRight.y.toFloat()),
-                br = Offset(detected.bottomRight.x.toFloat(), detected.bottomRight.y.toFloat()),
-                bl = Offset(detected.bottomLeft.x.toFloat(), detected.bottomLeft.y.toFloat()),
-            )
-            is DetectedCrop.Rect -> CropQuad(
-                tl = Offset(detected.left.toFloat(), detected.top.toFloat()),
-                tr = Offset(detected.right.toFloat(), detected.top.toFloat()),
-                br = Offset(detected.right.toFloat(), detected.bottom.toFloat()),
-                bl = Offset(detected.left.toFloat(), detected.bottom.toFloat()),
-            )
-        }.takeIf { detected.origin == DetectedCrop.Origin.Detected }
-            ?: CropQuad(
-                tl = Offset(fallback.left.toFloat(), fallback.top.toFloat()),
-                tr = Offset(fallback.right.toFloat(), fallback.top.toFloat()),
-                br = Offset(fallback.right.toFloat(), fallback.bottom.toFloat()),
-                bl = Offset(fallback.left.toFloat(), fallback.bottom.toFloat()),
-            )
 
     // ------------------------------------------------------------------ mutators
 
@@ -454,8 +400,6 @@ class EditViewModel(
      * the Save layer.
      */
     class Factory(
-        private val detectPhotoEdges: DetectPhotoEdges,
-        private val detectSignatureInk: DetectSignatureInk,
         private val bitmapFilters: BitmapFilters,
         private val bitmapAdjustments: BitmapAdjustments,
         private val editRenderer: EditRenderer,
@@ -465,8 +409,6 @@ class EditViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             EditViewModel(
-                detectPhotoEdges,
-                detectSignatureInk,
                 bitmapFilters,
                 bitmapAdjustments,
                 editRenderer,

@@ -2,15 +2,17 @@ package com.npic.photoandsignscanner.features.edit
 
 import android.graphics.Bitmap
 import androidx.compose.runtime.Stable
-import com.npic.photoandsignscanner.domain.model.DetectedCrop
 import com.npic.photoandsignscanner.domain.model.EditState
 import com.npic.photoandsignscanner.domain.model.FilterPreset
 
 /**
  * Full view state for [EditScreen]. Wraps the immutable [EditState] (the actual edit graph)
  * with UI concerns: which tool is open, cached bitmaps for the viewport and Filter strip,
- * detection origin (drives the "Couldn't detect ink automatically" banner), and any terminal
- * error to surface as a toast.
+ * and any terminal error to surface as a toast.
+ *
+ * Auto-detection state (`detectionOrigin` + `showInkFallbackBanner`) was removed per user
+ * directive m2154 — the crop overlay always seeds at full-image bounds and the user drags
+ * corners manually. The former OpenCV detectors are gone from the codebase.
  *
  * `@Stable` — [EditViewModel] never mutates a live [EditUiState] instance; every state
  * transition emits a fresh copy via `_state.update { }` and swaps the whole reference. That
@@ -52,22 +54,6 @@ data class EditUiState(
      * demand when the Filter tool is first opened; keys map 1:1 to [FilterPreset.entries].
      */
     val filterThumbnails: Map<FilterPreset, Bitmap> = emptyMap(),
-    /**
-     * Origin of the current crop quad. `Detected` = OpenCV succeeded and crossfaded in;
-     * `GuideBoxFallback` = detector returned null (photo below threshold, or signature had
-     * no ink components); `Skipped` = OpenCV not initialized. Drives the fallback banner
-     * for Signature mode per PRD §7.2.
-     */
-    val detectionOrigin: DetectedCrop.Origin = DetectedCrop.Origin.GuideBoxFallback,
 ) {
     val dirty: Boolean get() = edit.hasChanges
-
-    /**
-     * True when the signature ink detector failed to find components AND the mode is
-     * Signature. Photo mode's fallback surfaces as manual-crop-required implicitly (the
-     * quad is still the guide box), no banner needed.
-     */
-    val showInkFallbackBanner: Boolean
-        get() = detectionOrigin == DetectedCrop.Origin.GuideBoxFallback &&
-                edit.mode == com.npic.photoandsignscanner.domain.model.CameraMode.Signature
 }

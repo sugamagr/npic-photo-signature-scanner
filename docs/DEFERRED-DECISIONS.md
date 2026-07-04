@@ -433,6 +433,42 @@ so this brings BitmapFactory-decoded paths into parity.
 
 ---
 
+### A28. OpenCV photo edge detection + signature ink isolation REMOVED
+
+**Locked by:** user directive m2154 ("your auto detect is not working
+at all, remove that it is actually creating more issue") + m2155 (user
+picked option 2 via `question` tool: remove BOTH detectors, keep the
+"Auto" filter preset).
+
+**Choice:** rip out both auto-detect pipelines end-to-end. Files deleted:
+`data/imaging/PhotoEdgeDetector.kt`, `data/imaging/SignatureInkIsolator.kt`,
+`domain/usecase/DetectPhotoEdges.kt`, `domain/usecase/DetectSignatureInk.kt`,
+`domain/model/DetectedCrop.kt` (and its sibling `ImagePoint`). Pruned
+from `EditViewModel` constructor + Factory + `launchDetection()` +
+`detectedToQuad()`; pruned from `MainActivity` Activity-scoped lazies
+and Factory wiring; `InkFallbackBanner` composable + `showInkFallbackBanner`
+getter + `detectionOrigin` field removed from Edit UI.
+
+**What replaces it:** the Crop tab always opens at full-image bounds
+via the normalized-unit sentinel quad in
+`EditState.initialCropFor(capture, lock)` when `guideBoxImageSpace ==
+null` — `EditRenderer` detects the sentinel and remaps to the full
+source rect (see A26). Users always drag the four corners manually.
+
+**What stays wired:** `OpenCvBridge` and the OpenCV `.so`s — still used
+by `EditRenderer.applyPerspectiveCrop` for `warpPerspective` at crop
+commit time (PRD §7.3). The "Auto" filter preset also stays; it's a
+mode-based filter selector (Photo → SchoolId, Signature → InkBoost),
+not an OpenCV auto-detect.
+
+**Impact:** predictable behavior on every capture. No more
+sometimes-detected / sometimes-fallback surprises that made the crop
+box jump around. Fewer moving parts to debug. Modest binary shrink
+from dropping the two OpenCV pipelines' Kotlin, though the OpenCV
+native libs stay for `warpPerspective`.
+
+---
+
 ## Section B — Still needing your decision
 
 Nothing outstanding. Every earlier B-item has been either promoted to
