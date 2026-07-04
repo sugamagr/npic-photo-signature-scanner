@@ -2,10 +2,12 @@ package com.npic.photoandsignscanner.features.edit
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -20,7 +22,9 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -55,6 +61,9 @@ import com.npic.photoandsignscanner.domain.model.CameraMode
  *
  * The [capture] handoff comes from [SharedCaptureHolder]; the screen seeds the ViewModel on
  * first composition and re-seeds if a different capture arrives (e.g. rapid re-captures).
+ * When the ViewModel's factory isn't threaded through (previews, tests), the default
+ * `viewModel()` call fails at Save time — the Edit destination in [MainActivity] always
+ * provides the factory in production.
  */
 @Composable
 fun EditScreen(
@@ -62,7 +71,7 @@ fun EditScreen(
     onBack: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: EditViewModel = viewModel(),
+    viewModel: EditViewModel,
 ) {
     LaunchedEffect(capture.rawPath) { viewModel.seed(capture) }
 
@@ -177,15 +186,63 @@ private fun ImageViewport(
             .clip(NpicShapes.md),
         contentAlignment = Alignment.Center,
     ) {
-        // TODO(pipeline): swap this placeholder for the actual bitmap (loaded from
-        // `state.edit.source.rawPath` via Coil ImageDecoder) with letterboxing math. For
-        // the Layer 7a shell we render the crop overlay on a flat CameraSurface rectangle
-        // so the interaction is exercisable end-to-end.
+        val bitmap = state.sourceBitmap
+        if (bitmap != null) {
+            // Letterbox the source on CameraSurface with ContentScale.Fit. The crop overlay
+            // draws in the OVERLAY'S own layout box (not the image's intrinsic bitmap space);
+            // Layer 7c will project image-space coords through the letterbox transform.
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = if (state.edit.mode == CameraMode.Photo) {
+                    "Captured photo"
+                } else {
+                    "Captured signature"
+                },
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         NpicCropOverlay(
             quad = state.edit.crop,
             onQuadChange = onCropChange,
-            onLayoutSize = { /* layer 7b will feed this back into image-space math */ },
+            onLayoutSize = { /* layer 7c will feed this back into image-space math */ },
             modifier = Modifier.fillMaxSize(),
+        )
+        AnimatedVisibility(
+            visible = state.showInkFallbackBanner,
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            InkFallbackBanner()
+        }
+    }
+}
+
+/**
+ * "Couldn't detect ink automatically. Adjust the crop manually." — PRD §7.2 fallback banner.
+ * Shown as a floating pill at the top of the viewport when [DetectSignatureInk] returned no
+ * components. Terracotta accent so it reads as an advisory, not an error.
+ */
+@Composable
+private fun InkFallbackBanner() {
+    val chrome = LocalNpicChrome.current
+    Row(
+        modifier = Modifier
+            .padding(top = NpicSpacing.md, start = NpicSpacing.md, end = NpicSpacing.md)
+            .clip(NpicShapes.md)
+            .background(NpicColors.Terracotta.copy(alpha = 0.92f))
+            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Info,
+            contentDescription = null,
+            tint = chrome.cameraInk,
+            modifier = Modifier.padding(end = NpicSpacing.xs),
+        )
+        Text(
+            text = "Couldn't detect ink automatically. Adjust the crop manually.",
+            color = chrome.cameraInk,
+            style = MaterialTheme.typography.labelMedium,
         )
     }
 }
@@ -219,6 +276,7 @@ private fun ToolContentRegion(
                 EditTool.Filter -> FilterTool(
                     selected = state.edit.filter,
                     onSelect = { viewModel.setFilter(it) },
+                    thumbnails = state.filterThumbnails,
                 )
                 EditTool.Adjust -> AdjustTool(
                     adjustments = state.edit.adjustments,

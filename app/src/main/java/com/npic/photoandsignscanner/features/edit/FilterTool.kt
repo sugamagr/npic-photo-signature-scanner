@@ -1,6 +1,8 @@
 package com.npic.photoandsignscanner.features.edit
 
+import android.graphics.Bitmap
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -50,14 +56,17 @@ import com.npic.photoandsignscanner.domain.model.FilterPreset
  * ellipsize). Selected cell gets a 2dp Saffron ring OUTSIDE the corner + label weight 700 +
  * a 12dp Saffron checkmark top-right.
  *
- * TODO(pipeline): GPU-rendered live preview lands in Layer 7b. For now, each cell paints a
- * flat tinted placeholder so the strip is visually and semantically complete, and users can
- * still pick + persist a preset in state.
+ * Thumbnails are 192px cached bitmaps rendered by [EditViewModel] against the user's current
+ * source (DESIGN §6.18 max working res). When a preset's thumbnail hasn't finished rendering
+ * yet — or when the ViewModel is still decoding the source — the cell shows a neutral
+ * CameraSurface placeholder so the strip stays visually stable and the RadioButton
+ * semantics/selection state remain intact.
  */
 @Composable
 fun FilterTool(
     selected: FilterPreset,
     onSelect: (FilterPreset) -> Unit,
+    thumbnails: Map<FilterPreset, Bitmap>,
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
@@ -75,6 +84,7 @@ fun FilterTool(
                 preset = preset,
                 isSelected = preset == selected,
                 onClick = { onSelect(preset) },
+                thumbnail = thumbnails[preset],
             )
         }
     }
@@ -85,6 +95,7 @@ private fun FilterCell(
     preset: FilterPreset,
     isSelected: Boolean,
     onClick: () -> Unit,
+    thumbnail: Bitmap?,
 ) {
     val chrome = LocalNpicChrome.current
     val ringColor by animateColorAsState(
@@ -107,9 +118,17 @@ private fun FilterCell(
             modifier = Modifier
                 .size(84.dp)
                 .clip(NpicShapes.sm)
-                .background(placeholderTintFor(preset), NpicShapes.sm)
+                .background(chrome.cameraSurface, NpicShapes.sm)
                 .border(2.dp, ringColor, NpicShapes.sm),
         ) {
+            if (thumbnail != null) {
+                Image(
+                    bitmap = thumbnail.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(NpicShapes.sm),
+                )
+            }
             if (isSelected) {
                 Box(
                     modifier = Modifier
@@ -128,7 +147,7 @@ private fun FilterCell(
                 }
             }
         }
-        androidx.compose.foundation.layout.Spacer(Modifier.height(NpicSpacing.xxs))
+        Spacer(Modifier.height(NpicSpacing.xxs))
         Text(
             text = preset.label,
             color = chrome.cameraInk,
@@ -141,20 +160,4 @@ private fun FilterCell(
             modifier = Modifier.fillMaxWidth(),
         )
     }
-}
-
-/**
- * Flat placeholder colors distinguishing the 8 presets visually until Layer 7b wires the
- * live GPU preview. Colors chosen to be evocative of each preset's target tone curve, not
- * an accurate simulation.
- */
-private fun placeholderTintFor(preset: FilterPreset): Color = when (preset) {
-    FilterPreset.Auto        -> NpicColors.Saffron.copy(alpha = 0.35f)
-    FilterPreset.Original    -> Color(0xFFB0B0B0)
-    FilterPreset.ColorBoost  -> Color(0xFFE07B39)
-    FilterPreset.DocumentBw  -> Color(0xFFE8E4DA)
-    FilterPreset.Passport    -> Color(0xFFC7B58A)
-    FilterPreset.SchoolId    -> Color(0xFFB09A6E)
-    FilterPreset.FadedRescue -> Color(0xFFD9C2A0)
-    FilterPreset.InkBoost    -> Color(0xFF2E2E2E)
 }

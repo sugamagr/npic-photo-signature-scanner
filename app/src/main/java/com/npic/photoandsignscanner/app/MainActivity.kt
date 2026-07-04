@@ -20,8 +20,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.npic.photoandsignscanner.core.theme.NpicTheme
+import com.npic.photoandsignscanner.data.imaging.BitmapAdjustments
+import com.npic.photoandsignscanner.data.imaging.BitmapFilters
+import com.npic.photoandsignscanner.data.imaging.OpenCvBridge
+import com.npic.photoandsignscanner.data.imaging.PhotoEdgeDetector
+import com.npic.photoandsignscanner.data.imaging.SignatureInkIsolator
 import com.npic.photoandsignscanner.features.camera.CameraScreen
 import com.npic.photoandsignscanner.features.edit.EditScreen
+import com.npic.photoandsignscanner.features.edit.EditViewModel
 import com.npic.photoandsignscanner.features.edit.SharedCaptureHolder
 import com.npic.photoandsignscanner.features.gallery.GalleryScreen
 import com.npic.photoandsignscanner.features.gallery.GalleryViewModel
@@ -42,11 +48,27 @@ import com.npic.photoandsignscanner.features.gallery.GalleryViewModel
  */
 class MainActivity : ComponentActivity() {
 
+    // Activity-scoped imaging graph. All Edit destinations share the same OpenCV bridge and
+    // pipeline instances so Mat allocations don't churn per screen transition. Room + full
+    // DI wiring lands with the Save layer; until then this is the composition root.
+    private val openCvBridge by lazy { OpenCvBridge() }
+    private val photoEdgeDetector by lazy { PhotoEdgeDetector(openCvBridge) }
+    private val signatureInkIsolator by lazy { SignatureInkIsolator(openCvBridge) }
+    private val bitmapAdjustments by lazy { BitmapAdjustments(openCvBridge) }
+    private val bitmapFilters by lazy { BitmapFilters(openCvBridge, bitmapAdjustments) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         splash.setKeepOnScreenCondition { false }
+
+        val editVmFactory = EditViewModel.Factory(
+            detectPhotoEdges = photoEdgeDetector,
+            detectSignatureInk = signatureInkIsolator,
+            bitmapFilters = bitmapFilters,
+            bitmapAdjustments = bitmapAdjustments,
+        )
 
         setContent {
             NpicTheme {
@@ -58,6 +80,7 @@ class MainActivity : ComponentActivity() {
                     NpicNavHost(
                         navController = rememberNavController(),
                         captureHolder = captureHolder,
+                        editVmFactory = editVmFactory,
                     )
                 }
             }
@@ -75,6 +98,7 @@ private object Route {
 private fun NpicNavHost(
     navController: NavHostController,
     captureHolder: SharedCaptureHolder,
+    editVmFactory: EditViewModel.Factory,
 ) {
     NavHost(navController = navController, startDestination = Route.Gallery) {
         composable(Route.Gallery) {
@@ -96,6 +120,7 @@ private fun NpicNavHost(
         composable(Route.Edit) {
             EditDestination(
                 captureHolder = captureHolder,
+                editVmFactory = editVmFactory,
                 onBack = { navController.popBackStack() },
             )
         }
@@ -148,6 +173,7 @@ private fun CameraDestination(
 @Composable
 private fun EditDestination(
     captureHolder: SharedCaptureHolder,
+    editVmFactory: EditViewModel.Factory,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -163,6 +189,8 @@ private fun EditDestination(
         return
     }
 
+    val editViewModel: EditViewModel = viewModel(factory = editVmFactory)
+
     EditScreen(
         capture = current,
         onBack = {
@@ -172,5 +200,6 @@ private fun EditDestination(
         onNext = {
             Toast.makeText(context, "Signature prompt (next layer)", Toast.LENGTH_SHORT).show()
         },
+        viewModel = editViewModel,
     )
 }
