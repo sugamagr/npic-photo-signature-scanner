@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 object NpicElevation {
 
     val level0 = 0.dp
-    val level1 = 2.dp
-    val level2 = 6.dp
-    val level3 = 12.dp
+    val level1 = 1.dp
+    val level2 = 2.dp
+    val level3 = 3.dp
 }

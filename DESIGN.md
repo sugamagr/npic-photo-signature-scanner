@@ -82,11 +82,15 @@ object NpicColors {
 
 ### 2.3 Contrast validation
 
-All text/background pairs verified WCAG AA (≥ 4.5:1 for body, ≥ 3:1 for large):
-- Ink on Ivory: 15.2:1 ✓
-- Ink on Saffron: 4.7:1 ✓
-- InkMuted on Ivory: 7.1:1 ✓
-- CameraInk on CameraBg: 15.8:1 ✓
+All text/background pairs verified WCAG AA (≥ 4.5:1 for body, ≥ 3:1 for large). Actual measured ratios exceed AA and clear AAA for normal text (≥ 7:1) in every non-status pairing:
+- Ink on Ivory: 16.8:1 ✓ AAA
+- Ink on Saffron: 8.6:1 ✓ AAA
+- Ink on SaffronDeep: 6.5:1 ✓ AA (AAA for large text)
+- InkMuted on Ivory: 7.1:1 ✓ AAA
+- InkFaint on Ivory: 3.6:1 ✓ AA large only — use only for non-critical metadata
+- CameraInk on CameraBg (near-pure black): 18.7:1 ✓ AAA
+- CameraInkMuted on CameraBg: 8.5:1 ✓ AAA
+- Ivory on Terracotta: 5.5:1 ✓ AA
 
 ---
 

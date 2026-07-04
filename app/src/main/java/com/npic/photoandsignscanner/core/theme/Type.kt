@@ -6,7 +6,6 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.npic.photoandsignscanner.R
 
@@ -68,109 +67,96 @@ object NpicFonts {
  */
 val NpicTypography = Typography(
 
-    // ── Display / Headline (Fraunces) ────────────────────────────────────────
+    // Fraunces — display / headline (weight 500 per DESIGN §3)
     displayLarge = TextStyle(
         fontFamily    = FrauncesFamily,
-        fontWeight    = FontWeight(600),
+        fontWeight    = FontWeight(500),
         fontSize      = 40.sp,
-        lineHeight    = 48.sp,
-        letterSpacing = (-0.01).em,
+        lineHeight    = 44.sp,
+        letterSpacing = (-0.5).sp,
     ),
     displayMedium = TextStyle(
         fontFamily    = FrauncesFamily,
-        fontWeight    = FontWeight(600),
+        fontWeight    = FontWeight(500),
         fontSize      = 32.sp,
-        lineHeight    = 40.sp,
-        letterSpacing = (-0.01).em,
+        lineHeight    = 36.sp,
+        letterSpacing = (-0.3).sp,
     ),
     headlineLarge = TextStyle(
         fontFamily    = FrauncesFamily,
-        fontWeight    = FontWeight(600),
+        fontWeight    = FontWeight(500),
         fontSize      = 26.sp,
         lineHeight    = 32.sp,
-        letterSpacing = 0.em,
     ),
     headlineMedium = TextStyle(
         fontFamily    = FrauncesFamily,
-        fontWeight    = FontWeight(600),
+        fontWeight    = FontWeight(500),
         fontSize      = 22.sp,
         lineHeight    = 28.sp,
-        letterSpacing = 0.em,
     ),
-    headlineSmall = TextStyle(
+
+    // Fraunces — titleLarge (weight 600 per DESIGN §3)
+    titleLarge = TextStyle(
         fontFamily    = FrauncesFamily,
         fontWeight    = FontWeight(600),
         fontSize      = 20.sp,
-        lineHeight    = 28.sp,
-        letterSpacing = 0.em,
+        lineHeight    = 26.sp,
     ),
 
-    // ── Title (Fraunces for large, Inter for medium/small) ───────────────────
-    titleLarge = TextStyle(
-        fontFamily    = FrauncesFamily,
-        fontWeight    = FontWeight(700),
-        fontSize      = 20.sp,
-        lineHeight    = 24.sp,
-        letterSpacing = 0.em,
-    ),
+    // Inter — titles (weight 600)
     titleMedium = TextStyle(
         fontFamily    = InterFamily,
         fontWeight    = FontWeight(600),
         fontSize      = 16.sp,
-        lineHeight    = 24.sp,
-        letterSpacing = 0.005.em,
+        lineHeight    = 22.sp,
     ),
     titleSmall = TextStyle(
         fontFamily    = InterFamily,
         fontWeight    = FontWeight(600),
         fontSize      = 14.sp,
         lineHeight    = 20.sp,
-        letterSpacing = 0.01.em,
     ),
 
-    // ── Body (Inter) ─────────────────────────────────────────────────────────
+    // Inter — body (weight 400)
     bodyLarge = TextStyle(
-        fontFamily    = InterFamily,
-        fontWeight    = FontWeight(400),
-        fontSize      = 16.sp,
-        lineHeight    = 24.sp,
-        letterSpacing = 0.02.em,
+        fontFamily = InterFamily,
+        fontWeight = FontWeight(400),
+        fontSize   = 16.sp,
+        lineHeight = 24.sp,
     ),
     bodyMedium = TextStyle(
-        fontFamily    = InterFamily,
-        fontWeight    = FontWeight(400),
-        fontSize      = 14.sp,
-        lineHeight    = 20.sp,
-        letterSpacing = 0.02.em,
+        fontFamily = InterFamily,
+        fontWeight = FontWeight(400),
+        fontSize   = 14.sp,
+        lineHeight = 20.sp,
     ),
     bodySmall = TextStyle(
-        fontFamily    = InterFamily,
-        fontWeight    = FontWeight(400),
-        fontSize      = 12.sp,
-        lineHeight    = 16.sp,
-        letterSpacing = 0.03.em,
+        fontFamily = InterFamily,
+        fontWeight = FontWeight(400),
+        fontSize   = 12.sp,
+        lineHeight = 16.sp,
     ),
 
-    // ── Label (Inter, tighter and heavier for UI) ────────────────────────────
+    // Inter — labels (600 for large, 500 for medium/small per DESIGN §3)
     labelLarge = TextStyle(
         fontFamily    = InterFamily,
         fontWeight    = FontWeight(600),
         fontSize      = 14.sp,
         lineHeight    = 20.sp,
-        letterSpacing = 0.02.em,
+        letterSpacing = 0.1.sp,
     ),
     labelMedium = TextStyle(
         fontFamily    = InterFamily,
-        fontWeight    = FontWeight(600),
+        fontWeight    = FontWeight(500),
         fontSize      = 12.sp,
         lineHeight    = 16.sp,
-        letterSpacing = 0.04.em,
+        letterSpacing = 0.3.sp,
     ),
     labelSmall = TextStyle(
         fontFamily    = InterFamily,
-        fontWeight    = FontWeight(600),
+        fontWeight    = FontWeight(500),
         fontSize      = 11.sp,
         lineHeight    = 14.sp,
-        letterSpacing = 0.05.em,
+        letterSpacing = 0.4.sp,
     ),
 )

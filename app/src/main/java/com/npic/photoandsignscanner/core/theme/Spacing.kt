@@ -40,4 +40,10 @@ object NpicSpacing {
 
     /** 40dp — reserved for hero sections, empty-state offsets. */
     val xxxl = 40.dp
+
+    /** 56dp — large section gaps, header heights. */
+    val xxxxl = 56.dp
+
+    /** 72dp — hero-scale spacing, bottom control-bar heights. */
+    val xxxxxl = 72.dp
 }

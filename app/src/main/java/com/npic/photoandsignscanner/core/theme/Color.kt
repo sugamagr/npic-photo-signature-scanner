@@ -29,7 +29,7 @@ object NpicColors {
     // Ink — text and iconography on light surfaces
     // ────────────────────────────────────────────────────────────────────────────
 
-    /** Primary text on light surfaces. WCAG AA on Saffron (4.7:1) and Ivory (13.4:1). */
+    /** Primary text on light surfaces. WCAG AAA on Saffron (8.6:1) and Ivory (16.8:1). */
     val Ink           = Color(0xFF1A1613)
 
     /** Secondary text: captions, metadata, disabled-looking labels that are still legible. */
