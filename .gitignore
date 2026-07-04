@@ -7,6 +7,9 @@ local.properties
 # --- Kotlin compiler cache ---
 .kotlin/
 
+# --- Agent runtime scaffolding (not part of the codebase) ---
+.omo/
+
 # --- Android Studio / IntelliJ ---
 .idea/
 *.iml
