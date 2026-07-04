@@ -71,8 +71,25 @@ class CameraViewModel : ViewModel() {
                     withContext(Dispatchers.IO) {
                         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         BitmapFactory.decodeFile(file.absolutePath, opts)
-                        if (opts.outWidth <= 0 || opts.outHeight <= 0) null
-                        else pg.toImageSpace(opts.outWidth, opts.outHeight)
+                        if (opts.outWidth <= 0 || opts.outHeight <= 0) return@withContext null
+                        // Oracle O2-3.1: outWidth/outHeight are RAW pixel dimensions and
+                        // ignore EXIF orientation. Some CameraX-backed devices write a
+                        // rotated JPEG whose display shape swaps w/h. Read the EXIF tag
+                        // and swap so PreviewGuide.toImageSpace sees the same aspect the
+                        // decoder will materialise when the bitmap is finally rendered.
+                        val exif = androidx.exifinterface.media.ExifInterface(file.absolutePath)
+                        val rotation = exif.getAttributeInt(
+                            androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                            androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL,
+                        )
+                        val swap =
+                            rotation == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 ||
+                            rotation == androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 ||
+                            rotation == androidx.exifinterface.media.ExifInterface.ORIENTATION_TRANSPOSE ||
+                            rotation == androidx.exifinterface.media.ExifInterface.ORIENTATION_TRANSVERSE
+                        val (imgW, imgH) = if (swap) opts.outHeight to opts.outWidth
+                        else opts.outWidth to opts.outHeight
+                        pg.toImageSpace(imgW, imgH)
                     }
                 }
                 _state.update {

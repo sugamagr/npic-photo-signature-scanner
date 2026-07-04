@@ -2,6 +2,8 @@ package com.npic.photoandsignscanner.features.edit
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -78,16 +80,28 @@ class EditViewModel(
         detectionJob?.cancel()
         thumbnailsJob?.cancel()
 
-        // Recycle prior-capture bitmaps before overwriting the state; otherwise the
-        // ~10-30 MB working set from the previous edit leaks until GC eventually reclaims it.
-        current?.let { prior ->
-            prior.sourceBitmap?.recycle()
-            prior.previewBitmap?.recycle()
-            prior.livePreviewBitmap?.recycle()
-            prior.filterThumbnails.values.forEach { it.recycle() }
-        }
+        // Oracle O1-2: DO NOT recycle prior bitmaps synchronously here. A Compose frame may
+        // still be reading state.sourceBitmap when seed() fires with a new capture; recycling
+        // before the state.value overwrite lets that read hit a freed native buffer → crash
+        // or corrupted draw. Capture the prior bitmaps, publish the new state first, then
+        // defer recycle to the next main-thread tick so Compose has moved past the mutation
+        // frame. The ~10-30 MB working set is reclaimed within one frame — still bounded.
+        val toRecycle = current?.let { prior ->
+            buildList<Bitmap> {
+                prior.sourceBitmap?.let(::add)
+                prior.previewBitmap?.let(::add)
+                prior.livePreviewBitmap?.let(::add)
+                addAll(prior.filterThumbnails.values)
+            }
+        }.orEmpty()
 
         _state.value = EditUiState(edit = EditState.seedFrom(capture))
+
+        if (toRecycle.isNotEmpty()) {
+            Handler(Looper.getMainLooper()).post {
+                toRecycle.forEach { runCatching { it.recycle() } }
+            }
+        }
 
         val activeRawPath = capture.rawPath
         loadJob = viewModelScope.launch {

@@ -28,18 +28,15 @@ interface StudentDao {
 
     /**
      * Case-insensitive + whitespace-tolerant lookup for the Save dialog's Name-mode
-     * duplicate detection. SQLite `LOWER()` handles ASCII; when Devanagari lands this
-     * will need ICU-COLLATE or a nameKey column.
+     * duplicate detection. Uses the [StudentEntity.nameKey] indexed column so this is a
+     * single (classNum, nameKey) B-tree lookup rather than a full-table LOWER/TRIM scan.
+     * Callers must normalize the query string via [normalizeNameKey] before invoking —
+     * [RoomStudentRepository.findByClassName] handles that. Oracle O5-B4 / PRD §8.1.
      */
     @Query(
-        """
-        SELECT * FROM students
-        WHERE classNum = :classNum
-          AND LOWER(TRIM(REPLACE(displayName, '  ', ' '))) = LOWER(TRIM(REPLACE(:name, '  ', ' ')))
-        LIMIT 1
-        """,
+        "SELECT * FROM students WHERE classNum = :classNum AND nameKey = :nameKey LIMIT 1",
     )
-    suspend fun findByClassName(classNum: String, name: String): StudentEntity?
+    suspend fun findByClassNameKey(classNum: String, nameKey: String): StudentEntity?
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entity: StudentEntity)
@@ -55,6 +52,36 @@ interface StudentDao {
     suspend fun replace(existingId: String, incoming: StudentEntity) {
         delete(existingId)
         insert(incoming)
+    }
+
+    /**
+     * Oracle O1-4/O5-B1/B2: insert a student and (optionally) advance the class-serial
+     * counter as a single atomic transaction. Without this, two concurrent Saves could
+     * both pass the duplicate check, both attempt insert, and one gets orphaned by the
+     * UNIQUE(classNum, serial) constraint AFTER writing files to SourceStore. Rolling
+     * counter and insert into one transaction closes the race entirely.
+     *
+     * `advanceCounterTo` is the serial to compare-and-swap into class_counters. Null
+     * skips the counter update (used by [replace] and by callers that already bumped
+     * via [nextSerialAndBump]).
+     */
+    @Transaction
+    suspend fun insertWithCounter(
+        entity: StudentEntity,
+        advanceCounterTo: Int?,
+    ) {
+        insert(entity)
+        if (advanceCounterTo != null) {
+            val current = getLastSerial(entity.classNum) ?: 0
+            if (advanceCounterTo > current) {
+                setCounter(
+                    ClassCounterEntity(
+                        classNum = entity.classNum,
+                        lastSerial = advanceCounterTo,
+                    ),
+                )
+            }
+        }
     }
 
     // ─── class_counters ─────────────────────────────────────────────────────

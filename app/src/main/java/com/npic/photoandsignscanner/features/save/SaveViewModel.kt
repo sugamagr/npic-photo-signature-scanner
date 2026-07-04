@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 class SaveViewModel(
     private val repo: StudentRepository,
     private val draft: StudentDraft,
+    private val onDiscardDraftAssets: (draftId: String) -> Unit = {},
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SaveUiState(draft = draft))
@@ -125,6 +126,11 @@ class SaveViewModel(
 
     fun dismissDuplicateKeepingExisting() {
         val dupe = _state.value.duplicate ?: return
+        // "Keep existing" abandons the current draft. Layer 9's SourceStore already wrote
+        // sources/{draftId}_*.jpg at Edit's commit — those files are orphaned unless we
+        // explicitly delete them here (Oracle O1-11). The existing record's assets are
+        // keyed by a different id and untouched.
+        onDiscardDraftAssets(draft.id)
         // Treat the existing record as the completion — caller navigates away from Save.
         _state.value = _state.value.copy(duplicate = null, completedRecordId = dupe.existing.id)
     }
@@ -141,9 +147,10 @@ class SaveViewModel(
     class Factory(
         private val repo: StudentRepository,
         private val draft: StudentDraft,
+        private val onDiscardDraftAssets: (draftId: String) -> Unit = {},
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SaveViewModel(repo, draft) as T
+            SaveViewModel(repo, draft, onDiscardDraftAssets) as T
     }
 }

@@ -26,7 +26,9 @@ import kotlinx.datetime.Instant
     tableName = "students",
     indices = [
         Index(value = ["classNum", "serial"], unique = true),
-        Index(value = ["displayName"]),
+        // Oracle O5-B4: PRD §8.1 specifies (classNum, nameKey) composite index.
+        // findByClassName joins on nameKey so this replaces the full-table LOWER/TRIM scan.
+        Index(value = ["classNum", "nameKey"]),
     ],
 )
 data class StudentEntity(
@@ -43,6 +45,14 @@ data class StudentEntity(
     @ColumnInfo(name = "displayName")
     val displayName: String,
 
+    /**
+     * Normalized lookup key derived from displayName at write time. Case-folded, whitespace-
+     * collapsed. Populated deterministically via [normalizeNameKey] on both insert and query
+     * so findByClassName is a single indexed lookup. PRD §8.1.
+     */
+    @ColumnInfo(name = "nameKey")
+    val nameKey: String,
+
     @ColumnInfo(name = "photoPath")
     val photoPath: String,
 
@@ -58,6 +68,15 @@ data class StudentEntity(
     @ColumnInfo(name = "updatedAt")
     val updatedAt: Long,
 )
+
+/**
+ * Deterministic normalization for the [StudentEntity.nameKey] lookup column. Trim, collapse
+ * internal whitespace to single space, lowercase. Kept in the data layer so writes AND
+ * queries route through the same function — any change here must be reflected on both.
+ * Devanagari support is DEFERRED-DECISIONS B10 (NFKC when Hindi ships).
+ */
+internal fun normalizeNameKey(displayName: String): String =
+    displayName.trim().replace(Regex("\\s+"), " ").lowercase()
 
 /** Room entity → domain read-model. */
 internal fun StudentEntity.toRecord(): StudentRecord = StudentRecord(
@@ -78,6 +97,7 @@ internal fun StudentRecord.toEntity(namingKind: String): StudentEntity = Student
     classNum = classNum.label,
     serial = serial,
     displayName = displayName,
+    nameKey = normalizeNameKey(displayName),
     photoPath = photoPath,
     signaturePath = signaturePath,
     namingKind = namingKind,

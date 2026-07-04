@@ -40,6 +40,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -195,7 +198,8 @@ private fun SearchTopBar(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(NpicShapes.full)
-                        .clickable(onClick = onClearQuery),
+                        .clickable(onClick = onClearQuery)
+                        .semantics { role = Role.Button },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -292,6 +296,7 @@ private fun SearchResultRow(
             .background(NpicColors.Surface)
             .border(1.dp, chrome.borderSoft, NpicShapes.sm)
             .clickable(onClick = onClick)
+            .semantics { role = Role.Button }
             .padding(NpicSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NpicSpacing.md),

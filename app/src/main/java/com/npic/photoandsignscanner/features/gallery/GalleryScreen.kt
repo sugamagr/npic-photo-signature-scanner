@@ -396,7 +396,7 @@ private fun ClassFilterTile(
             .clip(com.npic.photoandsignscanner.core.theme.NpicShapes.sm)
             .background(container, com.npic.photoandsignscanner.core.theme.NpicShapes.sm)
             .border(
-                width = if (selected) 1.5.dp else 1.dp,
+                width = if (selected) 2.dp else 1.dp,
                 color = border,
                 shape = com.npic.photoandsignscanner.core.theme.NpicShapes.sm,
             )
@@ -440,7 +440,14 @@ private fun ClassFilterTile(
 private fun GalleryZeroState(onCapture: () -> Unit) {
     val chrome = LocalNpicChrome.current
     Box(
-        modifier = Modifier.fillMaxSize().padding(NpicSpacing.xl),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(NpicSpacing.xl)
+            // Oracle O5-M4: TalkBack announces the zero-state as a single grouped region
+            // when it first appears so users don't tab through five separate texts.
+            .semantics(mergeDescendants = true) {
+                liveRegion = LiveRegionMode.Polite
+            },
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -551,8 +558,7 @@ private fun ZeroStateEmblem() {
                 .size(12.dp)
                 .clip(com.npic.photoandsignscanner.core.theme.NpicShapes.full)
                 .background(NpicColors.Saffron)
-                .align(Alignment.BottomEnd)
-                .padding(0.dp),
+                .align(Alignment.BottomEnd),
         )
     }
 }
@@ -727,7 +733,11 @@ private fun FabRegion(
 private fun GalleryPreviewPopulated() {
     NpicTheme {
         val vm = remember {
-            GalleryViewModel(com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository())
+            GalleryViewModel(
+                com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository(
+                    seed = MockGalleryData.records(),
+                ),
+            )
         }
         GalleryScreen(
             viewModel = vm,
@@ -763,7 +773,11 @@ private fun GalleryPreviewEmpty() {
 private fun GalleryPreviewSelection() {
     NpicTheme {
         val vm = remember {
-            GalleryViewModel(com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository()).apply {
+            GalleryViewModel(
+                com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository(
+                    seed = MockGalleryData.records(),
+                ),
+            ).apply {
                 // Match MockGalleryData's deterministic UUID-shaped ids for records 1, 4, 9.
                 toggleSelect("00000000-0000-0000-0000-000000000001")
                 toggleSelect("00000000-0000-0000-0000-000000000004")

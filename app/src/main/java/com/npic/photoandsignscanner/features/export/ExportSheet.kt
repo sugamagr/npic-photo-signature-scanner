@@ -298,10 +298,15 @@ private fun MissingMediaWarning(
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                // DESIGN §7.8 copy: "N items don't have a signature. They'll be skipped."
-                // (Layer 8c.2 shipped a generic "will be skipped for the chosen format"
-                // line; Oracle m-8c2 caught the divergence from spec.)
-                text  = "$skippedCount item${if (skippedCount == 1) "" else "s"} don't have a signature. They'll be skipped.",
+                // DESIGN §7.8 copy locked. Singular vs plural handled explicitly so the
+                // string never reads "1 items don't have" (grammar mismatch caught by
+                // Oracle O4-2 blind sweep). "It'll" / "They'll" tense agreement follows
+                // subject count.
+                text  = if (skippedCount == 1) {
+                    "1 item doesn't have a signature. It'll be skipped."
+                } else {
+                    "$skippedCount items don't have a signature. They'll be skipped."
+                },
                 color = NpicColors.Ink,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
@@ -348,7 +353,12 @@ private fun SkippedList(names: List<String>) {
             .fillMaxWidth()
             .heightIn(max = 140.dp)
             .verticalScroll(scroll)
-            .padding(top = NpicSpacing.xs),
+            .padding(top = NpicSpacing.xs)
+            // Newly-revealed content inside AnimatedVisibility doesn't inherit the
+            // parent warning's live region — TalkBack was announcing "Show list" but
+            // never the names. Local Polite region reads the roster on expand
+            // (Oracle O4-3).
+            .semantics { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
     ) {
         names.forEach { name ->

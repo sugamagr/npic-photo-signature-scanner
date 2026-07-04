@@ -11,6 +11,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -144,6 +146,12 @@ private fun CameraGranted(
     val controller = remember { NpicCameraController(context) }
     LaunchedEffect(lifecycleOwner) { controller.bindTo(lifecycleOwner) }
     LaunchedEffect(state.flash) { controller.applyFlash(state.flash) }
+    // Oracle O2-1.1: config-change recomposition may build a fresh NpicCameraController
+    // via remember{} while the previous instance still holds a bound camera slot on some
+    // OEMs (Samsung One UI observed). Explicit unbind on dispose releases the slot.
+    DisposableEffect(controller) {
+        onDispose { runCatching { controller.unbind() } }
+    }
 
     // Layer 13: subscribe to the device accelerometer so the overlay level indicator
     // can snap to Sage within ±2° of horizontal. Returns null on devices without an
@@ -361,6 +369,8 @@ private fun SessionStackBadge(count: Int, lastCapturePath: String?) {
             .size(44.dp)
             .clip(NpicShapes.sm)
             .background(chrome.cameraInk.copy(alpha = 0.20f), NpicShapes.sm)
+            // Oracle O2-5.2: DESIGN §7.2 specifies 1dp CameraInk@20% border on the badge.
+            .border(1.dp, chrome.cameraInk.copy(alpha = 0.20f), NpicShapes.sm)
             .semantics { contentDescription = "Captured $count in this session" },
     ) {
         // Layer 13: last-capture thumbnail fills the badge so the user's most recent frame

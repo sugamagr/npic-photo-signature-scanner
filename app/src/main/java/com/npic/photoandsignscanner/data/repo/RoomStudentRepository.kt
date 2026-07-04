@@ -2,6 +2,7 @@ package com.npic.photoandsignscanner.data.repo
 
 import android.database.sqlite.SQLiteConstraintException
 import com.npic.photoandsignscanner.data.db.StudentDao
+import com.npic.photoandsignscanner.data.db.normalizeNameKey
 import com.npic.photoandsignscanner.data.db.toEntity
 import com.npic.photoandsignscanner.data.db.toRecord
 import com.npic.photoandsignscanner.domain.model.ClassNum
@@ -42,7 +43,7 @@ class RoomStudentRepository(
         dao.findByClassSerial(classNum.label, serial)?.toRecord()
 
     override suspend fun findByClassName(classNum: ClassNum, name: String): StudentRecord? =
-        dao.findByClassName(classNum.label, name)?.toRecord()
+        dao.findByClassNameKey(classNum.label, normalizeNameKey(name))?.toRecord()
 
     override suspend fun save(draft: StudentDraft, input: SaveInput): SaveResult {
         if (!draft.hasAnyMedia) return SaveResult.MissingBothMedia
@@ -74,21 +75,15 @@ class RoomStudentRepository(
         )
 
         return try {
-            dao.insert(record.toEntity(namingKind = input.naming.kind.name))
-            // If the user is in Serial mode AND the chosen number is higher than the
-            // current counter, advance the counter so the next auto-populated serial
-            // stays ahead of the user's manual pick. PRD §4.7: serials never rewind.
-            if (input.naming is NamingMode.Serial) {
-                val current = dao.getLastSerial(input.classNum.label) ?: 0
-                if (input.naming.number > current) {
-                    dao.setCounter(
-                        com.npic.photoandsignscanner.data.db.ClassCounterEntity(
-                            classNum = input.classNum.label,
-                            lastSerial = input.naming.number,
-                        ),
-                    )
-                }
-            }
+            // Oracle O1-4/O5-B1/B2: insert + counter bump go through one transaction.
+            // Serial mode advances the counter to the user-picked serial when that's
+            // higher than the current stored value (PRD §4.7: never rewinds). Name
+            // mode already bumped via nextSerialAndBump above so passes null here.
+            val advanceTo = (input.naming as? NamingMode.Serial)?.number
+            dao.insertWithCounter(
+                entity = record.toEntity(namingKind = input.naming.kind.name),
+                advanceCounterTo = advanceTo,
+            )
             SaveResult.Success(record)
         } catch (constraint: SQLiteConstraintException) {
             // Race backstop: another Save inserted the same (class, serial) between our

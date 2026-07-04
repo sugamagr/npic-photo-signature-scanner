@@ -125,6 +125,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.splashscreen)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.bundles.lifecycle)
 
     // Compose (BOM aligns transitive versions)

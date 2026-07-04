@@ -46,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -230,7 +229,14 @@ private fun DetailBody(
         modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.md),
+            .padding(
+                start  = NpicSpacing.md,
+                end    = NpicSpacing.md,
+                top    = NpicSpacing.md,
+                // Oracle O5-m-11: extra bottom breathing room so the last card
+                // isn't visually clipped by the DetailExportBar sibling.
+                bottom = NpicSpacing.xl,
+            ),
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.lg),
     ) {
         MetadataCard(record)
@@ -316,8 +322,6 @@ private fun PhotoCard(
             )
             if (hasPhoto) {
                 PhotoPlaceholder(path = record.photoPath)
-                // BLOCKER B-8c1-1: Saffron on Surface at labelMedium 12sp is ~2.13:1
-                // — fails WCAG 1.4.3 AA. DESIGN §2.2 also forbids Saffron for text <16sp.
                 Text(
                     text  = "Tap to edit",
                     color = chrome.inkMuted,
@@ -376,7 +380,6 @@ private fun SignatureCard(
             )
             if (hasSig) {
                 SignaturePlaceholder(path = record.signaturePath.orEmpty())
-                // BLOCKER B-8c1-1: same contrast fix as PhotoCard.
                 Text(
                     text  = "Tap to edit",
                     color = chrome.inkMuted,
@@ -501,16 +504,17 @@ private fun DashedPlaceholder(
     ) {
         androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             val cornerPx = 14.dp.toPx()
-            drawIntoCanvas {
-                drawRoundRect(
-                    color        = chrome.borderStrong,
-                    cornerRadius = CornerRadius(cornerPx, cornerPx),
-                    style        = Stroke(
-                        width      = 1.5.dp.toPx(),
-                        pathEffect = dashEffect,
-                    ),
-                )
-            }
+            // Oracle O5-m-10: drawRoundRect is already a DrawScope method;
+            // wrapping in drawIntoCanvas allocated a Canvas wrapper per frame
+            // for no reason. Call it directly.
+            drawRoundRect(
+                color        = chrome.borderStrong,
+                cornerRadius = CornerRadius(cornerPx, cornerPx),
+                style        = Stroke(
+                    width      = 1.5.dp.toPx(),
+                    pathEffect = dashEffect,
+                ),
+            )
         }
         Column(
             modifier = Modifier
@@ -559,6 +563,7 @@ private fun DetailExportBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(NpicColors.Surface)
+            .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
         Column {
             Box(

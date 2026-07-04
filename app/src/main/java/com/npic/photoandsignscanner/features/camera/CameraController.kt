@@ -39,6 +39,17 @@ class NpicCameraController(private val context: Context) {
         impl.bindToLifecycle(owner)
     }
 
+    /**
+     * Explicit unbind called by CameraScreen's DisposableEffect on config change / route
+     * exit. LifecycleCameraController auto-unbinds when the owner reaches DESTROYED, but
+     * config-change recomposition constructs a NEW controller via `remember` while the old
+     * one may still hold a bound camera slot on some OEMs. Explicit unbind releases the
+     * slot deterministically. Oracle O2-1.1.
+     */
+    fun unbind() {
+        impl.unbind()
+    }
+
     /** Apply the user-selected flash mode to the ImageCapture use case. */
     fun applyFlash(mode: FlashMode) {
         impl.imageCaptureFlashMode = when (mode) {

@@ -11,6 +11,7 @@ import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import java.util.UUID
@@ -44,22 +45,33 @@ class SharedCaptureHolder(
 
     init {
         viewModelScope.launch {
-            // Warm-start rehydrate. `observeActive` is a Flow but we only want the first
-            // emission — collecting forever would fight in-memory writes made during the
-            // same session. First non-null wins; after that this ViewModel owns the
-            // truth and pushes changes down to the repo, not the other way around.
-            val initial = draftRepository.observeActive()
-            initial.collect { persisted ->
-                if (_draft.value == null && persisted != null) {
-                    _draft.value = persisted
-                }
-                return@collect
+            // Warm-start rehydrate: read ONE emission and terminate. `observeActive()`
+            // is a cold Flow that emits indefinitely; a `collect{return@collect}` only
+            // returns from the lambda, not the collect call, so the coroutine would
+            // otherwise stay alive fighting in-memory writes. `firstOrNull()` closes
+            // the collector after the first value (or immediate null on empty DB).
+            val persisted = draftRepository.observeActive().firstOrNull()
+            if (_draft.value == null && persisted != null) {
+                _draft.value = persisted
+            }
+            // Oracle O1-7: also rehydrate the raw CameraCapture so a killed process
+            // between shutter press and Edit's commit can pick up the same rawPath +
+            // guide-box. latestCapture() returns null when the persisted draft has no
+            // rawPath (drawn-signature-first flows) — treat as "no capture yet".
+            if (_capture.value == null) {
+                val restored = runCatching { draftRepository.latestCapture() }.getOrNull()
+                if (restored != null) _capture.value = restored
             }
         }
     }
 
     fun pushCapture(capture: CameraCapture) {
         _capture.value = capture
+        // Persist to survive process kill. Mint a draft if none exists so latestCapture()
+        // has a row to hang the rawPath columns off. Oracle O1-7.
+        val next = currentOrNew()
+        _draft.value = next
+        persist(next, capture)
     }
 
     /**
@@ -126,8 +138,8 @@ class SharedCaptureHolder(
         )
     }
 
-    private fun persist(draft: StudentDraft) {
-        viewModelScope.launch { draftRepository.upsert(draft) }
+    private fun persist(draft: StudentDraft, capture: CameraCapture? = _capture.value) {
+        viewModelScope.launch { draftRepository.upsert(draft, capture) }
     }
 
     // ────────────────────────────────────────────────────────────────────────

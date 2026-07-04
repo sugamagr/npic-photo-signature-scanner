@@ -1,11 +1,14 @@
 package com.npic.photoandsignscanner.data.repo
 
 import com.npic.photoandsignscanner.data.db.DraftDao
+import com.npic.photoandsignscanner.data.db.toCameraCaptureOrNull
 import com.npic.photoandsignscanner.data.db.toDraft
 import com.npic.photoandsignscanner.data.db.toEntity
+import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.StudentDraft
 import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.Clock
 
@@ -24,9 +27,12 @@ class RoomDraftRepository(
     override suspend fun getById(id: String): StudentDraft? =
         dao.getById(id)?.toDraft()
 
-    override suspend fun upsert(draft: StudentDraft) {
-        dao.upsert(draft.toEntity(updatedAt = Clock.System.now()))
+    override suspend fun upsert(draft: StudentDraft, capture: CameraCapture?) {
+        dao.upsert(draft.toEntity(updatedAt = Clock.System.now(), capture = capture))
     }
+
+    override suspend fun latestCapture(): CameraCapture? =
+        dao.observeActive().first()?.toCameraCaptureOrNull()
 
     override suspend fun delete(id: String) {
         dao.delete(id)

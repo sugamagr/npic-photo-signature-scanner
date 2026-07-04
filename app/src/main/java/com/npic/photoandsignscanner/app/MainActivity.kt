@@ -335,6 +335,7 @@ private fun NpicNavHost(
             SaveDestination(
                 captureHolder = captureHolder,
                 studentRepository = studentRepository,
+                sourceStore = sourceStore,
                 onCancel = { navController.popBackStack() },
                 onSaved = {
                     captureHolder.clear()
@@ -776,6 +777,7 @@ private suspend fun persistDrawnSignature(
 private fun SaveDestination(
     captureHolder: SharedCaptureHolder,
     studentRepository: StudentRepository,
+    sourceStore: com.npic.photoandsignscanner.data.storage.SourceStore,
     onCancel: () -> Unit,
     onSaved: () -> Unit,
 ) {
@@ -794,8 +796,15 @@ private fun SaveDestination(
         )
     }
 
-    val factory = remember(draft.id) {
-        SaveViewModel.Factory(repo = studentRepository, draft = draft)
+    val factory = remember(draft.id, sourceStore) {
+        SaveViewModel.Factory(
+            repo = studentRepository,
+            draft = draft,
+            // Oracle O1-11: "Keep existing" abandons the just-committed draft. Layer 9
+            // SourceStore wrote sources/{draftId}_*.jpg at Edit's commit; without this
+            // callback those files are orphaned in filesDir/sources/ forever.
+            onDiscardDraftAssets = { draftId -> sourceStore.deleteFor(draftId) },
+        )
     }
     val saveViewModel: SaveViewModel = viewModel(key = draft.id, factory = factory)
 

@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.domain.repo
 
+import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.StudentDraft
 import kotlinx.coroutines.flow.Flow
 
@@ -24,8 +25,18 @@ interface DraftRepository {
      * Insert-or-replace by [StudentDraft.id]. Called each time SharedCaptureHolder
      * mutates its draft (Camera push, Edit commit, Signature push) so the resume-prompt
      * has a live snapshot to work from.
+     *
+     * Optional [capture] carries the raw CameraX JPEG path + guide box so a process kill
+     * between shutter press and Edit commit can rehydrate the [CameraCapture] object.
+     * Null when the draft state predates any capture (drawn-signature-first). Oracle O1-7.
      */
-    suspend fun upsert(draft: StudentDraft)
+    suspend fun upsert(draft: StudentDraft, capture: CameraCapture? = null)
+
+    /**
+     * Fetch the newest draft's raw [CameraCapture], if any. Used by SharedCaptureHolder's
+     * warm-start rehydrate so Edit can resume from a killed process. Oracle O1-7.
+     */
+    suspend fun latestCapture(): CameraCapture?
 
     /** Delete a specific draft — called after Save success or explicit user discard. */
     suspend fun delete(id: String)

@@ -7,7 +7,6 @@ import com.npic.photoandsignscanner.domain.model.SaveResult
 import com.npic.photoandsignscanner.domain.model.StudentDraft
 import com.npic.photoandsignscanner.domain.model.StudentRecord
 import com.npic.photoandsignscanner.domain.repo.StudentRepository
-import com.npic.photoandsignscanner.features.gallery.MockGalleryData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,18 +16,18 @@ import kotlinx.datetime.Clock
 import java.util.UUID
 
 /**
- * In-memory [StudentRepository] backed by a [MutableStateFlow]. Seeds from
- * [MockGalleryData] on construction so the Gallery keeps its shell content until the Room
- * layer lands.
+ * In-memory [StudentRepository] backed by a [MutableStateFlow]. Production wires
+ * [RoomStudentRepository] (PRD §8.1) — this impl survives only for Compose previews +
+ * unit tests. Oracle O5-B3: default seed MUST be empty; callers that want mock content
+ * (Compose previews) pass `MockGalleryData.records()` explicitly. A non-empty default
+ * would leak `mock://photo/N` paths into any accidentally-wired production path where
+ * Coil then fails to decode them.
  *
  * Thread-safety: reads through [observeAll] are lock-free (StateFlow); writes go through
  * [mutex] so `nextSerial` + duplicate check + append form one atomic transaction.
- *
- * TODO(repo): swap for a Room-backed impl. This class is deliberately kept behind
- * [StudentRepository] so the swap is a wiring change in MainActivity only.
  */
 class InMemoryStudentRepository(
-    seed: List<StudentRecord> = MockGalleryData.records(),
+    seed: List<StudentRecord> = emptyList(),
 ) : StudentRepository {
 
     private val _records = MutableStateFlow(seed)

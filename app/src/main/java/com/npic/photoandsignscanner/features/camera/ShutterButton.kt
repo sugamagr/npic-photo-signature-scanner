@@ -95,17 +95,21 @@ fun ShutterButton(
                 radius = (diameter - ringPx) / 2f,
                 style  = Stroke(width = ringPx),
             )
-            // Progress arc — sweeps clockwise from -90° (12 o'clock) to fill the inner
-            // area with Saffron. Drawn inside the ring so it doesn't overlap the outline.
+            // Oracle O2-5.6 / DESIGN §7.2: progress is a Saffron RING sweep, not a pie
+            // wedge. useCenter=true fills the wedge from center → arc which reads as a
+            // solid clock face; useCenter=false + Stroke draws just the arc rim which
+            // matches the DESIGN spec's "loading ring" pattern.
             if (arcSweep > 0f) {
-                val inset = ringPx + 2.dp.toPx()
+                val arcStroke = 3.dp.toPx()
+                val inset = ringPx + 4.dp.toPx()
                 drawArc(
                     color = NpicColors.Saffron,
                     startAngle = -90f,
                     sweepAngle = arcSweep,
-                    useCenter  = true,
+                    useCenter  = false,
                     topLeft = Offset(inset, inset),
                     size = Size(diameter - 2 * inset, diameter - 2 * inset),
+                    style = Stroke(width = arcStroke),
                 )
             }
         }

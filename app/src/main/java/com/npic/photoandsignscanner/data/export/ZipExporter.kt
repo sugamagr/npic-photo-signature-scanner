@@ -76,12 +76,21 @@ class ZipExporter(private val cacheDir: File) {
      * ZIP entry names must not contain path separators pointing outside the archive.
      * Callers should already pass PRD §6.3 filenames which are safe, but sanitize
      * defensively — a stray `../` from an ill-behaved caller would create a Zip Slip.
+     *
+     * Oracle O4-4 caught that a naive `replace("..", "")` on a crafted input like
+     * `....//foo.jpg` collapses to `..//foo.jpg` — the outer dots survive because
+     * the inner `..` was consumed. Fix: (1) take ONLY the final path component after
+     * ALL slashes (works cross-platform), (2) strip every run of dots via regex so
+     * no crafted layering survives, (3) strip any remaining slashes as a belt-and-
+     * suspenders defense against %2f-decoded upstream input.
      */
     private fun sanitizeEntryName(raw: String): String {
-        val cleaned = raw
+        val basename = raw
             .substringAfterLast('/')
             .substringAfterLast('\\')
-            .replace("..", "")
+        val cleaned = basename
+            .replace(Regex("\\.{2,}"), "")
+            .replace(Regex("[/\\\\]"), "")
         return cleaned.ifEmpty { "export.jpg" }
     }
 
