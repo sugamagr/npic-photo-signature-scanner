@@ -4,10 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Brightness6
 import androidx.compose.material.icons.outlined.Contrast
@@ -44,8 +45,11 @@ fun AdjustTool(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(EditTool.Adjust.panelHeight)
-            .padding(horizontal = NpicSpacing.md),
+            // User feedback: at 200% font scale or on shorter devices the 5th slider row
+            // sat below the fold. Scrolling makes the panel resilient to whatever the
+            // animated panel-height allocation ends up being.
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.xxs),
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
     ) {
         AdjustRow(

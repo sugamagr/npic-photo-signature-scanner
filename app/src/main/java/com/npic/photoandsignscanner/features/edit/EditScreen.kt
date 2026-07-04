@@ -206,7 +206,14 @@ private fun ImageViewport(
             .clip(NpicShapes.md),
         contentAlignment = Alignment.Center,
     ) {
-        val bitmap = state.sourceBitmap
+        // Bug#3: Filter/Adjust/Rotate tabs must show a live preview reflecting current
+        // edit state; Crop tab keeps raw source so the overlay handles hit the actual
+        // pixels. livePreviewBitmap is populated by EditViewModel.scheduleLivePreview().
+        val bitmap = if (state.activeTool == EditTool.Crop) {
+            state.sourceBitmap
+        } else {
+            state.livePreviewBitmap ?: state.sourceBitmap
+        }
         if (bitmap != null) {
             val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
             Image(
@@ -220,12 +227,15 @@ private fun ImageViewport(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        NpicCropOverlay(
-            quad = state.edit.crop,
-            onQuadChange = onCropChange,
-            onLayoutSize = { /* layer 7c will feed this back into image-space math */ },
-            modifier = Modifier.fillMaxSize(),
-        )
+        if (state.activeTool == EditTool.Crop) {
+            NpicCropOverlay(
+                quad = state.edit.crop,
+                onQuadChange = onCropChange,
+                onLayoutSize = { /* layer 7c will feed this back into image-space math */ },
+                modifier = Modifier.fillMaxSize(),
+                aspectLock = state.edit.aspectLock,
+            )
+        }
         AnimatedVisibility(
             visible = state.showInkFallbackBanner,
             modifier = Modifier

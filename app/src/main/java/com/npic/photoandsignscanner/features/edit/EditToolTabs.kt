@@ -9,8 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,8 +51,9 @@ fun EditToolTabs(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .background(chrome.cameraSurface),
+            .background(chrome.cameraSurface)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .height(56.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         EditTool.entries.forEach { tool ->

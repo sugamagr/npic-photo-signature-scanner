@@ -22,21 +22,24 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicTheme
+import com.npic.photoandsignscanner.domain.model.AspectLock
 import com.npic.photoandsignscanner.domain.model.CropQuad
 
 /**
- * Draggable crop quadrilateral. Per DESIGN §6.15:
- *   • Four corner handles: 16dp Saffron dot inside a 3dp white ring; hit area is the
- *     nearest-handle Voronoi cell around each corner, unbounded within the overlay.
- *   • Four edge-midpoint handles: 12dp Saffron dot inside a 2dp white ring; same
- *     nearest-handle routing so effective hit slop always meets 44dp WCAG target size
- *     regardless of how tightly the user zooms in on the crop rectangle.
- *   • Rule-of-thirds grid: 1dp Saffron 30% alpha, visible ONLY while dragging.
- * Magnifier bubble is intentionally deferred to the Edit feature (it needs the bitmap).
+ * Draggable crop rectangle. Per user feedback (2024-12), simplified from the eight-handle
+ * design to just four corner handles — edge midpoints were more noise than signal for the
+ * portrait-photo use case, and aspect-lock enforcement is trivial with corners alone.
  *
- * Edge midpoints translate along their perpendicular axis only — top/bottom moves in Y,
- * left/right moves in X. Corners translate freely in both axes so users can reshape into
- * a non-rectangular quad after edge detection.
+ * Per DESIGN §6.15:
+ *   • Four corner handles: 16dp Saffron dot inside a 3dp white ring; hit routing uses
+ *     nearest-corner Voronoi cells so effective slop always meets 44dp WCAG target.
+ *   • Rule-of-thirds grid: 1dp Saffron 30% alpha, visible ONLY while dragging.
+ *
+ * Aspect lock is honoured on every drag: if [aspectLock] is a [AspectLock.Ratio], the moved
+ * corner is projected so the resulting quad matches the ratio, anchored to the diagonally
+ * opposite corner. [AspectLock.Free] leaves each corner independent.
+ *
+ * Magnifier bubble is intentionally deferred to the Edit feature (it needs the bitmap).
  *
  * Coordinates are stored in the overlay's own layout box in [Offset]s (px). Callers translate
  * to source-image coordinates via [onQuadChange] and [onLayoutSize].
@@ -47,14 +50,14 @@ fun NpicCropOverlay(
     onQuadChange: (CropQuad) -> Unit,
     onLayoutSize: (IntSize) -> Unit,
     modifier: Modifier = Modifier,
+    aspectLock: AspectLock = AspectLock.Free,
 ) {
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var dragging by remember { mutableStateOf(false) }
     var activeHandle by remember { mutableStateOf<CropHandle?>(null) }
 
-    // Latest quad + callback snapshots so the pointerInput block can key on Unit
-    // (avoiding gesture-detector restarts on every drag frame) while still reading fresh values.
     val currentQuad = rememberUpdatedState(quad)
+    val currentAspectLock = rememberUpdatedState(aspectLock)
     val currentOnQuadChange = rememberUpdatedState(onQuadChange)
 
     Box(
@@ -63,7 +66,7 @@ fun NpicCropOverlay(
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { pos ->
-                        activeHandle = currentQuad.value.nearestHandle(pos)
+                        activeHandle = currentQuad.value.nearestCorner(pos)
                         dragging = true
                     },
                     onDragEnd = {
@@ -77,8 +80,13 @@ fun NpicCropOverlay(
                     onDrag = { change, drag ->
                         change.consume()
                         val q = currentQuad.value
-                        val handle = activeHandle ?: q.nearestHandle(change.position)
-                        val moved = q.moveHandle(handle, drag)
+                        val handle = activeHandle ?: q.nearestCorner(change.position)
+                        val moved = q.moveCorner(
+                            handle,
+                            drag,
+                            currentAspectLock.value,
+                            boxSize,
+                        )
                         currentOnQuadChange.value(
                             moved.clampedTo(size.width.toFloat(), size.height.toFloat())
                         )
@@ -123,13 +131,6 @@ fun NpicCropOverlay(
             drawHandle(quad.tr, cornerDotR, cornerRingR)
             drawHandle(quad.br, cornerDotR, cornerRingR)
             drawHandle(quad.bl, cornerDotR, cornerRingR)
-
-            val edgeDotR  = 6.dp.toPx()
-            val edgeRingR = edgeDotR + 2.dp.toPx()
-            drawHandle(quad.topMid,    edgeDotR, edgeRingR)
-            drawHandle(quad.rightMid,  edgeDotR, edgeRingR)
-            drawHandle(quad.bottomMid, edgeDotR, edgeRingR)
-            drawHandle(quad.leftMid,   edgeDotR, edgeRingR)
         }
     }
 }
@@ -144,51 +145,121 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHandle(
 }
 
 /**
- * A grabbable point on the crop overlay: one of the four corners or one of the four edge
- * midpoints. Corners translate freely; edges translate along their perpendicular axis only.
- *
- * View-layer only — kept out of `domain/model/CropQuad` because it exists solely to route
- * pointer events on the overlay Canvas.
+ * A grabbable corner on the crop overlay. Kept out of `domain/model/CropQuad` because it
+ * exists solely to route pointer events on the overlay Canvas.
  */
-sealed interface CropHandle {
-    enum class Corner : CropHandle { TL, TR, BR, BL }
-    enum class Edge   : CropHandle { Top, Right, Bottom, Left }
-}
+enum class CropHandle { TL, TR, BR, BL }
 
 /**
- * Nearest-handle Voronoi routing for a pointer position (DESIGN §6.15). Extension on the
- * domain [CropQuad] so the domain model stays free of view-layer sealed interfaces.
+ * Nearest-corner Voronoi routing for a pointer position (DESIGN §6.15). Extension on the
+ * domain [CropQuad] so the domain model stays free of view-layer types.
  */
-fun CropQuad.nearestHandle(p: Offset): CropHandle {
-    var best: CropHandle = CropHandle.Corner.TL
+fun CropQuad.nearestCorner(p: Offset): CropHandle {
+    var best = CropHandle.TL
     var bestD = (tl - p).getDistance()
     fun tryHandle(h: CropHandle, d: Float) {
         if (d < bestD) { best = h; bestD = d }
     }
-    tryHandle(CropHandle.Corner.TR,     (tr        - p).getDistance())
-    tryHandle(CropHandle.Corner.BR,     (br        - p).getDistance())
-    tryHandle(CropHandle.Corner.BL,     (bl        - p).getDistance())
-    tryHandle(CropHandle.Edge.Top,      (topMid    - p).getDistance())
-    tryHandle(CropHandle.Edge.Right,    (rightMid  - p).getDistance())
-    tryHandle(CropHandle.Edge.Bottom,   (bottomMid - p).getDistance())
-    tryHandle(CropHandle.Edge.Left,     (leftMid   - p).getDistance())
+    tryHandle(CropHandle.TR, (tr - p).getDistance())
+    tryHandle(CropHandle.BR, (br - p).getDistance())
+    tryHandle(CropHandle.BL, (bl - p).getDistance())
     return best
 }
 
-/** Translate a grabbed handle by [delta]. Corner=free, Edge=perpendicular-only. */
-fun CropQuad.moveHandle(handle: CropHandle, delta: Offset): CropQuad {
-    val dx = Offset(delta.x, 0f)
-    val dy = Offset(0f, delta.y)
-    return when (handle) {
-        CropHandle.Corner.TL   -> copy(tl = tl + delta)
-        CropHandle.Corner.TR   -> copy(tr = tr + delta)
-        CropHandle.Corner.BR   -> copy(br = br + delta)
-        CropHandle.Corner.BL   -> copy(bl = bl + delta)
-        CropHandle.Edge.Top    -> copy(tl = tl + dy, tr = tr + dy)
-        CropHandle.Edge.Bottom -> copy(br = br + dy, bl = bl + dy)
-        CropHandle.Edge.Left   -> copy(bl = bl + dx, tl = tl + dx)
-        CropHandle.Edge.Right  -> copy(tr = tr + dx, br = br + dx)
+/**
+ * Translate a grabbed corner by [delta], enforcing [aspectLock].
+ *
+ * When [aspectLock] is [AspectLock.Ratio], the moved corner is projected onto the
+ * diagonal from the anchor (opposite) corner so the resulting axis-aligned bounding box
+ * matches `ratio.width / ratio.height`. Signed dx/dy from the anchor is preserved so the
+ * user's drag direction still feels responsive.
+ *
+ * When [aspectLock] is [AspectLock.Free], each corner moves independently — historically
+ * the "trapezoidal" crop mode useful for hand-perspective-fix on already-detected edges.
+ *
+ * [box] bounds are used only to clamp the projected corner; if the projected point falls
+ * outside the overlay, the shorter axis wins so the ratio survives.
+ */
+fun CropQuad.moveCorner(
+    handle: CropHandle,
+    delta: Offset,
+    aspectLock: AspectLock,
+    box: IntSize,
+): CropQuad {
+    if (aspectLock is AspectLock.Free) {
+        return when (handle) {
+            CropHandle.TL -> copy(tl = tl + delta)
+            CropHandle.TR -> copy(tr = tr + delta)
+            CropHandle.BR -> copy(br = br + delta)
+            CropHandle.BL -> copy(bl = bl + delta)
+        }
     }
+    val ratio = (aspectLock as AspectLock.Ratio).aspect
+
+    // Anchor is the corner diagonally opposite the one being moved; it holds still and
+    // defines the axis-aligned bounding box together with the projected moved corner.
+    val anchor: Offset = when (handle) {
+        CropHandle.TL -> br
+        CropHandle.TR -> bl
+        CropHandle.BR -> tl
+        CropHandle.BL -> tr
+    }
+    val movedRaw = when (handle) {
+        CropHandle.TL -> tl + delta
+        CropHandle.TR -> tr + delta
+        CropHandle.BR -> br + delta
+        CropHandle.BL -> bl + delta
+    }
+    // Signed offset from anchor. Absolute values drive the axis-aligned box; signs preserve
+    // which quadrant the moved corner lives in relative to the anchor.
+    val dx = movedRaw.x - anchor.x
+    val dy = movedRaw.y - anchor.y
+    val sx = if (dx >= 0) 1f else -1f
+    val sy = if (dy >= 0) 1f else -1f
+    var w = kotlin.math.abs(dx)
+    var h = kotlin.math.abs(dy)
+
+    // Project onto ratio: pick the larger axis as the driver so the user's drag stays
+    // visible; the smaller axis follows. This mirrors the standard Photoshop/Figma
+    // aspect-locked resize behaviour.
+    if (w / h > ratio) h = w / ratio else w = h * ratio
+
+    // Clamp to the overlay so a runaway drag doesn't punch a corner out of the box; clamp
+    // by whichever axis hit its edge first so the ratio is preserved.
+    val maxW = if (sx >= 0) box.width - anchor.x else anchor.x
+    val maxH = if (sy >= 0) box.height - anchor.y else anchor.y
+    if (maxW > 0f && w > maxW) { w = maxW; h = w / ratio }
+    if (maxH > 0f && h > maxH) { h = maxH; w = h * ratio }
+
+    val nx = anchor.x + sx * w
+    val ny = anchor.y + sy * h
+    val newMoved = Offset(nx, ny)
+
+    // Build a fresh axis-aligned quad. Aspect lock implies rectangular (not trapezoidal)
+    // crops — the mid-drag CropQuad is always a rect when a ratio is locked.
+    return when (handle) {
+        CropHandle.TL -> rectFrom(newMoved, anchor)
+        CropHandle.TR -> rectFrom(Offset(anchor.x, newMoved.y), Offset(newMoved.x, anchor.y))
+        CropHandle.BR -> rectFrom(anchor, newMoved)
+        CropHandle.BL -> rectFrom(Offset(newMoved.x, anchor.y), Offset(anchor.x, newMoved.y))
+    }
+}
+
+/**
+ * Assemble an axis-aligned [CropQuad] from any two diagonal corners. Normalises so that
+ * [CropQuad.tl] is the top-left regardless of which corner the caller passed as "min".
+ */
+private fun rectFrom(a: Offset, b: Offset): CropQuad {
+    val left   = minOf(a.x, b.x)
+    val right  = maxOf(a.x, b.x)
+    val top    = minOf(a.y, b.y)
+    val bottom = maxOf(a.y, b.y)
+    return CropQuad(
+        tl = Offset(left,  top),
+        tr = Offset(right, top),
+        br = Offset(right, bottom),
+        bl = Offset(left,  bottom),
+    )
 }
 
 @Preview(name = "CropOverlay — over a mock photo")

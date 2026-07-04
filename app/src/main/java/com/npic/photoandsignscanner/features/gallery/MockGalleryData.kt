@@ -49,8 +49,13 @@ object MockGalleryData {
     ): StudentRecord {
         val now = Clock.System.now()
         val at  = now - hoursAgo.hours
+        // Deterministic UUID-shaped string keyed by the mock sequence number so shell
+        // debug sessions render the same records across process restarts (aids visual
+        // QA + hand-verifying Gallery ordering). Padding to 12 chars matches the UUID
+        // node segment so shape is preserved even with two-digit ids.
+        val uuidLike = "00000000-0000-0000-0000-%012d".format(id)
         return StudentRecord(
-            id            = id,
+            id            = uuidLike,
             classNum      = classNum,
             serial        = serial,
             displayName   = name,

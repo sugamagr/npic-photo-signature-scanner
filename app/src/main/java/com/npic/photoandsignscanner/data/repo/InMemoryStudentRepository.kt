@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
-import java.util.concurrent.atomic.AtomicLong
+import java.util.UUID
 
 /**
  * In-memory [StudentRepository] backed by a [MutableStateFlow]. Seeds from
@@ -33,14 +33,13 @@ class InMemoryStudentRepository(
 
     private val _records = MutableStateFlow(seed)
     private val mutex = Mutex()
-    private val nextId = AtomicLong(seed.maxOfOrNull { it.id }?.plus(1) ?: 1L)
 
     override fun observeAll(): Flow<List<StudentRecord>> = _records.asStateFlow()
 
-    override suspend fun getById(id: Long): StudentRecord? =
+    override suspend fun getById(id: String): StudentRecord? =
         _records.value.firstOrNull { it.id == id }
 
-    override suspend fun delete(id: Long): Unit = mutex.withLock {
+    override suspend fun delete(id: String): Unit = mutex.withLock {
         val filtered = _records.value.filterNot { it.id == id }
         // Only emit if we actually removed something so subscribers don't see spurious
         // list-identity changes.
@@ -78,7 +77,7 @@ class InMemoryStudentRepository(
         SaveResult.Success(record)
     }
 
-    override suspend fun replace(existingId: Long, draft: StudentDraft, input: SaveInput): SaveResult =
+    override suspend fun replace(existingId: String, draft: StudentDraft, input: SaveInput): SaveResult =
         mutex.withLock {
             if (!draft.hasAnyMedia) return@withLock SaveResult.MissingBothMedia
             val filtered = _records.value.filterNot { it.id == existingId }
@@ -96,8 +95,11 @@ class InMemoryStudentRepository(
             // the Name naming mode use displayName, not serial.
             is NamingMode.Name   -> nextSerialSync(input.classNum)
         }
+        // Reuse the draft's UUID as the record ID so the Layer 9 SourceStore assets
+        // (`sources/{draftId}_photo.jpg`, `..._signature.jpg`) keep pointing at the same
+        // record after Save. PRD §8.1 UUID contract.
         return StudentRecord(
-            id            = nextId.getAndIncrement(),
+            id            = this.id,
             classNum      = input.classNum,
             serial        = serial,
             displayName   = input.displayName,

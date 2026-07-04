@@ -21,7 +21,7 @@ data class GalleryUiState(
     val countsByClass: Map<ClassNum, Int> = emptyMap(),
     val classFilter: ClassNum? = null,
     val sortMode: SortMode = SortMode.Newest,
-    val selectedIds: Set<Long> = emptySet(),
+    val selectedIds: Set<String> = emptySet(),
     val isLoading: Boolean = false,
 ) {
     val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()

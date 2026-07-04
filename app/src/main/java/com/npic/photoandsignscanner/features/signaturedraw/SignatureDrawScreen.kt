@@ -91,6 +91,7 @@ fun SignatureDrawScreen(
                 SignatureCanvas(
                     strokes = state.strokes,
                     inFlightStroke = state.inFlightStroke,
+                    liveWidthPx = state.thicknessPx,
                     onBegin = { viewModel.beginStroke(it) },
                     onExtend = { viewModel.extendStroke(it) },
                     onEnd = { viewModel.endStroke() },

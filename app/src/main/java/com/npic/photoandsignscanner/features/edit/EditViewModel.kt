@@ -64,6 +64,7 @@ class EditViewModel(
     private var detectionJob: Job? = null
     private var thumbnailsJob: Job? = null
     private var commitJob: Job? = null
+    private var livePreviewJob: Job? = null
 
     /**
      * Seed from a fresh capture. No-op if the same capture is already loaded. Cancels any
@@ -82,6 +83,7 @@ class EditViewModel(
         current?.let { prior ->
             prior.sourceBitmap?.recycle()
             prior.previewBitmap?.recycle()
+            prior.livePreviewBitmap?.recycle()
             prior.filterThumbnails.values.forEach { it.recycle() }
         }
 
@@ -104,6 +106,9 @@ class EditViewModel(
                 }
                 launchDetection(capture, decoded, activeRawPath)
                 launchThumbnails(preview, activeRawPath)
+                // Bug#3: prime the live preview so Filter/Adjust/Rotate tabs show a
+                // meaningful image (Auto filter applied) the first time the user opens them.
+                scheduleLivePreview()
             } else {
                 _state.update { s ->
                     if (s?.edit?.source?.rawPath == activeRawPath) {
@@ -210,6 +215,7 @@ class EditViewModel(
 
     fun setCrop(quad: CropQuad) {
         _state.update { it?.copy(edit = it.edit.copy(crop = quad)) }
+        // Crop-tool preview intentionally displays raw source + overlay; no re-render.
     }
 
     fun resetCropToAuto() {
@@ -230,22 +236,63 @@ class EditViewModel(
 
     fun setFilter(preset: FilterPreset) {
         _state.update { it?.copy(edit = it.edit.copy(filter = preset)) }
+        scheduleLivePreview()
     }
 
     fun setAdjustments(adjustments: Adjustments) {
         _state.update { it?.copy(edit = it.edit.copy(adjustments = adjustments)) }
+        scheduleLivePreview()
     }
 
     fun rotateCw() {
         _state.update { it?.copy(edit = it.edit.copy(rotation = it.edit.rotation.rotateCw())) }
+        scheduleLivePreview()
     }
 
     fun rotateCcw() {
         _state.update { it?.copy(edit = it.edit.copy(rotation = it.edit.rotation.rotateCcw())) }
+        scheduleLivePreview()
     }
 
     fun setStraighten(degrees: Float) {
         _state.update { it?.copy(edit = it.edit.copy(rotation = it.edit.rotation.withStraighten(degrees))) }
+        scheduleLivePreview()
+    }
+
+    /**
+     * Bug#3 fix. Schedule a debounced re-render of [EditUiState.previewBitmap] through
+     * [EditRenderer] using the current [EditState]. Result lands on
+     * [EditUiState.livePreviewBitmap] which the viewport displays in preference to the raw
+     * source (except in Crop mode, where the overlay needs the untransformed source).
+     *
+     * Runs on [Dispatchers.Default]. The 384px preview means each render is ~5-15 ms —
+     * well inside PRD §4.5 "<100 ms" budget so no debounce delay is needed.
+     * Prior render is cancelled and its result recycled so slider drags don't stack.
+     */
+    private fun scheduleLivePreview() {
+        val snapshot = _state.value ?: return
+        val preview = snapshot.previewBitmap ?: return
+        val activeRawPath = snapshot.edit.source.rawPath
+        val editSnapshot = snapshot.edit
+
+        livePreviewJob?.cancel()
+        livePreviewJob = viewModelScope.launch {
+            val rendered = withContext(Dispatchers.Default) {
+                runCatching { editRenderer.render(preview, editSnapshot) }
+                    .onFailure { Log.e(TAG, "live-preview render failed: ${it.message}", it) }
+                    .getOrNull()
+            } ?: return@launch
+            _state.update { s ->
+                if (s == null || s.edit.source.rawPath != activeRawPath) {
+                    rendered.recycle()
+                    s
+                } else {
+                    // Recycle the previous live preview so we don't leak on repeated drags.
+                    s.livePreviewBitmap?.recycle()
+                    s.copy(livePreviewBitmap = rendered)
+                }
+            }
+        }
     }
 
     fun requestDiscardConfirm() {
@@ -321,6 +368,7 @@ class EditViewModel(
         _state.value?.let { s ->
             s.sourceBitmap?.recycle()
             s.previewBitmap?.recycle()
+            s.livePreviewBitmap?.recycle()
             s.filterThumbnails.values.forEach { it.recycle() }
         }
         super.onCleared()

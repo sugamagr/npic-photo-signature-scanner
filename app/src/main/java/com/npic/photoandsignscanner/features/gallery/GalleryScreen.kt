@@ -5,29 +5,42 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,11 +50,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -82,9 +103,9 @@ import com.npic.photoandsignscanner.domain.model.SortMode
 fun GalleryScreen(
     viewModel: GalleryViewModel,
     onCaptureClick: () -> Unit,
-    onRecordClick: (Long) -> Unit,
-    onExportSelection: (Set<Long>) -> Unit,
-    onDeleteSelection: (Set<Long>) -> Unit,
+    onRecordClick: (String) -> Unit,
+    onExportSelection: (Set<String>) -> Unit,
+    onDeleteSelection: (Set<String>) -> Unit,
     onSearchClick: () -> Unit = {},
     onOverflowClick: () -> Unit = {},
 ) {
@@ -111,14 +132,14 @@ fun GalleryScreen(
 private fun GalleryContent(
     state: GalleryUiState,
     onCaptureClick: () -> Unit,
-    onRecordClick: (Long) -> Unit,
-    onRecordLongPress: (Long) -> Unit,
+    onRecordClick: (String) -> Unit,
+    onRecordLongPress: (String) -> Unit,
     onClassFilterChange: (ClassNum?) -> Unit,
     onSortModeChange: (SortMode) -> Unit,
     onClearSelection: () -> Unit,
     onSelectAll: () -> Unit,
-    onExportSelection: (Set<Long>) -> Unit,
-    onDeleteSelection: (Set<Long>) -> Unit,
+    onExportSelection: (Set<String>) -> Unit,
+    onDeleteSelection: (Set<String>) -> Unit,
     onSearchClick: () -> Unit,
     onOverflowClick: () -> Unit,
 ) {
@@ -150,6 +171,9 @@ private fun GalleryContent(
             Box(Modifier.fillMaxSize().weight(1f)) {
                 if (state.isEmpty) {
                     if (state.hasAnyRecords) {
+                        // Filtered-empty variant: user has records, current class filter matches none.
+                        // Uses generic NpicEmptyState because the situation is transient — clearing
+                        // the filter restores the grid immediately.
                         NpicEmptyState(
                             title = "No records for Class ${state.classFilter?.label ?: ""}",
                             body  = "Try a different class filter or clear it.",
@@ -163,10 +187,11 @@ private fun GalleryContent(
                             },
                         )
                     } else {
-                        NpicEmptyState(
-                            title = "No students yet",
-                            body  = "Tap Capture to add your first.",
-                        )
+                        // Bug#11: the true zero-state is the FIRST screen a new user sees. It
+                        // deserves a purpose-built layout — layered brand illustration, hierarchy
+                        // (headline → supporting copy → hint tiles), and a strong primary CTA —
+                        // rather than the utility NpicEmptyState used for filtered empties.
+                        GalleryZeroState(onCapture = onCaptureClick)
                     }
                 } else {
                     GalleryGrid(
@@ -210,6 +235,7 @@ private fun GalleryTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
             .height(96.dp)
             .padding(horizontal = NpicSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -232,7 +258,9 @@ private fun GalleryTopBar(
             )
             Box {
                 NpicIconButton(
-                    icon = Icons.Outlined.SwapVert,
+                    // Bug#14: AutoMirrored.Outlined.Sort reads as "sort" at a glance —
+                    // SwapVert reads as "swap/reorder" and confused users on device.
+                    icon = Icons.AutoMirrored.Outlined.Sort,
                     contentDescription = "Sort · currently ${sortMode.label}",
                     onClick = { sortMenuOpen = true },
                 )
@@ -274,6 +302,7 @@ private fun GallerySelectionTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
             .height(56.dp)
             .padding(horizontal = NpicSpacing.xs)
             .semantics { liveRegion = LiveRegionMode.Polite },
@@ -318,22 +347,252 @@ private fun ClassFilterRow(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(scroll)
-            .padding(horizontal = NpicSpacing.sm, vertical = NpicSpacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
+            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        NpicChip(
-            label = "All · $totalCount",
+        ClassFilterTile(
+            title = "All",
+            count = totalCount,
             selected = selected == null,
             onClick = { onSelect(null) },
         )
         ClassNum.entries.forEach { c ->
-            val n = countsByClass[c] ?: 0
-            NpicChip(
-                label = "Class ${c.label} · $n",
+            ClassFilterTile(
+                title = "Class ${c.label}",
+                count = countsByClass[c] ?: 0,
                 selected = selected == c,
                 onClick = { onSelect(c) },
             )
         }
+    }
+}
+
+/**
+ * Bug#12: replaces the single-line "Class X · N" chip with a two-line tile — the count
+ * dominates as a display numeral, the class label whispers beneath. Selection swaps the
+ * container to SaffronSoft with a Saffron border, matching [NpicChip] tokens so both
+ * affordances share the design system.
+ */
+@Composable
+private fun ClassFilterTile(
+    title: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val chrome = LocalNpicChrome.current
+    val container = if (selected) chrome.saffronSoft else NpicColors.Surface
+    val border    = if (selected) NpicColors.Saffron else chrome.borderStrong
+    val titleColor = if (selected) NpicColors.SaffronDeep else chrome.inkMuted
+    val countColor = NpicColors.Ink
+    Column(
+        modifier = Modifier
+            .semantics(mergeDescendants = true) {
+                role = Role.Tab
+                this.selected = selected
+                contentDescription = "$title, $count ${if (count == 1) "record" else "records"}"
+            }
+            .clip(com.npic.photoandsignscanner.core.theme.NpicShapes.sm)
+            .background(container, com.npic.photoandsignscanner.core.theme.NpicShapes.sm)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = border,
+                shape = com.npic.photoandsignscanner.core.theme.NpicShapes.sm,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.xs)
+            .defaultMinSize(minWidth = 68.dp, minHeight = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text  = count.toString(),
+            color = countColor,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight(700)),
+        )
+        Text(
+            text  = title,
+            color = titleColor,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight(500)),
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Zero-state (Bug#11) — the first screen a fresh install renders
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Bug#11 hero empty state. Not a generic fallback — this is a designed onboarding surface.
+ *
+ * Layers, top to bottom:
+ *  1. Emblem: 3 overlapping rounded thumbnails, back-to-front, subtle rotation, tinted with
+ *     Saffron/SaffronSoft/Ivory so the composition reads as a stack of student cards. This
+ *     replaces the utility "icon-in-a-circle" pattern that shipped before.
+ *  2. Headline (displaySmall, Ink) — "Start scanning." Anchors visual weight.
+ *  3. Supporting sentence (bodyLarge, InkMuted) — one line, no jargon.
+ *  4. Two hint tiles (photo / signature) laid out horizontally; leading icon + label + tiny
+ *     description. Introduces the two capture modes without cluttering the CTA.
+ *  5. Primary CTA — full-width [NpicButton] labeled "Capture your first photo".
+ */
+@Composable
+private fun GalleryZeroState(onCapture: () -> Unit) {
+    val chrome = LocalNpicChrome.current
+    Box(
+        modifier = Modifier.fillMaxSize().padding(NpicSpacing.xl),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.width(320.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(NpicSpacing.md),
+        ) {
+            ZeroStateEmblem()
+
+            Spacer(Modifier.height(NpicSpacing.xxs))
+
+            Text(
+                text  = "Start scanning.",
+                color = NpicColors.Ink,
+                style = MaterialTheme.typography.displaySmall,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text  = "Point, capture, sign — every passport photo lands here, portal-ready.",
+                color = chrome.inkMuted,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(NpicSpacing.xxs))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                ZeroStateHintTile(
+                    icon  = Icons.Outlined.CameraAlt,
+                    title = "Photo",
+                    body  = "Auto edge + filter",
+                    modifier = Modifier.weight(1f),
+                )
+                ZeroStateHintTile(
+                    icon  = Icons.Outlined.Draw,
+                    title = "Signature",
+                    body  = "Draw or scan ink",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(Modifier.height(NpicSpacing.xs))
+
+            NpicButton(
+                label   = "Capture your first photo",
+                onClick = onCapture,
+                modifier = Modifier.fillMaxWidth(),
+                startIcon = Icons.Outlined.CameraAlt,
+            )
+        }
+    }
+}
+
+/**
+ * Stacked-cards emblem for the zero-state. Three 88×112 rounded rectangles fanned out by
+ * ±6° and offset by 16dp — a schematic of the eventual student gallery. Draws with a Canvas
+ * for pixel control while keeping tokens; no bitmap asset required.
+ */
+@Composable
+private fun ZeroStateEmblem() {
+    val chrome = LocalNpicChrome.current
+    Box(
+        modifier = Modifier.size(width = 200.dp, height = 148.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val cardW = 88.dp.toPx()
+            val cardH = 112.dp.toPx()
+            val radius = 20.dp.toPx()
+            val strokeW = 1.dp.toPx()
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            data class Card(val dx: Float, val angle: Float, val fill: Color, val border: Color)
+            val cards = listOf(
+                Card(-44.dp.toPx(), -8f, chrome.saffronSoft.copy(alpha = 0.55f), chrome.borderSoft),
+                Card(  0.dp.toPx(),  0f, NpicColors.Surface,                     chrome.borderStrong),
+                Card( 44.dp.toPx(),  8f, chrome.saffronSoft,                     NpicColors.Saffron),
+            )
+            cards.forEach { card ->
+                rotate(card.angle, pivot = androidx.compose.ui.geometry.Offset(cx + card.dx, cy)) {
+                    val topLeft = androidx.compose.ui.geometry.Offset(
+                        x = cx + card.dx - cardW / 2f,
+                        y = cy - cardH / 2f,
+                    )
+                    val cardSize = androidx.compose.ui.geometry.Size(cardW, cardH)
+                    drawRoundRect(
+                        color = card.fill,
+                        topLeft = topLeft,
+                        size = cardSize,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+                    )
+                    drawRoundRect(
+                        color = card.border,
+                        topLeft = topLeft,
+                        size = cardSize,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW),
+                    )
+                }
+            }
+        }
+        // Saffron accent dot on the front card — sells "signature captured" without labels.
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(com.npic.photoandsignscanner.core.theme.NpicShapes.full)
+                .background(NpicColors.Saffron)
+                .align(Alignment.BottomEnd)
+                .padding(0.dp),
+        )
+    }
+}
+
+@Composable
+private fun ZeroStateHintTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
+    val chrome = LocalNpicChrome.current
+    Column(
+        modifier = modifier
+            .clip(com.npic.photoandsignscanner.core.theme.NpicShapes.sm)
+            .background(NpicColors.Surface)
+            .border(
+                width = 1.dp,
+                color = chrome.borderSoft,
+                shape = com.npic.photoandsignscanner.core.theme.NpicShapes.sm,
+            )
+            .padding(NpicSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = NpicColors.Saffron,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text  = title,
+            color = NpicColors.Ink,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight(600)),
+        )
+        Text(
+            text  = body,
+            color = chrome.inkMuted,
+            style = MaterialTheme.typography.labelMedium,
+        )
     }
 }
 
@@ -344,8 +603,8 @@ private fun ClassFilterRow(
 @Composable
 private fun GalleryGrid(
     state: GalleryUiState,
-    onRecordClick: (Long) -> Unit,
-    onRecordLongPress: (Long) -> Unit,
+    onRecordClick: (String) -> Unit,
+    onRecordLongPress: (String) -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -370,6 +629,19 @@ private fun GalleryGrid(
                     else onRecordClick(record.id)
                 },
                 onLongPress = { onRecordLongPress(record.id) },
+                content = {
+                    // Bug#1+#2: render the saved photo from SourceStore (`filesDir/sources/`).
+                    // Coil handles missing-file / decode failure by leaving the slot blank,
+                    // which falls back to the NpicThumbnail card chrome.
+                    if (record.photoPath.isNotBlank()) {
+                        coil.compose.AsyncImage(
+                            model = java.io.File(record.photoPath),
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                },
             )
         }
     }
@@ -435,6 +707,7 @@ private fun FabRegion(
                 Box(
                     Modifier
                         .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(bottom = NpicSpacing.xl, top = NpicSpacing.md),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -491,7 +764,10 @@ private fun GalleryPreviewSelection() {
     NpicTheme {
         val vm = remember {
             GalleryViewModel(com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository()).apply {
-                toggleSelect(1); toggleSelect(4); toggleSelect(9)
+                // Match MockGalleryData's deterministic UUID-shaped ids for records 1, 4, 9.
+                toggleSelect("00000000-0000-0000-0000-000000000001")
+                toggleSelect("00000000-0000-0000-0000-000000000004")
+                toggleSelect("00000000-0000-0000-0000-000000000009")
             }
         }
         GalleryScreen(

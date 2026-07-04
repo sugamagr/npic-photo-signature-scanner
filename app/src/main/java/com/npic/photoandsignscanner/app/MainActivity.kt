@@ -14,8 +14,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -37,7 +40,10 @@ import com.npic.photoandsignscanner.data.imaging.JpegCompressor
 import com.npic.photoandsignscanner.data.imaging.OpenCvBridge
 import com.npic.photoandsignscanner.data.imaging.PhotoEdgeDetector
 import com.npic.photoandsignscanner.data.imaging.SignatureInkIsolator
-import com.npic.photoandsignscanner.data.repo.InMemoryStudentRepository
+import com.npic.photoandsignscanner.data.db.NpicDatabase
+import com.npic.photoandsignscanner.data.repo.RoomDraftRepository
+import com.npic.photoandsignscanner.data.repo.RoomStudentRepository
+import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import com.npic.photoandsignscanner.data.storage.SourceStore
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.SignatureSource
@@ -57,6 +63,8 @@ import com.npic.photoandsignscanner.features.gallery.GalleryViewModel
 import com.npic.photoandsignscanner.features.save.SaveSheet
 import com.npic.photoandsignscanner.features.save.SaveViewModel
 import com.npic.photoandsignscanner.features.save.SignaturePromptSheet
+import com.npic.photoandsignscanner.features.search.SearchScreen
+import com.npic.photoandsignscanner.features.search.SearchViewModel
 import com.npic.photoandsignscanner.features.signaturedraw.SignatureDrawResult
 import com.npic.photoandsignscanner.features.signaturedraw.SignatureDrawScreen
 import com.npic.photoandsignscanner.features.signaturedraw.SignatureRasterizer
@@ -102,10 +110,12 @@ class MainActivity : ComponentActivity() {
     private val combinedRenderer by lazy { CombinedRenderer() }
     private val zipExporter by lazy { ZipExporter(cacheDir) }
 
-    // In-memory StudentRepository seeded from MockGalleryData. Gallery reads from this
-    // for future migration off the mock seed; Save writes into it. Room impl slots in
-    // behind the interface without touching the composables.
-    private val studentRepository: StudentRepository by lazy { InMemoryStudentRepository() }
+    // Room-backed persistence (PRD §8.1 + §8.3). One NpicDatabase per Activity — Room
+    // internally serialises writes on its executor and shares a single connection pool,
+    // so a lazy singleton here is the composition root for both repositories.
+    private val roomDb by lazy { NpicDatabase.create(this) }
+    private val studentRepository: StudentRepository by lazy { RoomStudentRepository(roomDb.studentDao()) }
+    private val draftRepository: DraftRepository by lazy { RoomDraftRepository(roomDb.draftDao()) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -119,7 +129,14 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color    = MaterialTheme.colorScheme.background,
                 ) {
-                    val captureHolder: SharedCaptureHolder = viewModel()
+                    // SharedCaptureHolder now takes a DraftRepository (PRD §8.3). The
+                    // Factory closes over the Activity-scoped repo so every destination
+                    // that requests `viewModel<SharedCaptureHolder>()` receives the same
+                    // repo-backed instance and drafts survive process death.
+                    val sharedCaptureFactory = remember(draftRepository) {
+                        SharedCaptureHolder.Factory(draftRepository)
+                    }
+                    val captureHolder: SharedCaptureHolder = viewModel(factory = sharedCaptureFactory)
                     // EditViewModel.Factory captures a live draftIdProvider that reads
                     // the current or freshly-minted draft ID out of the captureHolder.
                     // Doing it in the Factory instead of a constructor param means every
@@ -159,10 +176,13 @@ private object Route {
     const val SignaturePrompt = "signature_prompt"
     const val SignatureDraw   = "signature_draw"
     const val Save            = "save"
+    const val Search          = "search"
     const val DetailPattern   = "detail/{id}"
-    fun detail(id: Long): String = "detail/$id"
+    fun detail(id: String): String = "detail/$id"
     const val ExportPattern   = "export/{ids}"
-    fun export(ids: Collection<Long>): String = "export/${ids.joinToString(",")}"
+    // UUIDs are RFC 4122 hex-with-hyphens — URL-safe in a path segment without escaping,
+    // and safe to comma-join in a single segment because they never contain commas.
+    fun export(ids: Collection<String>): String = "export/${ids.joinToString(",")}"
 }
 
 @Composable
@@ -180,16 +200,27 @@ private fun NpicNavHost(
         composable(Route.Gallery) {
             GalleryDestination(
                 studentRepository = studentRepository,
+                captureHolder = captureHolder,
                 onCaptureClick = { navController.navigate(Route.Camera) },
                 onRecordClick = { id -> navController.navigate(Route.detail(id)) },
                 onExportSelection = { ids -> navController.navigate(Route.export(ids.toList())) },
+                onSearchClick = { navController.navigate(Route.Search) },
+                onResumeDraft = { draft ->
+                    // PRD §8.3: route the user back to the earliest missing-media step so
+                    // they finish where they left off. Photo first, then signature.
+                    when {
+                        draft.photoPath == null -> navController.navigate(Route.Camera)
+                        draft.signaturePath == null -> navController.navigate(Route.SignaturePrompt)
+                        else -> navController.navigate(Route.Save)
+                    }
+                },
             )
         }
         composable(
             route = Route.DetailPattern,
-            arguments = listOf(navArgument("id") { type = NavType.LongType }),
+            arguments = listOf(navArgument("id") { type = NavType.StringType }),
         ) { backStackEntry ->
-            val id = backStackEntry.arguments?.getLong("id") ?: 0L
+            val id = backStackEntry.arguments?.getString("id").orEmpty()
             DetailDestination(
                 studentRepository = studentRepository,
                 recordId = id,
@@ -202,7 +233,7 @@ private fun NpicNavHost(
             arguments = listOf(navArgument("ids") { type = NavType.StringType }),
         ) { backStackEntry ->
             val raw = backStackEntry.arguments?.getString("ids").orEmpty()
-            val ids = raw.split(",").mapNotNull { it.toLongOrNull() }
+            val ids = raw.split(",").filter { it.isNotBlank() }
             ExportDestination(
                 studentRepository = studentRepository,
                 recordIds = ids,
@@ -218,9 +249,7 @@ private fun NpicNavHost(
                 onBack = { navController.popBackStack() },
                 onCaptureComplete = { capture ->
                     captureHolder.pushCapture(capture)
-                    navController.navigate(Route.Edit) {
-                        popUpTo(Route.Camera) { inclusive = true }
-                    }
+                    navController.navigate(Route.Edit)
                 },
                 onDrawInsteadClick = { navController.navigate(Route.SignatureDraw) },
             )
@@ -231,22 +260,14 @@ private fun NpicNavHost(
                 editVmFactory = editVmFactory,
                 onBack = { navController.popBackStack() },
                 onNext = { sourcePath, mode ->
-                    // PRD §5.5 commit path: EditViewModel already ran EditRenderer +
-                    // SourceStore.writePhoto/writeSignature and gave us the on-disk source
-                    // path. Attach it to the draft under the correct media slot, then
-                    // move on to the mode-appropriate next step.
                     when (mode) {
                         CameraMode.Photo -> {
                             captureHolder.pushPhoto(sourcePath, mode)
-                            navController.navigate(Route.SignaturePrompt) {
-                                popUpTo(Route.Edit) { inclusive = true }
-                            }
+                            navController.navigate(Route.SignaturePrompt)
                         }
                         CameraMode.Signature -> {
                             captureHolder.pushSignaturePath(sourcePath)
-                            navController.navigate(Route.Save) {
-                                popUpTo(Route.Edit) { inclusive = true }
-                            }
+                            navController.navigate(Route.Save)
                         }
                     }
                 },
@@ -254,24 +275,9 @@ private fun NpicNavHost(
         }
         composable(Route.SignaturePrompt) {
             SignaturePromptSheet(
-                onCapture = {
-                    // TODO(camera): open Camera in Signature mode. Layer 8b navigates to
-                    // Camera default (Photo) — Camera-layer follow-up threads an initial
-                    // mode through the route.
-                    navController.navigate(Route.Camera) {
-                        popUpTo(Route.SignaturePrompt) { inclusive = true }
-                    }
-                },
-                onDraw = {
-                    navController.navigate(Route.SignatureDraw) {
-                        popUpTo(Route.SignaturePrompt) { inclusive = true }
-                    }
-                },
-                onSkip = {
-                    navController.navigate(Route.Save) {
-                        popUpTo(Route.SignaturePrompt) { inclusive = true }
-                    }
-                },
+                onCapture = { navController.navigate(Route.Camera) },
+                onDraw = { navController.navigate(Route.SignatureDraw) },
+                onSkip = { navController.navigate(Route.Save) },
                 onDismiss = { navController.popBackStack() },
             )
         }
@@ -282,9 +288,21 @@ private fun NpicNavHost(
                 onBack = { navController.popBackStack() },
                 onDone = { path ->
                     captureHolder.pushSignature(path, SignatureSource.Drawn)
-                    navController.navigate(Route.Save) {
-                        popUpTo(Route.SignatureDraw) { inclusive = true }
-                    }
+                    navController.navigate(Route.Save)
+                },
+            )
+        }
+        composable(Route.Search) {
+            val factory = remember(studentRepository) {
+                SearchViewModel.Factory(studentRepository)
+            }
+            val vm: SearchViewModel = viewModel(factory = factory)
+            SearchScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onRecordClick = { id ->
+                    navController.popBackStack()
+                    navController.navigate(Route.detail(id))
                 },
             )
         }
@@ -309,13 +327,24 @@ private fun NpicNavHost(
 @Composable
 private fun GalleryDestination(
     studentRepository: StudentRepository,
+    captureHolder: SharedCaptureHolder,
     onCaptureClick: () -> Unit,
-    onRecordClick: (Long) -> Unit,
-    onExportSelection: (Set<Long>) -> Unit,
+    onRecordClick: (String) -> Unit,
+    onExportSelection: (Set<String>) -> Unit,
+    onResumeDraft: (StudentDraft) -> Unit,
+    onSearchClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val factory = remember(studentRepository) { GalleryViewModel.Factory(studentRepository) }
     val viewModel: GalleryViewModel = viewModel(factory = factory)
+
+    // PRD §8.3 resume-prompt. Only fires once per Gallery mount and only for the initial
+    // warm-start draft — subsequent in-session draft mutations should NOT re-prompt.
+    val draft by captureHolder.draft.collectAsStateWithLifecycle()
+    var promptShown by rememberSaveable { mutableStateOf(false) }
+    val activeDraft = draft
+    val shouldPrompt = !promptShown && activeDraft != null && activeDraft.hasAnyMedia
+
     GalleryScreen(
         viewModel = viewModel,
         onCaptureClick = onCaptureClick,
@@ -327,8 +356,49 @@ private fun GalleryDestination(
         onOverflowClick = {
             Toast.makeText(context, "Overflow menu (next layer)", Toast.LENGTH_SHORT).show()
         },
-        onSearchClick = {
-            Toast.makeText(context, "Search (next layer)", Toast.LENGTH_SHORT).show()
+        onSearchClick = onSearchClick,
+    )
+
+    if (shouldPrompt) {
+        ResumeDraftDialog(
+            draft = activeDraft,
+            onResume = {
+                promptShown = true
+                onResumeDraft(activeDraft)
+            },
+            onDiscard = {
+                promptShown = true
+                captureHolder.clear()
+            },
+        )
+    }
+}
+
+@Composable
+private fun ResumeDraftDialog(
+    draft: StudentDraft,
+    onResume: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    val summary = buildString {
+        if (draft.photoPath != null) append("photo")
+        if (draft.photoPath != null && draft.signaturePath != null) append(" + ")
+        if (draft.signaturePath != null) append("signature")
+    }.ifEmpty { "capture" }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDiscard,
+        title = { androidx.compose.material3.Text("Resume capture in progress?") },
+        text = { androidx.compose.material3.Text("You have an unsaved $summary. Continue where you left off, or discard it?") },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onResume) {
+                androidx.compose.material3.Text("Resume")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDiscard) {
+                androidx.compose.material3.Text("Discard")
+            }
         },
     )
 }
@@ -336,7 +406,7 @@ private fun GalleryDestination(
 @Composable
 private fun DetailDestination(
     studentRepository: StudentRepository,
-    recordId: Long,
+    recordId: String,
     onBack: () -> Unit,
     onExport: () -> Unit,
 ) {
@@ -530,7 +600,7 @@ private fun SaveDestination(
 @Composable
 private fun ExportDestination(
     studentRepository: StudentRepository,
-    recordIds: List<Long>,
+    recordIds: List<String>,
     sourceStore: SourceStore,
     jpegCompressor: JpegCompressor,
     combinedRenderer: CombinedRenderer,

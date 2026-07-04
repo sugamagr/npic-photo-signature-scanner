@@ -13,15 +13,14 @@ import kotlinx.datetime.Instant
  * `signaturePath = null` means "signature not yet captured/drawn" — Gallery flags this on
  * the thumbnail (DESIGN §6.7, PRD §5.7 export preflight).
  *
- * TODO(uuid): PRD §8.1 specifies UUID `String` IDs so records survive DB rebuilds and can
- * be safely referenced from files/exports. Kept as [Long] during the shell phase because
- * mock data is generated in-process; migrate to `String` (and Room `@PrimaryKey String`)
- * when the repository lands. Selection sets in [GalleryViewModel] flip to `Set<String>` at
- * the same time.
+ * IDs are UUID strings (PRD §8.1). They survive DB rebuilds, are safe to embed in exported
+ * filenames when we want stable per-record references, and match the `StudentEntity`
+ * `@PrimaryKey String` used by Room in Layer 10. Selection sets in Gallery flip to
+ * `Set<String>` at the same time.
  */
 @Immutable
 data class StudentRecord(
-    val id: Long,
+    val id: String,
     val classNum: ClassNum,
     val serial: Int,
     val displayName: String,

@@ -161,6 +161,12 @@ private fun CameraGranted(
         label         = "camera_guide_fill",
     )
 
+    // The preview stays full-bleed (framing must not shift when the top/bottom bars fade
+    // in/out) — but the OVERLAY math has to sit inside the visible framing area so the
+    // guide box never collides with the shutter. Split the two: preview + top/bottom bars
+    // live in the outer Box; the overlay + hint live in an inner Column-cell whose height
+    // excludes the bottom bar. Was: single Box, causing the 85% signature fill-fraction
+    // to punch through the 96dp shutter row (user bug report, 2024-12).
     Box(Modifier.fillMaxSize()) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -173,48 +179,53 @@ private fun CameraGranted(
             update = { /* PreviewView keeps its own controller reference; nothing to refresh per recomp. */ },
         )
 
-        NpicCameraOverlay(
-            aspect            = guideAspectAnim,
-            fillFraction      = guideFillAnim,
-            onGuideBoxChanged = { guideBoxPx = it },
-        )
-
-        HintText(
-            visible    = state.hintVisible,
-            mode       = state.mode,
-            guideBoxPx = guideBoxPx,
-            onDismiss  = viewModel::dismissHint,
-        )
-
-        CameraTopBar(
-            flash        = state.flash,
-            sessionCount = state.sessionCount,
-            onBack       = onBack,
-            onFlashCycle = viewModel::cycleFlash,
-        )
-
-        CameraBottomBar(
-            mode                     = state.mode,
-            capturing                = state.capturing,
-            onModeChange             = viewModel::setMode,
-            onDrawInsteadClick       = onDrawInsteadClick,
-            onImportFromGalleryClick = onImportFromGalleryClick,
-            onShutter = {
-                val target = File(context.cacheDir, "drafts").apply { mkdirs() }
-                    .resolve("${UUID.randomUUID()}.jpg")
-                // Null when overlay hasn't laid out yet (first-frame shutter). Domain model
-                // accepts null and detectors substitute full-image bounds — no (0,0,0,0)
-                // sentinel needed anymore.
-                val guideBoxImageSpace: RectI? =
-                    guideBoxPx?.let { rectPxToImageSpace(it, density) }
-                viewModel.capture(
-                    controller         = controller,
-                    target             = target,
-                    guideBoxImageSpace = guideBoxImageSpace,
-                    onDone             = onCaptureComplete,
+        Column(Modifier.fillMaxSize()) {
+            CameraTopBar(
+                flash        = state.flash,
+                sessionCount = state.sessionCount,
+                onBack       = onBack,
+                onFlashCycle = viewModel::cycleFlash,
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                NpicCameraOverlay(
+                    aspect            = guideAspectAnim,
+                    fillFraction      = guideFillAnim,
+                    onGuideBoxChanged = { guideBoxPx = it },
                 )
-            },
-        )
+                HintText(
+                    visible    = state.hintVisible,
+                    mode       = state.mode,
+                    guideBoxPx = guideBoxPx,
+                    onDismiss  = viewModel::dismissHint,
+                )
+            }
+            CameraBottomBar(
+                mode                     = state.mode,
+                capturing                = state.capturing,
+                onModeChange             = viewModel::setMode,
+                onDrawInsteadClick       = onDrawInsteadClick,
+                onImportFromGalleryClick = onImportFromGalleryClick,
+                onShutter = {
+                    val target = File(context.cacheDir, "drafts").apply { mkdirs() }
+                        .resolve("${UUID.randomUUID()}.jpg")
+                    // Null when overlay hasn't laid out yet (first-frame shutter). Domain
+                    // model accepts null and detectors substitute full-image bounds — no
+                    // (0,0,0,0) sentinel needed anymore.
+                    val guideBoxImageSpace: RectI? =
+                        guideBoxPx?.let { rectPxToImageSpace(it, density) }
+                    viewModel.capture(
+                        controller         = controller,
+                        target             = target,
+                        guideBoxImageSpace = guideBoxImageSpace,
+                        onDone             = onCaptureComplete,
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -361,7 +372,7 @@ private fun Modifier.backdropBlur(): Modifier =
     } else this
 
 @Composable
-private fun BoxScope.CameraBottomBar(
+private fun CameraBottomBar(
     mode: CameraMode,
     capturing: Boolean,
     onModeChange: (CameraMode) -> Unit,
@@ -371,9 +382,10 @@ private fun BoxScope.CameraBottomBar(
 ) {
     val chrome = LocalNpicChrome.current
 
+    // Bug#4: this bar now sits inside CameraGranted's Column (not the outer Box),
+    // so no .align() modifier — the parent Column pins it to the bottom by layout order.
     Column(
         modifier = Modifier
-            .align(Alignment.BottomCenter)
             .fillMaxWidth()
             .backdropBlur()
             .background(chrome.cameraBg.copy(alpha = 0.85f))

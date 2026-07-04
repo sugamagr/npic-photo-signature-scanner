@@ -31,7 +31,7 @@ data class SaveUiState(
     val autoSerialForClass: Map<ClassNum, Int> = emptyMap(),
     val saving: Boolean = false,
     val duplicate: SaveResult.DuplicateFound? = null,
-    val completedRecordId: Long? = null,
+    val completedRecordId: String? = null,
     val errorMessage: String? = null,
 ) {
     /** Currently-typed serial as an Int, or null if the input isn't a valid 1..9999 number. */

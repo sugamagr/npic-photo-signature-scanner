@@ -11,8 +11,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -159,6 +163,7 @@ private fun DetailTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .height(56.dp)
                 .padding(horizontal = NpicSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,
@@ -310,7 +315,7 @@ private fun PhotoCard(
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight(600)),
             )
             if (hasPhoto) {
-                PhotoPlaceholder()
+                PhotoPlaceholder(path = record.photoPath)
                 // BLOCKER B-8c1-1: Saffron on Surface at labelMedium 12sp is ~2.13:1
                 // — fails WCAG 1.4.3 AA. DESIGN §2.2 also forbids Saffron for text <16sp.
                 Text(
@@ -370,7 +375,7 @@ private fun SignatureCard(
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight(600)),
             )
             if (hasSig) {
-                SignaturePlaceholder()
+                SignaturePlaceholder(path = record.signaturePath.orEmpty())
                 // BLOCKER B-8c1-1: same contrast fix as PhotoCard.
                 Text(
                     text  = "Tap to edit",
@@ -417,12 +422,11 @@ private fun SignatureCard(
 }
 
 /**
- * Placeholder for a present photo (DESIGN §7.7 8:10 aspect card image). Real Coil decode
- * lands with the Save-render layer — until then the card renders a SaffronSoft tinted
- * rectangle so the layout is stable.
+ * Present-photo card image (DESIGN §7.7 8:10 aspect). Bug#1+#2: loads the SourceStore
+ * asset via Coil. Falls back to a SaffronSoft-tinted placeholder if the file is missing.
  */
 @Composable
-private fun PhotoPlaceholder() {
+private fun PhotoPlaceholder(path: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -431,21 +435,30 @@ private fun PhotoPlaceholder() {
             .background(NpicColors.SaffronSoft.copy(alpha = 0.35f)),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Outlined.CameraAlt,
-            contentDescription = null,
-            tint = NpicColors.Saffron,
-            modifier = Modifier.size(32.dp),
-        )
+        if (path.isNotBlank()) {
+            coil.compose.AsyncImage(
+                model = java.io.File(path),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Outlined.CameraAlt,
+                contentDescription = null,
+                tint = NpicColors.Saffron,
+                modifier = Modifier.size(32.dp),
+            )
+        }
     }
 }
 
 /**
- * Placeholder for a present signature (3:1 aspect per DESIGN §7.7). Same story as
- * [PhotoPlaceholder] — real bitmap decode lands later.
+ * Present-signature card image (3:1 aspect per DESIGN §7.7). Bug#1+#2: loads the
+ * SourceStore asset via Coil with the same fallback behavior as [PhotoPlaceholder].
  */
 @Composable
-private fun SignaturePlaceholder() {
+private fun SignaturePlaceholder(path: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -454,12 +467,21 @@ private fun SignaturePlaceholder() {
             .background(NpicColors.SaffronSoft.copy(alpha = 0.35f)),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Outlined.Draw,
-            contentDescription = null,
-            tint = NpicColors.Saffron,
-            modifier = Modifier.size(28.dp),
-        )
+        if (path.isNotBlank()) {
+            coil.compose.AsyncImage(
+                model = java.io.File(path),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Outlined.Draw,
+                contentDescription = null,
+                tint = NpicColors.Saffron,
+                modifier = Modifier.size(28.dp),
+            )
+        }
     }
 }
 

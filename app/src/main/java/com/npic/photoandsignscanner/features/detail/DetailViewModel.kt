@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  */
 class DetailViewModel(
     private val repository: StudentRepository,
-    private val recordId: Long,
+    private val recordId: String,
 ) : ViewModel() {
 
     val state: StateFlow<DetailUiState> = repository.observeAll()
@@ -44,7 +44,7 @@ class DetailViewModel(
 
     class Factory(
         private val repository: StudentRepository,
-        private val recordId: Long,
+        private val recordId: String,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =

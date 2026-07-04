@@ -59,7 +59,7 @@ import com.npic.photoandsignscanner.domain.model.SaveResult
 fun SaveSheet(
     viewModel: SaveViewModel,
     onCancel: () -> Unit,
-    onSaved: (recordId: Long) -> Unit,
+    onSaved: (recordId: String) -> Unit,
     onAddPhoto: (() -> Unit)? = null,
     onAddSignature: (() -> Unit)? = null,
 ) {

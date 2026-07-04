@@ -30,7 +30,7 @@ class GalleryViewModel(
 
     private val _classFilter = MutableStateFlow<ClassNum?>(null)
     private val _sortMode    = MutableStateFlow(SortMode.Newest)
-    private val _selected    = MutableStateFlow<Set<Long>>(emptySet())
+    private val _selected    = MutableStateFlow<Set<String>>(emptySet())
 
     val state: StateFlow<GalleryUiState> = combine(
         repository.observeAll(),
@@ -49,7 +49,7 @@ class GalleryViewModel(
 
     fun setSortMode(mode: SortMode) { _sortMode.value = mode }
 
-    fun toggleSelect(id: Long) {
+    fun toggleSelect(id: String) {
         _selected.update { current ->
             if (id in current) current - id else current + id
         }
@@ -67,7 +67,7 @@ class GalleryViewModel(
         all: List<StudentRecord>,
         filter: ClassNum?,
         sort: SortMode,
-        selected: Set<Long>,
+        selected: Set<String>,
     ): GalleryUiState {
         val filtered = if (filter == null) all else all.filter { it.classNum == filter }
         val sorted = when (sort) {

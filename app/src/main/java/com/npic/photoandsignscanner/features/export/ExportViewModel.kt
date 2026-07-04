@@ -56,7 +56,7 @@ import java.io.FileOutputStream
  */
 class ExportViewModel(
     private val repository: StudentRepository,
-    private val recordIds: List<Long>,
+    private val recordIds: List<String>,
     private val sourceStore: SourceStore,
     private val jpegCompressor: JpegCompressor,
     private val combinedRenderer: CombinedRenderer,
@@ -224,7 +224,7 @@ class ExportViewModel(
 
     class Factory(
         private val repository: StudentRepository,
-        private val recordIds: List<Long>,
+        private val recordIds: List<String>,
         private val sourceStore: SourceStore,
         private val jpegCompressor: JpegCompressor,
         private val combinedRenderer: CombinedRenderer,

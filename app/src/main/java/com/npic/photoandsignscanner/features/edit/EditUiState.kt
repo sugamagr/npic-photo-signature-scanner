@@ -37,6 +37,13 @@ data class EditUiState(
      */
     val previewBitmap: Bitmap? = null,
     /**
+     * Live-render bitmap produced by [EditRenderer] applied to [previewBitmap] whenever the
+     * user mutates the edit state (filter / adjustments / rotation / straighten). Null while
+     * rendering, or when no preview is available yet. Bug#3 fix — without this the viewport
+     * always shows the raw source and the tabs feel like placeholders.
+     */
+    val livePreviewBitmap: Bitmap? = null,
+    /**
      * 192×192 cached preview per FilterPreset (DESIGN §6.18 max working res). Populated on
      * demand when the Filter tool is first opened; keys map 1:1 to [FilterPreset.entries].
      */

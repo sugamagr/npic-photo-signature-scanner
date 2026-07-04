@@ -26,7 +26,7 @@ interface StudentRepository {
     fun observeAll(): Flow<List<StudentRecord>>
 
     /** Single-record lookup by ID for the Detail screen (PRD §4.9). Returns null if missing. */
-    suspend fun getById(id: Long): StudentRecord?
+    suspend fun getById(id: String): StudentRecord?
 
     /**
      * Next available serial for [classNum] — `max(existingSerials) + 1`, floor 1. The
@@ -52,11 +52,11 @@ interface StudentRepository {
      * existing record's on-disk media is discarded by the repo; caller only supplies the
      * ID.
      */
-    suspend fun replace(existingId: Long, draft: StudentDraft, input: SaveInput): SaveResult
+    suspend fun replace(existingId: String, draft: StudentDraft, input: SaveInput): SaveResult
 
     /**
      * Delete a single record by ID (PRD §4.9 Detail overflow "Delete", §4.8 Gallery
      * selection-mode "Delete"). Idempotent — deleting a missing ID is a no-op.
      */
-    suspend fun delete(id: Long)
+    suspend fun delete(id: String)
 }

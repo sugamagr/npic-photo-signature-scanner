@@ -35,15 +35,15 @@ import com.npic.photoandsignscanner.domain.model.DrawStroke
 fun SignatureCanvas(
     strokes: List<DrawStroke>,
     inFlightStroke: DrawStroke?,
+    liveWidthPx: Float,
     onBegin: (Offset) -> Unit,
     onExtend: (Offset) -> Unit,
     onEnd: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Committed-stroke Paths are stable — cache one Path per DrawStroke identity so the
-    // draw scope doesn't re-allocate on every frame. The in-flight stroke is grown per
-    // frame and must rebuild; that Path is small (recent points only).
+    // Path allocation is per-stroke and stable; keeping them cached avoids per-frame
+    // allocation. The in-flight stroke must rebuild each frame — it grows point-by-point.
     val committedPaths = remember(strokes) {
         strokes.map { it to it.buildPath() }
     }
@@ -65,8 +65,13 @@ fun SignatureCanvas(
                 )
             },
     ) {
-        committedPaths.forEach { (stroke, path) -> drawStroke(stroke, path) }
-        inFlightStroke?.let { drawStroke(it, it.buildPath()) }
+        // Every stroke — committed and in-flight — renders at the live slider width.
+        // User feedback (2024-12): thickness must feel like a canvas-global pen, not a
+        // per-stroke commit. Contradicts PRD §4.4's "thickness fixed per-stroke" note; the
+        // per-stroke widthPx on DrawStroke is preserved only for rasterization backwards
+        // compat (SignatureRasterizer still reads it if a caller uses the old code path).
+        committedPaths.forEach { (stroke, path) -> drawStroke(stroke, path, liveWidthPx) }
+        inFlightStroke?.let { drawStroke(it, it.buildPath(), liveWidthPx) }
     }
 }
 
@@ -84,13 +89,14 @@ private fun DrawStroke.buildPath(): Path {
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
     stroke: DrawStroke,
     path: Path,
+    widthPx: Float,
 ) {
     val pts = stroke.points
     if (pts.isEmpty()) return
     if (pts.size == 1) {
         drawCircle(
             color = NpicColors.Ink,
-            radius = stroke.widthPx / 2f,
+            radius = widthPx / 2f,
             center = pts.first(),
         )
         return
@@ -99,7 +105,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(
         path = path,
         color = NpicColors.Ink,
         style = Stroke(
-            width = stroke.widthPx,
+            width = widthPx,
             cap = StrokeCap.Round,
             join = StrokeJoin.Round,
         ),
