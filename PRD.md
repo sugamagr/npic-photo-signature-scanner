@@ -55,10 +55,10 @@ These are verified facts extracted from the portal's own HTML source (`SchoolCan
 |---|---|
 | Time to capture + save one photo+signature pair | ≤ 20 seconds |
 | Exported JPEG size | 10 KB ≤ size ≤ 30 KB, **100%** of exports |
-| Auto edge-detection success rate | ≥ 85% on typical forms |
-| Manual re-crop after auto-detection | ≤ 15% of captures |
 | App cold start to camera-ready | ≤ 1.5 s |
 | Zero data loss on background/kill during capture flow | Enforced via draft persistence |
+
+> **Removed per m2154:** Auto edge-detection success rate and manual re-crop-after-detection metrics — the two OpenCV auto-detects were removed. The Edit screen now always opens with user-adjustable crop bounds (guide-box quad for camera captures, full-image for Photo Picker imports).
 
 ---
 
@@ -72,7 +72,7 @@ The Camera has TWO modes selectable via text pills: `Photo` and `Signature`. Nei
                                              │
                                              │ align in guide box, tap shutter
                                              ▼
-                                         [Edge-detect + perspective quad]
+                                         [Edit at guide-box bounds]
                                              │
                                              ▼
                                          [Edit Screen (dark chrome)]
@@ -87,7 +87,7 @@ The Camera has TWO modes selectable via text pills: `Photo` and `Signature`. Nei
                                │             │             │
                                │ shutter     │ done        │
                                ▼             ▼             │
-                     [Ink-isolate + bbox]    │             │
+                     [Edit at guide-box bounds]           │
                                │             │             │
                                ▼             ▼             │
                         [Edit Screen (sig)] ───────────────┤
@@ -143,18 +143,11 @@ There is ONE Camera screen with a mode selector, not two. The user can freely sw
   - **Left:** Gallery import icon (24dp `CameraInk`) — tap opens system photo picker, selected image goes through the same Edit → Save flow as a captured image (skipping perspective-correction if unnecessary; but user can still re-crop). Handles the "I already have a phone photo of this form" case.
   - **Center:** Shutter — 72dp Saffron hollow circle with 4dp `CameraInk` ring, 96dp hit area. Scale to 92% on press. During capture (post-shutter, pre-navigation), inner fill animates from transparent to `Saffron` over 200ms.
   - **Right:** (Reserved for potential auto-capture toggle later. In v1.0: shows the last-captured thumbnail with count badge, redundant with the top bar's stack — moved here for reachability.)
-- **Shutter action (mode-dependent):**
-  - **Photo mode:**
-    1. Freeze preview, capture full-res JPEG to `cache/drafts/`
-    2. Run OpenCV edge detection (see §7.1)
-    3. Trigger shared-element transition into Edit Screen with detected quad
-  - **Signature mode:**
-    1. Freeze preview, capture full-res JPEG to `cache/drafts/`
-    2. Run ink-isolation pipeline (see §7.2) — no edge detection, use guide-box crop + threshold to isolate ink
-    3. Compute ink bounding box for auto-tightened crop suggestion
-    4. Trigger shared-element transition into Edit Screen with the ink bounding box as the initial crop rectangle
-- **Import from gallery flow:** Same as capture but skips OpenCV pipelines by default; user still lands on Edit Screen and can re-crop / apply filters normally.
-- **No auto-capture in v1.0.**
+- **Shutter action (mode-independent):**
+  1. Freeze preview, capture full-res JPEG to `cache/drafts/`
+  2. Trigger shared-element transition into Edit Screen with the initial crop quad seeded from the guide-box rectangle (image space). User adjusts the four corners manually. See §7 for the removed auto-detect pipelines that this replaces.
+- **Import from gallery flow:** Same as capture but no guide-box rectangle exists, so Edit opens with the crop quad at full-image bounds. User adjusts as needed.
+- **No auto-capture in v1.0.** No auto edge / ink detection either — removed per m2154.
 
 ### 4.3 Signature Capture — Alternative "Draw" Entry
 
@@ -186,7 +179,7 @@ The single most important reusable component. Adobe-Scan-parity.
    - Pinch-to-zoom on the Crop tab lets the user zoom into the source (1×–4×) to place handles precisely; zoom resets when leaving the Crop tab.
 3. **Tool tabs:** Row of 4 icon+label tabs — `Crop`, `Filter`, `Adjust`, `Rotate`
 4. **Active tool panel:** ~20% height
-   - **Crop:** Reset to auto-detected quad button, aspect-lock toggle (free / 3:4 / 3:1)
+   - **Crop:** Reset crop button (returns to the initial seed: guide-box quad for camera captures, full-image bounds for imports), aspect-lock toggle (free / 3:4 / 3:1)
    - **Filter:** Horizontal scrollable row of preset thumbnails (see §5)
    - **Adjust:** 5 sliders (Brightness, Contrast, Sharpness, Saturation, Warmth) each -50 to +50, default 0
    - **Rotate:** 90° CCW button, 90° CW button, fine straighten slider (-90° to +90°)
@@ -292,8 +285,8 @@ The word "original" in this PRD does NOT mean the raw CameraX JPEG. It means a *
 ### 5.5.1 Photo source
 
 - Input: raw CameraX JPEG (typically 2–4 MB at 4000×3000).
-- Immediately after auto edge detection + user confirmation on the Edit screen (on Save), we produce the source:
-  1. Apply the confirmed 4-point perspective transform (`warpPerspective`) so the photo is a clean upright rectangle.
+- Immediately after user confirmation on the Edit screen (on Save), we produce the source:
+  1. Apply the user-confirmed 4-point perspective transform (`warpPerspective`) so the photo is a clean upright rectangle.
   2. Resize so the **long side = 1600 px**, preserving aspect ratio (typical output ~1200×1600 for portrait passport photos).
   3. Encode JPEG **quality 92**.
 - Written to `sources/{studentId}_photo.jpg`.
@@ -416,9 +409,9 @@ The record's naming mode determines the stem; the export format determines the b
 
 ## 7. Image-Detection Pipelines (OpenCV)
 
-There are TWO distinct pipelines. Photos use edge detection (they have clean rectangular borders). Signatures use ink isolation (they don't).
+> **§7.1 and §7.2 REMOVED per m2154 — kept below for reference.** User feedback: "your auto detect is not working at all, remove that it is actually creating more issue". Both auto-detects (photo edge detection + signature ink isolation) were surgically removed in commit `b1e68e7`. Edit screen now opens with the crop quad seeded from the guide-box rectangle (fresh camera captures) or full-image bounds (Photo Picker imports), and the user drags the four corners manually. The perspective-correction step in §7.3 stays — it runs at Save time on the user-confirmed quad. §7.4 photo/signature source storage rules stay the same.
 
-### 7.1 Photo pipeline — edge detection
+### 7.1 Photo pipeline — edge detection **[REMOVED per m2154]**
 
 1. Convert to grayscale.
 2. Bilateral filter (d=9, sigmaColor=75, sigmaSpace=75) — preserves edges, removes noise.
@@ -434,7 +427,7 @@ There are TWO distinct pipelines. Photos use edge detection (they have clean rec
 9. Pick highest-scoring quad. If no quad scores > 0.6, fall back to guide-box coordinates.
 10. Return the 4 corner points in image space, ordered TL, TR, BR, BL.
 
-### 7.2 Signature pipeline — ink isolation
+### 7.2 Signature pipeline — ink isolation **[REMOVED per m2154]**
 
 Signatures rarely have clean rectangular field borders in real forms. Even when they do, the signature ink itself is what we care about, not the field box. So we skip edge detection entirely and instead isolate the ink.
 
@@ -451,7 +444,7 @@ Signatures rarely have clean rectangular field borders in real forms. Even when 
 
 **Fallback:** If no components remain after step 6 (blank capture or excessive noise), use the entire guide-box region as the crop with a warning banner on the Edit screen: "Couldn't detect ink automatically. Adjust the crop manually."
 
-### 7.3 Perspective correction (photos only)
+### 7.3 Perspective correction (photos only) — **STAYS**
 
 Once corners are confirmed on the Edit screen for a photo, apply `getPerspectiveTransform` + `warpPerspective` to a rectangle sized to the max side lengths of the quad. This becomes the source for filters/adjustments.
 
@@ -460,7 +453,7 @@ Signatures use a plain rectangular crop — no perspective transform.
 ### 7.4 Source image storage differences
 
 - **Photo source:** perspective-corrected, long side 1600 px, JPEG q92 (§5.5.1)
-- **Signature source:** cropped to auto-tightened ink bbox (or user-adjusted rectangle), long side 1500 px, JPEG q92 (§5.5.2)
+- **Signature source:** cropped to user-adjusted rectangle, long side 1500 px, JPEG q92 (§5.5.2)
 
 ---
 
@@ -641,7 +634,6 @@ Explicitly out of scope so we don't scope-creep:
 - [ ] Full golden path works: Home → Camera → Edit → Signature → Save → back to Camera
 - [ ] All 8 filter presets render correctly and non-destructively
 - [ ] All 5 adjustment sliders affect the preview live (< 100ms latency)
-- [ ] Auto edge detection returns a valid quad on 5 provided test forms
 - [ ] Every export lands in [10 KB, 30 KB] window OR logs the under-10 case
 - [ ] Serial mode auto-increments per class and prefills the next value
 - [ ] Duplicate dialog appears for class+serial and class+name matches

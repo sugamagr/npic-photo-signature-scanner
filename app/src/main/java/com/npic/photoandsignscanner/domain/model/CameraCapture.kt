@@ -9,16 +9,16 @@ import kotlinx.datetime.Instant
  *
  * • [rawPath] is a `cache/drafts/{id}.jpg` path — the full-resolution CameraX JPEG. Not the
  *   source-quality file (§5.5) — that's produced on Save.
- * • [mode] tells Edit which pipeline to run (edge detection vs. ink isolation).
+ * • [mode] tells Edit which framing (Photo vs Signature) the capture used.
  * • [guideBoxImageSpace] is the guide-box rectangle expressed in the RAW-JPEG pixel space
  *   (not preview space), or `null` when the guide-box overlay had not laid out yet at
- *   capture time (rare — user tapped shutter within the first frame). Callers MUST treat
+ *   capture time (rare — user tapped shutter within the first frame), or when the source
+ *   arrived via Photo Picker / Detail add-media (no camera frame at all). Callers MUST treat
  *   null as "no seed available; use full-image bounds" — never as an empty rect. Edit uses
- *   this as:
- *     - Photo mode: the seed area for OpenCV edge detection, and the fallback quad when no
- *       quad scores above 0.6 (PRD §7.1 step 9).
- *     - Signature mode: the crop applied before the ink-isolation pipeline runs (PRD §7.2
- *       step 1).
+ *   it as the seed for the initial crop quad on the Crop tab; when null, Edit opens at
+ *   full-image bounds via the [EditState] `NORMALIZED_SENTINEL_THRESHOLD` sentinel path.
+ *   Auto edge / ink detection was removed per m2154 — the guide box is now purely a
+ *   framing hint, no pipeline runs on it.
  * • [capturedAt] is used later for draft resume prompts and file naming.
  */
 @Immutable

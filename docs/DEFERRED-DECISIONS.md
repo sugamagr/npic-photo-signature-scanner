@@ -484,22 +484,31 @@ shape: what's deferred, options, recommendation, rationale.
 Items explicitly out of v1.0 scope by your direction. Captured so the
 work isn't forgotten when v1.0 ships and we plan v2.
 
-### C1. Auto-capture on stable edge detection
+### C1. Auto-capture on stable framing
 
 **Deferred by:** user directive m1537 B3 — "wil implement but in v2".
 
-**Scope:** watch the OpenCV edge-detection quad for stability, and after
-a 500 ms hold at high-confidence convergence, auto-fire the shutter with
-a haptic tap. Manual shutter remains available always.
+**Scope:** auto-fire the shutter when the phone is being held still and
+the subject is likely well-framed, then give a haptic tap on release.
+Manual shutter remains available always.
 
-**Estimated cost:** ~1 day. Requires a convergence heuristic (rolling
-buffer of quads, IoU stability threshold), a debounce timer, and a
-haptic feedback plumb. UI signals could reuse the existing tilt-level
-Sage snap indicator.
+**Stability signal (post-m2154):** the OpenCV edge-detection quad this
+originally rode on is gone (removed per m2154). The v2 signal is a
+composite: (a) DeviceTilt.kt rolling α=0.15 low-pass reads accelerometer
+tilt — hold-still means dθ/dt below ~0.5°/frame for 500 ms; (b) optional
+CameraX luminance analyzer hooked into a Sobel/variance-of-Laplacian
+focus estimate to skip firing on blurry frames. No OpenCV needed — plain
+Bitmap ops on the ImageAnalysis stream.
 
-**Blockers to resolve at v2 planning time:** what heuristic thresholds
-work in real classroom lighting (needs on-device tuning), whether we
-want an in-app toggle to disable it (probably yes).
+**Estimated cost:** ~1 day. Requires the tilt debounce timer, the focus
+estimator, a haptic feedback plumb (already wired via NpicHaptics), and
+the shutter dispatch path. UI signals reuse the existing tilt-level Sage
+snap indicator.
+
+**Blockers to resolve at v2 planning time:** what thresholds work in
+real classroom lighting (needs on-device tuning), whether we want an
+in-app toggle to disable it (probably yes — Settings drawer already
+has the slot).
 
 ### C2. Room DB Migration(1,2) — conditional
 

@@ -61,22 +61,6 @@ class OpenCvBridge {
         }
     }
 
-    /**
-     * Run [block] with a mat backed by [bitmap], releasing the mat afterwards regardless of
-     * outcome. Returns null when OpenCV isn't available (caller's skip path).
-     *
-     * Mirrors [kotlin.io.use] for `Mat`, since [Mat] is `Closeable`-shaped but predates
-     * `AutoCloseable` on the version we ship.
-     */
-    inline fun <T> withMat(bitmap: Bitmap, block: (Mat) -> T): T? {
-        val mat = toMat(bitmap) ?: return null
-        return try {
-            block(mat)
-        } finally {
-            mat.release()
-        }
-    }
-
     private fun Bitmap.ensureArgb8888(): Bitmap =
         if (config == Bitmap.Config.ARGB_8888) this
         else copy(Bitmap.Config.ARGB_8888, /* isMutable = */ false)

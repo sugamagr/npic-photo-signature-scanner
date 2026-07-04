@@ -25,8 +25,8 @@ import java.io.FileOutputStream
  * source pipeline runs `EditRenderer.render()` first (rotation → straighten → warp → crop
  * → filter → adjust) and only THEN persists — so what lives here is exactly what the user
  * confirmed on the Edit screen, at the resolution the portal needs. This matches the PRD
- * §5.5 rule "immediately after auto edge detection + user confirmation on the Edit screen
- * (on Save), we produce the source".
+ * §5.5 rule "immediately after user confirmation on the Edit screen (on Save), we produce
+ * the source".
  *
  * ### Filename semantics
  * Callers pass the [StudentDraft.id] as UUID string. Two files max per draft, matching PRD

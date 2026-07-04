@@ -155,8 +155,11 @@ dependencies {
     implementation(libs.datastore.preferences)
 
     // OpenCV Android bindings + bundled .so (arm64-v8a, armeabi-v7a). Loaded lazily via
-    // NpicApplication.initOpenCVOnce() on first Camera-screen entry. See PRD §7 for the
-    // pipeline that consumes these primitives (edge detection + ink isolation).
+    // NpicApplication.initOpenCVOnce() on first Camera-screen entry. Consumers: EditRenderer
+    // (warpPerspective + getPerspectiveTransform for crop commit, warpAffine + getRotationMatrix2D
+    // for straighten), BitmapAdjustments (GaussianBlur + addWeighted for Sharpness slider),
+    // BitmapFilters (adaptiveThreshold for Document B&W). See PRD §7.3 (perspective correction).
+    // §7.1 / §7.2 auto edge / ink detection was removed per m2154.
     implementation(libs.opencv)
     // NOTE: compose-navigation is already pulled in via the compose bundle above.
 

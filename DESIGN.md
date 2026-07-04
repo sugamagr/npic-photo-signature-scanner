@@ -15,7 +15,7 @@ Every color, size, and radius in this document maps to a token in `core/theme/`.
 2. **Camera-first.** The Camera and Edit screens are the app's soul. They get full-bleed layouts, dark chrome, and the tightest interactions.
 3. **Everything reused.** No screen invents a button, dialog, or card. If it doesn't exist in `core/ui/`, we add it there first.
 4. **One primary action per screen.** Ambiguous CTAs kill fast-capture flow.
-5. **Never block the flow on failure.** Edge detection failure → falls back to guide box. Compression floor hit → toast, don't dialog.
+5. **Never block the flow on failure.** Compression floor hit → toast, don't dialog. (Edit opens at guide-box or full-image bounds by default; there's no auto-detection to fail — removed per m2154.)
 6. **Every touch target ≥ 44dp.** Even the tiny handles are 44dp hit areas around 16dp visual dots.
 
 ---
@@ -428,7 +428,7 @@ There is no dedicated Home screen. Gallery is the launch destination, and a pers
 **Bottom control row (96dp tall):**
 - Fill: `CameraBg` at 85% + backdrop blur
 - Layout: 3 zones (left 56dp, center-flex, right 56dp)
-- **Left zone (56dp):** Gallery import icon (24dp `CameraInk`, photo-stack outline). Tap opens system photo picker (`ActivityResultContracts.PickVisualMedia`). Selected image bypasses OpenCV detection and goes directly to Edit screen with a rectangular full-image crop as the starting quad.
+- **Left zone (56dp):** Gallery import icon (24dp `CameraInk`, photo-stack outline). Tap opens system photo picker (`ActivityResultContracts.PickVisualMedia`). Selected image goes directly to Edit screen with a rectangular full-image crop as the starting quad. (No auto-detection runs on captures either — removed per m2154.)
 - **Center zone:** Shutter button
   - 72dp hollow circle, 4dp `CameraInk` ring
   - Inner fill: transparent by default
@@ -444,7 +444,7 @@ There is no dedicated Home screen. Gallery is the launch destination, and a pers
 4. **t=200–350ms:** all bottom chrome (mode pills, shutter, control row) crossfades out
 5. **t=200–450ms:** frozen preview letterboxes into Edit screen viewport target (shared-element transition per §7.3.1)
 6. **t=350ms:** Edit screen top bar + tool tabs slide in from off-screen edges
-7. **t=450ms:** `NpicCropOverlay` fades in over the letterboxed image with the auto-detected quad (photo) or ink bbox (signature)
+7. **t=450ms:** `NpicCropOverlay` fades in over the letterboxed image with the initial crop quad — guide-box bounds for camera captures, full-image bounds for Photo Picker imports (per m2154 removal of auto-detection)
 
 **Background never changes color throughout** — `CameraBg` stays constant from Camera → Edit, which is what sells the "we never left" feeling.
 
@@ -502,7 +502,7 @@ We replicate this exactly.
 
 **Tool: Crop**
 - One row, 64dp tall
-- Left: "Reset to auto-detect" ghost text button — `Saffron` ink, `labelLarge`, no fill, no border, 40dp hit area
+- Left: "Reset crop" ghost text button — `Saffron` ink, `labelLarge`, no fill, no border, 40dp hit area. Returns the crop quad to its initial seed: guide-box bounds for camera captures, full-image bounds for imports.
 - Right: aspect chip row `Free · 3:4 · 3:1` — 32dp tall chips, `NpicShapes.xs` corner
   - Unselected: transparent fill, `CameraInkMuted @ 40%` border 1dp, `CameraInkMuted` ink
   - Selected: `SaffronSoft @ 22%` fill, `Saffron` border 1dp, `Saffron` ink weight 600
@@ -575,7 +575,7 @@ The image itself does NOT re-render during the transition — the crop quad and 
    - `NpicCropOverlay` alpha=0 (invisible)
 3. **t=100ms to t=250ms:** The frozen preview image scales and translates to the Edit viewport target rect (letterboxed 20dp inset, ~55% screen height). Uses `EaseInOutCubic` on both scale and offset.
 4. **Simultaneously (same 150ms window):** Edit chrome slides in — top bar drops down, tabs drop down, tool panel rises up. All eased with `EaseOutCubic`.
-5. **t=250ms:** `NpicCropOverlay` crossfades in over 100ms with the auto-detected quad already positioned. Rule-of-thirds grid is hidden until first drag.
+5. **t=250ms:** `NpicCropOverlay` crossfades in over 100ms with the initial crop quad already positioned (guide-box bounds for captures, full-image bounds for imports; auto-detection removed per m2154). Rule-of-thirds grid is hidden until first drag.
 
 **Implementation approach:**
 - Compose Navigation with shared-element transitions (Compose 1.7+) OR a custom `AnimatedContent` wrapping both screens with a `SharedTransitionScope`. Fall back to manual `Modifier.animateBounds` if shared-element proves unstable.
@@ -710,7 +710,7 @@ All icons live in `core/ui/icons/` as `ImageVector` values. No PNGs.
 - Color is never the only signal: selected chips also change fill+border weight; error inputs get an error icon; destructive buttons have distinct terracotta plus a warning icon.
 - All contrast pairs ≥ WCAG AA (validated above).
 - TalkBack focus order matches visual order top-to-bottom, left-to-right.
-- Camera screen provides shutter as a large focused element; edge detection announces "Detected photo edges, opening editor" via a live region.
+- Camera screen provides shutter as a large focused element; capture completion announces "Photo captured, opening editor" via a live region. (Prior "Detected photo edges" announcement removed with auto-detection per m2154.)
 
 ---
 

@@ -31,14 +31,16 @@ import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.domain.model.AspectLock
 
 /**
- * Crop tool content (~64dp). Left: ghost "Reset to auto-detect". Right: aspect chip row
- * `Free · 3:4 · 3:1` per DESIGN §7.3. Renders directly on CameraBg — no panel fill, no
- * border, no hairline. Horizontal 16dp padding only.
+ * Crop tool content (~64dp). Left: ghost "Reset crop" (returns crop bounds to the initial
+ * quad — full-image for Photo Picker imports, guide-box for fresh Camera captures — after
+ * auto-detect was removed per m2154). Right: aspect chip row `Free · 3:4 · 3:1` per
+ * DESIGN §7.3. Renders directly on CameraBg — no panel fill, no border, no hairline.
+ * Horizontal 16dp padding only.
  */
 @Composable
 fun CropTool(
     aspectLock: AspectLock,
-    onResetToAuto: () -> Unit,
+    onResetCrop: () -> Unit,
     onAspectLockChange: (AspectLock) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -50,7 +52,7 @@ fun CropTool(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        ResetChip(onClick = onResetToAuto)
+        ResetChip(onClick = onResetCrop)
         AspectChipRow(
             selected = aspectLock,
             onSelect = onAspectLockChange,
@@ -70,7 +72,7 @@ private fun ResetChip(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text  = "Reset to auto-detect",
+            text  = "Reset crop",
             color = NpicColors.Saffron,
             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(600)),
         )

@@ -222,7 +222,14 @@ class EditViewModel(
         // Crop-tool preview intentionally displays raw source + overlay; no re-render.
     }
 
-    fun resetCropToAuto() {
+    /**
+     * Reset the crop quad to the initial bounds seeded from [EditState.seedFrom]:
+     * full-image sentinel for Photo Picker imports (`guideBoxImageSpace == null`),
+     * or the guide-box quad for fresh Camera captures. Filter / adjustments /
+     * rotation / aspect-lock are preserved so the user only rewinds the crop.
+     * Renamed from `resetCropToAuto` per m2154 — no auto-detect exists anymore.
+     */
+    fun resetCrop() {
         _state.update { s ->
             s ?: return@update null
             s.copy(edit = EditState.seedFrom(s.edit.source).copy(

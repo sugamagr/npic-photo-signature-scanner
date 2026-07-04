@@ -10,7 +10,7 @@ import kotlinx.datetime.Instant
  */
 @Immutable
 sealed interface SignatureSource {
-    /** Captured through the camera pipeline (PRD §7.2 ink isolation ran). */
+    /** Captured through the camera pipeline: raw JPEG at capture time, user confirms crop in Edit. */
     @Immutable data object Captured : SignatureSource
     /** Drawn on the Signature Draw canvas (PRD §4.4) and rasterized to 1500×500 JPEG. */
     @Immutable data object Drawn    : SignatureSource

@@ -301,7 +301,7 @@ private fun ToolContentRegion(
             when (tool) {
                 EditTool.Crop -> CropTool(
                     aspectLock = state.edit.aspectLock,
-                    onResetToAuto = { viewModel.resetCropToAuto() },
+                    onResetCrop = { viewModel.resetCrop() },
                     onAspectLockChange = { viewModel.setAspectLock(it) },
                 )
                 EditTool.Filter -> FilterTool(

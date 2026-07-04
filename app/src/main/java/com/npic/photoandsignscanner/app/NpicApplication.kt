@@ -26,8 +26,12 @@ class NpicApplication : Application() {
          * successful load. Returns `true` if OpenCV is usable, `false` if the load failed
          * (which only happens on unsupported ABIs; we ship arm64-v8a and armeabi-v7a).
          *
-         * The Camera feature calls this on first mount; the pipeline stages inside PRD §7
-         * (edge detection, ink isolation) assume it has returned true before invocation.
+         * The Camera feature calls this on first mount; the Edit-tier consumers assume it
+         * has returned true before invocation. Current consumers: EditRenderer's
+         * `applyPerspectiveCrop` (warpPerspective + getPerspectiveTransform) + `applyStraighten`
+         * (warpAffine + getRotationMatrix2D), plus BitmapAdjustments' Sharpness slider
+         * (GaussianBlur + addWeighted) and BitmapFilters' Document B&W preset (adaptiveThreshold).
+         * PRD §7.1 / §7.2 auto edge / ink detection was removed per m2154; §7.3 crop commit stays.
          */
         fun initOpenCVOnce(): Boolean {
             if (openCvLoaded.get()) return true

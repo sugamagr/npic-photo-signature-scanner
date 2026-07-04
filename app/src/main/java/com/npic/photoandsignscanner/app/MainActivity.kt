@@ -377,9 +377,9 @@ private fun NpicNavHost(
         composable(Route.SignaturePrompt) {
             SignaturePromptSheet(
                 // Layer 12 fix: route to Camera in Signature mode so the guide-box is 3:1
-                // and the shutter routes captures to the ink-isolation pipeline. Was
-                // previously landing on the Photo default — user then had to tap the
-                // Signature mode pill manually, defeating the prompt.
+                // and Edit opens seeded at that landscape strip. Was previously landing on
+                // the Photo default — user then had to tap the Signature mode pill manually,
+                // defeating the prompt. (Auto ink-isolation was removed per m2154.)
                 onCapture = { navController.navigate(Route.camera(CameraMode.Signature)) },
                 onDraw = { navController.navigate(Route.SignatureDraw) },
                 onSkip = {

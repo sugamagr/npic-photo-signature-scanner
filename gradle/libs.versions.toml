@@ -43,9 +43,11 @@ coil                    = "2.7.0"
 # rejected by Play from Nov 2025. 4.11.0+ ships 16 KB-aligned arm64 binaries
 # (verified `readelf -l | grep LOAD | awk '{print $NF}'` = 0x4000 on all PT_LOAD
 # segments in libopencv_java4.so AND the co-shipped libc++_shared.so). Staying
-# on the 4.x line preserves API compatibility with our primitives: Canny,
-# bilateralFilter, morphologyEx, findContours, getPerspectiveTransform,
-# warpPerspective, adaptiveThreshold (see data/imaging/*).
+# on the 4.x line preserves API compatibility with our current primitives:
+# warpPerspective, getPerspectiveTransform, warpAffine, getRotationMatrix2D,
+# GaussianBlur, addWeighted, adaptiveThreshold, cvtColor (see data/imaging/*).
+# Photo edge detection + signature ink isolation primitives (Canny,
+# bilateralFilter, morphologyEx, findContours) were removed per m2154.
 opencv                  = "4.13.0"
 
 # --- DataStore ---
