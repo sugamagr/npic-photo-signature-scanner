@@ -76,7 +76,11 @@ class CameraViewModel : ViewModel() {
                     }
                 }
                 _state.update {
-                    it.copy(capturing = false, sessionCount = it.sessionCount + 1)
+                    it.copy(
+                        capturing = false,
+                        sessionCount = it.sessionCount + 1,
+                        lastCapturePath = file.absolutePath,
+                    )
                 }
                 onDone(
                     CameraCapture(

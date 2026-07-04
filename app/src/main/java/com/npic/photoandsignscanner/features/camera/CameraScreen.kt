@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -144,6 +145,12 @@ private fun CameraGranted(
     LaunchedEffect(lifecycleOwner) { controller.bindTo(lifecycleOwner) }
     LaunchedEffect(state.flash) { controller.applyFlash(state.flash) }
 
+    // Layer 13: subscribe to the device accelerometer so the overlay level indicator
+    // can snap to Sage within ±2° of horizontal. Returns null on devices without an
+    // accelerometer or before the first stable reading — NpicCameraOverlay treats
+    // null as "hide the level indicator" (PRD §4.2 / DESIGN §6.16).
+    val tiltDegrees by rememberDeviceTiltDegrees()
+
     // Layer 11: overlay reports BOTH the guide rect and the canvas Size it laid out in.
     // The canvas size lets the VM run the FILL_CENTER inverse against the captured JPEG's
     // real dimensions instead of the pre-Layer-11 identity-stub that pretended preview
@@ -184,10 +191,11 @@ private fun CameraGranted(
 
         Column(Modifier.fillMaxSize()) {
             CameraTopBar(
-                flash        = state.flash,
-                sessionCount = state.sessionCount,
-                onBack       = onBack,
-                onFlashCycle = viewModel::cycleFlash,
+                flash           = state.flash,
+                sessionCount    = state.sessionCount,
+                lastCapturePath = state.lastCapturePath,
+                onBack          = onBack,
+                onFlashCycle    = viewModel::cycleFlash,
             )
             Box(
                 Modifier
@@ -197,6 +205,7 @@ private fun CameraGranted(
                 NpicCameraOverlay(
                     aspect            = guideAspectAnim,
                     fillFraction      = guideFillAnim,
+                    tiltDegrees       = tiltDegrees,
                     onGuideBoxChanged = { rect, size -> guideBoxState = rect to size },
                 )
                 HintText(
@@ -285,6 +294,7 @@ private fun HintText(
 private fun CameraTopBar(
     flash: FlashMode,
     sessionCount: Int,
+    lastCapturePath: String?,
     onBack: () -> Unit,
     onFlashCycle: () -> Unit,
 ) {
@@ -330,13 +340,13 @@ private fun CameraTopBar(
                 )
             }
 
-            SessionStackBadge(count = sessionCount)
+            SessionStackBadge(count = sessionCount, lastCapturePath = lastCapturePath)
         }
     }
 }
 
 @Composable
-private fun SessionStackBadge(count: Int) {
+private fun SessionStackBadge(count: Int, lastCapturePath: String?) {
     val chrome = LocalNpicChrome.current
     if (count <= 0) {
         // Reserve the same 44dp footprint so the flash cluster doesn't jump when the
@@ -349,15 +359,28 @@ private fun SessionStackBadge(count: Int) {
     Box(
         modifier = Modifier
             .size(44.dp)
+            .clip(NpicShapes.sm)
             .background(chrome.cameraInk.copy(alpha = 0.20f), NpicShapes.sm)
             .semantics { contentDescription = "Captured $count in this session" },
-        contentAlignment = Alignment.Center,
     ) {
+        // Layer 13: last-capture thumbnail fills the badge so the user's most recent frame
+        // is directly recognizable at a glance (DESIGN §7.2). Fallback to a Saffron-tinted
+        // placeholder when Coil can't decode the file (e.g. cache purge mid-session).
+        if (lastCapturePath != null) {
+            coil.compose.AsyncImage(
+                model = java.io.File(lastCapturePath),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(NpicShapes.sm),
+            )
+        }
         Text(
             text  = label,
             color = NpicColors.Ink,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight(700)),
             modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(2.dp)
                 .background(NpicColors.Saffron, NpicShapes.full)
                 .padding(horizontal = NpicSpacing.xs, vertical = 2.dp),
         )

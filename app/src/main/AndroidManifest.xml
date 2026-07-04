@@ -9,6 +9,13 @@
     <!-- Runtime-requested permissions. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- PRD §10: legacy write-external-storage for API ≤ 28 devices where the
+         FileProvider-share flow needs an intermediate on-disk staging file that another
+         app may read directly (some OEMs' share receivers ignore FileProvider Uris on
+         pre-Q). API 29+ uses scoped storage exclusively. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <!-- Scoped-storage friendly: we write only to app-internal storage.
          Photo picker for gallery import is contract-based and needs no permission on API 33+.
          For API 29-32, ACCESS_MEDIA_LOCATION is only needed when reading EXIF from picked images. -->

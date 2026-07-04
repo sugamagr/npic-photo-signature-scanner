@@ -16,6 +16,9 @@ data class CameraUiState(
     val flash: FlashMode = FlashMode.Auto,
     /** Number of successful captures in the current Camera session (resets on back-out). */
     val sessionCount: Int = 0,
+    /** File path of the most-recent capture in the current session; feeds SessionStackBadge's
+     *  44dp thumbnail (Layer 13). Null until the first capture lands. */
+    val lastCapturePath: String? = null,
     /** True while the shutter has been tapped but the still hasn't been persisted yet. */
     val capturing: Boolean = false,
     /** First-run hint text under the guide box; user can dismiss with a tap. */
