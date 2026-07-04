@@ -2,7 +2,6 @@ package com.npic.photoandsignscanner.features.camera
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
@@ -43,11 +42,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -66,6 +64,7 @@ import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
+import com.npic.photoandsignscanner.core.theme.rememberNpicHaptics
 import com.npic.photoandsignscanner.core.ui.NpicButton
 import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicCameraOverlay
@@ -142,6 +141,7 @@ private fun CameraGranted(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val reduceMotion = LocalReduceMotion.current
+    val haptics = rememberNpicHaptics()
 
     val controller = remember { NpicCameraController(context) }
     LaunchedEffect(lifecycleOwner) { controller.bindTo(lifecycleOwner) }
@@ -230,6 +230,7 @@ private fun CameraGranted(
                 onDrawInsteadClick       = onDrawInsteadClick,
                 onImportFromGalleryClick = onImportFromGalleryClick,
                 onShutter = {
+                    haptics.performClick()
                     val target = File(context.cacheDir, "drafts").apply { mkdirs() }
                         .resolve("${UUID.randomUUID()}.jpg")
                     // Null when overlay hasn't laid out yet (first-frame shutter). VM
@@ -310,10 +311,9 @@ private fun CameraTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(topBarScrim(chrome.cameraBg))
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(56.dp)
-            .backdropBlur()
-            .background(chrome.cameraBg.copy(alpha = 0.85f))
             .padding(horizontal = NpicSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -397,14 +397,25 @@ private fun SessionStackBadge(count: Int, lastCapturePath: String?) {
     }
 }
 
-/**
- * Guarded backdrop blur — DESIGN §7.2 calls for 24dp blur behind the top and bottom bars
- * on SDK 31+ (RenderNode-backed [Modifier.blur] is a no-op on older SDKs).
- */
-private fun Modifier.backdropBlur(): Modifier =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        this.blur(radius = 24.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-    } else this
+// Camera-chrome scrims. DESIGN §7.2 originally asked for "24dp backdrop blur behind the
+// top and bottom bars". Compose's `Modifier.blur()` blurs the composable AND its
+// descendants (documented behaviour of RenderNode.setRenderEffect at the layer level),
+// so the previous `Modifier.blur(24.dp)` on the bar Column actually blurred the shutter
+// ring, the mode-pill labels and the gallery icon into invisibility on the near-black
+// cameraBg — the user could see the corner brackets but the entire bottom bar rendered
+// as a flat slab (device screenshot, m1599). Android provides no first-class
+// backdrop-blur primitive in Compose, so the industry-standard fix is to drop the blur
+// and use a vertical scrim gradient: this is what Google Camera, VSCO and Adobe
+// Lightroom Mobile do for exactly this "chrome floating over a live preview" case.
+// The gradient gives visual separation without touching the chrome's own pixels and
+// costs one extra draw per frame instead of a full RenderNode blur pass.
+private fun topBarScrim(bg: Color): Brush = Brush.verticalGradient(
+    colors = listOf(bg.copy(alpha = 0.95f), bg.copy(alpha = 0f)),
+)
+
+private fun bottomBarScrim(bg: Color): Brush = Brush.verticalGradient(
+    colors = listOf(bg.copy(alpha = 0f), bg.copy(alpha = 0.95f)),
+)
 
 @Composable
 private fun CameraBottomBar(
@@ -419,11 +430,13 @@ private fun CameraBottomBar(
 
     // Bug#4: this bar now sits inside CameraGranted's Column (not the outer Box),
     // so no .align() modifier — the parent Column pins it to the bottom by layout order.
+    // The scrim replaces the earlier flat cameraBg@85% + Modifier.blur combo (see
+    // bottomBarScrim rationale). Scrim before insets so the gradient fades all the way
+    // down into the nav-bar area on gesture-nav devices.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .backdropBlur()
-            .background(chrome.cameraBg.copy(alpha = 0.85f))
+            .background(bottomBarScrim(chrome.cameraBg))
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(vertical = NpicSpacing.md),
         horizontalAlignment = Alignment.CenterHorizontally,

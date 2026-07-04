@@ -3,6 +3,7 @@ package com.npic.photoandsignscanner.data.imaging
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.util.Log
+import androidx.compose.ui.geometry.Offset
 import com.npic.photoandsignscanner.domain.model.CropQuad
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.EditState
@@ -59,12 +60,51 @@ class EditRenderer(
             source.height,
             state.rotation.quarterTurnsCw,
         )
-        val cropped = applyCrop(straightened, mappedQuad, state.source.mode)
+        // Sentinel remap: EditState.seedFrom falls back to a NORMALIZED unit-square quad
+        // (0..1 in every ordinate) when the CameraCapture has no guide box — the domain
+        // layer can't know the source dimensions there. Detect that sentinel here and
+        // remap to full-source bounds BEFORE applyCrop runs; otherwise applyPerspectiveCrop
+        // would round widths/heights of ~1 pixel and produce a 1×1 output bitmap that the
+        // viewport upscales into a uniform gray blob (m1653 root cause).
+        val effectiveQuad = if (isNormalizedSentinel(mappedQuad)) {
+            val w = source.width.toFloat()
+            val h = source.height.toFloat()
+            CropQuad(
+                tl = Offset(0f, 0f),
+                tr = Offset(w,  0f),
+                br = Offset(w,  h),
+                bl = Offset(0f, h),
+            )
+        } else {
+            mappedQuad
+        }
+        val cropped = applyCrop(straightened, effectiveQuad, state.source.mode)
         if (straightened !== cropped && straightened !== source) straightened.recycle()
 
-        filters.apply(cropped, state.effectiveFilter)
-        adjustments.apply(cropped, state.adjustments)
-        return cropped
+        // Non-alias guarantee (see KDoc "Non-destructive contract"). Every upstream stage
+        // is allowed to return the input unchanged for its own no-op path, but the caller
+        // owns the returned bitmap and will recycle it independently of `source`. The
+        // three no-op paths that end up aliased to `source` are:
+        //   1. quarterTurns == 0 AND straightenDegrees < ε (applyQuarterTurns / applyStraighten
+        //      both short-circuit to `source`);
+        //   2. Signature-mode crop quad exactly equal to the source bounds — Bitmap.createBitmap
+        //      returns `source` itself when the requested subset covers an immutable-backed
+        //      source (documented behaviour, verified against AOSP Bitmap.java).
+        // When aliased, the subsequent in-place mutations in BitmapFilters.apply and
+        // BitmapAdjustments.apply would corrupt `source` (breaking the docstring contract)
+        // AND caller-side recycle of the return value would also recycle `source`, causing
+        // "trying to use a recycled bitmap" crashes on the next Filter/Adjust/Rotate
+        // scheduleLivePreview. Copy defensively so the return is always a distinct
+        // allocation the caller can safely mutate and recycle.
+        val owned = if (cropped === source) {
+            cropped.copy(cropped.config ?: Bitmap.Config.ARGB_8888, /* isMutable = */ true)
+        } else {
+            cropped
+        }
+
+        filters.apply(owned, state.effectiveFilter)
+        adjustments.apply(owned, state.adjustments)
+        return owned
     }
 
     // ------------------------------------------------------------------ rotation
@@ -232,6 +272,16 @@ class EditRenderer(
         val w = (maxX - minX).coerceAtLeast(1)
         val h = (maxY - minY).coerceAtLeast(1)
         return Bitmap.createBitmap(source, minX, minY, w, h)
+    }
+
+    private fun isNormalizedSentinel(q: CropQuad): Boolean {
+        val maxOrd = maxOf(
+            q.tl.x, q.tl.y,
+            q.tr.x, q.tr.y,
+            q.br.x, q.br.y,
+            q.bl.x, q.bl.y,
+        )
+        return maxOrd < EditState.NORMALIZED_SENTINEL_THRESHOLD
     }
 
     private companion object {

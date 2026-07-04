@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -60,6 +61,7 @@ import com.npic.photoandsignscanner.core.ui.NpicButton
 import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicCard
 import com.npic.photoandsignscanner.core.ui.NpicIconButton
+import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.StudentRecord
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
@@ -78,18 +80,24 @@ fun DetailScreen(
     onBack: () -> Unit,
     onEditPhoto: (StudentRecord) -> Unit,
     onEditSignature: (StudentRecord) -> Unit,
-    onCapturePhoto: () -> Unit,
-    onImportPhoto: () -> Unit,
-    onCaptureSignature: () -> Unit,
-    onDrawSignature: () -> Unit,
-    onImportSignature: () -> Unit,
+    // m2232: All add-media callbacks now forward the current record so MainActivity
+    // routes through captureHolder.beginUpdate(record) instead of clear() + fresh
+    // draft. Preserves record identity across the Camera / Draw / Import flow so
+    // signatures re-attach to the existing StudentRecord via repo.replace() rather
+    // than surfacing as phantom rows in the Save sheet.
+    onCapturePhoto: (StudentRecord) -> Unit,
+    onImportPhoto: (StudentRecord) -> Unit,
+    onCaptureSignature: (StudentRecord) -> Unit,
+    onDrawSignature: (StudentRecord) -> Unit,
+    onImportSignature: (StudentRecord) -> Unit,
     onExport: (StudentRecord) -> Unit,
-    onDuplicateToAnotherClass: (StudentRecord) -> Unit,
+    onDuplicateToAnotherClass: (record: StudentRecord, target: ClassNum) -> Unit,
     onDeleted: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val currentOnBack by rememberUpdatedState(onBack)
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showDuplicatePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.notFound) {
         if (state.notFound) currentOnBack()
@@ -101,7 +109,7 @@ fun DetailScreen(
             onBack = onBack,
             onEdit = { state.record?.let { onEditPhoto(it) } },
             onDelete = { showDeleteConfirm = true },
-            onDuplicateToClass = { state.record?.let { onDuplicateToAnotherClass(it) } },
+            onDuplicateToClass = { if (state.record != null) showDuplicatePicker = true },
             menuEnabled = state.record != null,
         )
 
@@ -113,6 +121,18 @@ fun DetailScreen(
                 onDelete = {
                     showDeleteConfirm = false
                     viewModel.delete(onDeleted)
+                },
+            )
+        }
+
+        val activeRecord = state.record
+        if (showDuplicatePicker && activeRecord != null) {
+            TargetClassPickerDialog(
+                sourceClass = activeRecord.classNum,
+                onDismiss = { showDuplicatePicker = false },
+                onPick = { target ->
+                    showDuplicatePicker = false
+                    onDuplicateToAnotherClass(activeRecord, target)
                 },
             )
         }
@@ -135,6 +155,7 @@ fun DetailScreen(
                 onCaptureSignature = onCaptureSignature,
                 onDrawSignature = onDrawSignature,
                 onImportSignature = onImportSignature,
+                onDuplicateToAnotherClass = { showDuplicatePicker = true },
             )
             DetailExportBar(
                 record = record,
@@ -219,11 +240,12 @@ private fun DetailBody(
     modifier: Modifier,
     onEditPhoto: (StudentRecord) -> Unit,
     onEditSignature: (StudentRecord) -> Unit,
-    onCapturePhoto: () -> Unit,
-    onImportPhoto: () -> Unit,
-    onCaptureSignature: () -> Unit,
-    onDrawSignature: () -> Unit,
-    onImportSignature: () -> Unit,
+    onCapturePhoto: (StudentRecord) -> Unit,
+    onImportPhoto: (StudentRecord) -> Unit,
+    onCaptureSignature: (StudentRecord) -> Unit,
+    onDrawSignature: (StudentRecord) -> Unit,
+    onImportSignature: (StudentRecord) -> Unit,
+    onDuplicateToAnotherClass: () -> Unit,
 ) {
     Column(
         modifier = modifier
@@ -243,15 +265,25 @@ private fun DetailBody(
         PhotoCard(
             record = record,
             onEdit = { onEditPhoto(record) },
-            onCapture = onCapturePhoto,
-            onImport = onImportPhoto,
+            onCapture = { onCapturePhoto(record) },
+            onImport = { onImportPhoto(record) },
         )
         SignatureCard(
             record = record,
             onEdit = { onEditSignature(record) },
-            onCapture = onCaptureSignature,
-            onDraw = onDrawSignature,
-            onImport = onImportSignature,
+            onCapture = { onCaptureSignature(record) },
+            onDraw = { onDrawSignature(record) },
+            onImport = { onImportSignature(record) },
+        )
+        // User m1555: Duplicate-to-another-class entry point in the Detail body, in
+        // addition to the overflow menu item. Both routes open the same target-class
+        // picker → runs the same copy + Save flow.
+        NpicButton(
+            label     = "Duplicate to another class",
+            onClick   = onDuplicateToAnotherClass,
+            modifier  = Modifier.fillMaxWidth(),
+            style     = NpicButtonStyle.Ghost,
+            startIcon = Icons.Outlined.ContentCopy,
         )
     }
 }
@@ -643,6 +675,49 @@ private fun DeleteConfirmDialog(
         dismissButton = {
             TextButton(onClick = onKeep) {
                 Text("Keep", color = NpicColors.Saffron)
+            }
+        },
+    )
+}
+
+@Composable
+private fun TargetClassPickerDialog(
+    sourceClass: ClassNum,
+    onDismiss: () -> Unit,
+    onPick: (ClassNum) -> Unit,
+) {
+    val chrome = LocalNpicChrome.current
+    val targets = ClassNum.entries.filter { it != sourceClass }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "Duplicate to which class?",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(NpicSpacing.sm)) {
+                Text(
+                    "The photo and signature will be copied. You'll enter a new serial or name on the next screen.",
+                    color = chrome.inkMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(NpicSpacing.xs))
+                targets.forEach { target ->
+                    NpicButton(
+                        label   = "Class ${target.label}",
+                        onClick = { onPick(target) },
+                        modifier = Modifier.fillMaxWidth(),
+                        style   = NpicButtonStyle.Secondary,
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = NpicColors.Saffron)
             }
         },
     )

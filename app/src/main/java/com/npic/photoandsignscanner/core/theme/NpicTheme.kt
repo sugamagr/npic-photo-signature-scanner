@@ -8,10 +8,16 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.npic.photoandsignscanner.domain.model.AppSettings
+import com.npic.photoandsignscanner.domain.model.MotionPreference
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Root theme composable. Every screen must be wrapped in `NpicTheme { … }`.
@@ -73,6 +79,18 @@ private val WarmEditorialChrome = NpicChrome(
 val LocalNpicChrome = staticCompositionLocalOf { WarmEditorialChrome }
 
 /**
+ * Live [AppSettings] from the Settings drawer (user m1551 S3). Callers that need to read
+ * `hapticsEnabled` or `exportMimePreference` at usage sites (e.g. the shutter button, the
+ * share intent builder) pull from here so a single toggle in the drawer takes effect
+ * everywhere without threading callbacks through every composable.
+ *
+ * Default is [AppSettings.Default] so previews and any composable rendered outside
+ * [NpicTheme] still resolve; the reduce-motion override is applied inside NpicTheme
+ * itself so [LocalReduceMotion] carries the resolved boolean directly.
+ */
+val LocalAppSettings = staticCompositionLocalOf { AppSettings.Default }
+
+/**
  * Material 3 slot mapping. Kept deliberate — every slot documented so a reader can trace
  * which token drives which visual role. If a Material component reads wrong, fix here,
  * not in the component.
@@ -130,10 +148,21 @@ private val WarmEditorialColorScheme = lightColorScheme(
 
 @Composable
 fun NpicTheme(
+    settingsFlow: Flow<AppSettings> = flowOf(AppSettings.Default),
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
-    val reduceMotion = remember(context) { context.resolveReduceMotion() }
+    val systemReduce = remember(context) { context.resolveReduceMotion() }
+    val settings by settingsFlow.collectAsState(initial = AppSettings.Default)
+    // Motion override layers on the system reading (user m1551 S3): explicit `On`/`Off`
+    // wins over Settings.Global; `System` defers to the platform. This means a user who
+    // wants full motion on a device with system reduce-motion enabled can force it, and
+    // vice versa — animations answer to the last-touched preference.
+    val effectiveReduceMotion = when (settings.reduceMotionOverride) {
+        MotionPreference.System -> systemReduce
+        MotionPreference.On     -> true
+        MotionPreference.Off    -> false
+    }
     MaterialTheme(
         colorScheme = WarmEditorialColorScheme,
         typography  = NpicTypography,
@@ -142,7 +171,8 @@ fun NpicTheme(
         CompositionLocalProvider(
             LocalNpicChrome    provides WarmEditorialChrome,
             LocalTextStyle     provides NpicTypography.bodyMedium,
-            LocalReduceMotion  provides reduceMotion,
+            LocalReduceMotion  provides effectiveReduceMotion,
+            LocalAppSettings   provides settings,
             content = content,
         )
     }

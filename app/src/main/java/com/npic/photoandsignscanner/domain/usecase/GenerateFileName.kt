@@ -6,18 +6,16 @@ import com.npic.photoandsignscanner.domain.model.NamingMode
 import com.npic.photoandsignscanner.domain.model.StudentRecord
 
 /**
- * PRD §6.3 export filename scheme. Deterministic — same record + format + naming mode
- * always yields the same filename, so a duplicate export overwrites cleanly.
+ * Export filename scheme. Deterministic — same record + naming mode always yields the same
+ * filename, so a duplicate export overwrites cleanly. Per m1537 user directive, format
+ * (Combined vs PhotoOnly vs SignatureOnly) does NOT affect the filename — the file inside
+ * the JPEG differs but the name identifies the student, not the composition.
  *
- * ### Rules (from PRD §6.3)
- * | Format          | Naming | Filename                                        |
- * |-----------------|--------|-------------------------------------------------|
- * | Combined        | Serial | `{class:02d}{serial:04d}.jpg`                   |
- * | Combined        | Name   | `{Name_Underscored}_{class:02d}.jpg`            |
- * | PhotoOnly       | Serial | `photo_{class:02d}{serial:04d}.jpg`             |
- * | PhotoOnly       | Name   | `photo_{Name_Underscored}_{class:02d}.jpg`      |
- * | SignatureOnly   | Serial | `signature_{class:02d}{serial:04d}.jpg`         |
- * | SignatureOnly   | Name   | `signature_{Name_Underscored}_{class:02d}.jpg`  |
+ * ### Rules
+ * | Naming | Filename                              |
+ * |--------|---------------------------------------|
+ * | Serial | `{class:02d}{serial:04d}.jpeg`        |
+ * | Name   | `{Name_Underscored}_{class:02d}.jpeg` |
  *
  * ### Name normalization
  * When Name mode is picked, [StudentRecord.displayName] is sanitized:
@@ -26,26 +24,22 @@ import com.npic.photoandsignscanner.domain.model.StudentRecord
  *   - Empty result (name was all whitespace/punctuation) falls back to Serial mode for that
  *     record — user's displayName was garbage, filename must still be unique.
  *
- * The result carries the `.jpg` extension (portal accepts only JPEG per PRD §6). Callers
- * append it to the export directory / ZIP entry name verbatim.
+ * The result carries the `.jpeg` extension per user directive. Callers append it to the
+ * export directory / ZIP entry name verbatim.
  */
 object GenerateFileName {
 
     /**
-     * Produce the export filename for [record] under [format] and [namingMode]. See rules
-     * table in class KDoc.
+     * Produce the export filename for [record] under [namingMode]. See rules table in class
+     * KDoc. [format] is accepted for call-site compatibility but is ignored — the same
+     * filename works for all three formats since only one blob per student is exported at
+     * any given time.
      */
     fun forExport(
         record: StudentRecord,
         format: ExportFormat,
         namingMode: NamingMode.Kind,
     ): String {
-        val prefix: String = when (format) {
-            ExportFormat.Combined      -> ""
-            ExportFormat.PhotoOnly     -> "photo_"
-            ExportFormat.SignatureOnly -> "signature_"
-        }
-
         val stem: String = when (namingMode) {
             NamingMode.Kind.Serial -> serialStem(record.classNum, record.serial)
             NamingMode.Kind.Name -> nameStem(record.displayName, record.classNum)
@@ -53,8 +47,7 @@ object GenerateFileName {
                 // the file is still uniquely addressable in the export bundle.
                 ?: serialStem(record.classNum, record.serial)
         }
-
-        return "$prefix$stem$EXTENSION"
+        return "$stem$EXTENSION"
     }
 
     // ------------------------------------------------------------------ helpers
@@ -79,5 +72,5 @@ object GenerateFileName {
     /** Strip anything that isn't ASCII letter/digit/underscore. Protects Devanagari, punctuation. */
     private val FORBIDDEN_CHARS = Regex("[^A-Za-z0-9_]")
 
-    private const val EXTENSION = ".jpg"
+    private const val EXTENSION = ".jpeg"
 }

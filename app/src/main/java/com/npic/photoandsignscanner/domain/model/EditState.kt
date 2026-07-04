@@ -68,11 +68,19 @@ data class EditState(
             // callback later re-projects into view-space; the shape only depends on the
             // guide-box aspect, which the lock already carries. `lock` is reserved for
             // future aspect-constrained reseeding (Layer 7b), hence the suppress.
-            // When guideBoxImageSpace is null (overlay hadn't laid out at capture time), we
-            // seed a degenerate zero-quad — detection replaces it with the full-image
-            // fallback quad as soon as the decoded bitmap is available (EditViewModel).
+            //
+            // When guideBoxImageSpace is null we DO NOT know the source dimensions here —
+            // CameraCapture only carries the raw path. Fall back to a unit-square quad in
+            // NORMALIZED space (0..1) that EditRenderer detects and remaps to full source
+            // bounds on first render. This keeps every stage of the render pipeline valid
+            // (widths and heights are non-zero → applyPerspectiveCrop produces a real
+            // output bitmap → Filter/Adjust/Rotate show the actual photo instead of a
+            // 1×1 gray blob resampled up to viewport).
             val r = capture.guideBoxImageSpace ?: return CropQuad(
-                tl = Offset.Zero, tr = Offset.Zero, br = Offset.Zero, bl = Offset.Zero,
+                tl = Offset(0f,      0f),
+                tr = Offset(NORMALIZED, 0f),
+                br = Offset(NORMALIZED, NORMALIZED),
+                bl = Offset(0f,      NORMALIZED),
             )
             return CropQuad(
                 tl = Offset(r.left.toFloat(),  r.top.toFloat()),
@@ -81,5 +89,15 @@ data class EditState(
                 bl = Offset(r.left.toFloat(),  r.bottom.toFloat()),
             )
         }
+
+        /**
+         * Sentinel value flagging a normalized 0..1 quad. EditRenderer detects this by
+         * checking the quad's max ordinate against [NORMALIZED_SENTINEL_THRESHOLD] and
+         * remaps to full source bounds before applyCrop runs. Kept as a float rather than
+         * a Boolean on CropQuad because CropQuad is a domain-layer value object shared
+         * with core.ui and adding a "normalized" flag would leak the render concern.
+         */
+        const val NORMALIZED = 1f
+        const val NORMALIZED_SENTINEL_THRESHOLD = 1.5f
     }
 }

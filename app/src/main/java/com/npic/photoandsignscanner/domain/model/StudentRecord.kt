@@ -26,6 +26,11 @@ data class StudentRecord(
     val displayName: String,
     val photoPath: String,
     val signaturePath: String?,
+    // How the record was originally named. Persisted so add-signature / add-photo update
+    // flows from Detail (m2232) can reconstruct the exact SaveInput that produced the row,
+    // instead of the pre-fix behaviour that dropped the record identity and forced the
+    // user to re-pick Serial vs Name (creating a phantom second record).
+    val namingKind: NamingMode.Kind,
     val createdAt: Instant,
     val updatedAt: Instant,
 ) {
@@ -33,5 +38,5 @@ data class StudentRecord(
 
     /** Filename this record would export as under the Serial naming mode. */
     val serialFilename: String
-        get() = "${classNum.portalCode}${serial.toString().padStart(4, '0')}.jpg"
+        get() = "${classNum.portalCode}${serial.toString().padStart(4, '0')}.jpeg"
 }

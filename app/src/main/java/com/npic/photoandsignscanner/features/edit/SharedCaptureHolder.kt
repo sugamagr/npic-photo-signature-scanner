@@ -7,6 +7,7 @@ import com.npic.photoandsignscanner.domain.model.CameraCapture
 import com.npic.photoandsignscanner.domain.model.CameraMode
 import com.npic.photoandsignscanner.domain.model.SignatureSource
 import com.npic.photoandsignscanner.domain.model.StudentDraft
+import com.npic.photoandsignscanner.domain.model.StudentRecord
 import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +43,15 @@ class SharedCaptureHolder(
 
     private val _draft = MutableStateFlow<StudentDraft?>(null)
     val draft: StateFlow<StudentDraft?> = _draft.asStateFlow()
+
+    // m2232 fix: when Detail launches an add-media / edit-media flow against an EXISTING
+    // record, the target's id + classNum + serial + displayName + namingKind must survive
+    // the whole Camera → Edit → (SignatureDraw) → confirm arc. Non-null here means "on
+    // commit, call repo.replace(target.id, ...) instead of repo.save(...)"; the Save
+    // sheet is bypassed for a lightweight ConfirmUpdate sheet so the user can't
+    // accidentally rewrite class/serial/name and clone a phantom record.
+    private val _target = MutableStateFlow<StudentRecord?>(null)
+    val target: StateFlow<StudentRecord?> = _target.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -104,11 +114,65 @@ class SharedCaptureHolder(
         persist(next)
     }
 
+    /**
+     * Overwrite the entire draft in one atomic publish + persist. Used by flows that
+     * synthesise a fresh draft outside the incremental push* API — currently:
+     *
+     * 1. **Duplicate-to-another-class (user m1555)**: [DetailDestination]'s duplicate
+     *    flow mints a new UUID, copies source assets to `sources/{newId}_*.jpg` via
+     *    [com.npic.photoandsignscanner.data.repo.DuplicateAssetsUseCase], then hands the
+     *    resulting draft to this method. Going through `pushPhoto` + `pushSignature`
+     *    would work but would emit TWO persist ops racing on the same row and would
+     *    stamp `updatedAt` twice — cleaner to seed atomically.
+     *
+     * The optional [capture] slot is provided for symmetry with [pushCapture] so callers
+     * that already know the raw camera frame (e.g. Detail's edit-existing path) can pipe
+     * it through. Duplicate flow passes null because a duplicated record has no live raw
+     * capture — its assets are already the SourceStore-persisted finals from the source
+     * record.
+     */
+    fun replaceDraft(draft: StudentDraft, capture: CameraCapture? = null) {
+        _draft.value = draft
+        _capture.value = capture
+        // Duplicate-to-another-class explicitly wants a fresh record — null any prior
+        // update target so the nav layer routes through Save (not ConfirmUpdate).
+        _target.value = null
+        persist(draft, capture)
+    }
+
+    /**
+     * m2232: seed the holder for an "update this existing record" flow. Mints a fresh
+     * draft that REUSES the record's UUID as its own id so Layer 9 SourceStore writes
+     * (`sources/{draftId}_*.jpg`) overwrite the record's existing asset files in place —
+     * no orphaned assets, no id-remap dance on repo.replace. Pre-fills photoPath and
+     * signaturePath from the record so Save-sheet fallbacks (`add photo or signature`)
+     * don't fire, and downstream push* calls only fill the missing slot.
+     *
+     * The target itself is stashed on [_target] so the nav layer can branch
+     * Save → ConfirmUpdate on `target.value != null`.
+     */
+    fun beginUpdate(record: StudentRecord) {
+        val existing = record.signaturePath
+        val seededDraft = StudentDraft(
+            id = record.id,
+            photoPath = record.photoPath.takeIf { it.isNotBlank() },
+            signaturePath = existing,
+            photoMode = CameraMode.Photo,
+            signatureSource = if (existing != null) SignatureSource.Captured else null,
+            createdAt = record.createdAt,
+        )
+        _target.value = record
+        _draft.value = seededDraft
+        _capture.value = null
+        persist(seededDraft)
+    }
+
     /** Clear everything — call after Save success or explicit user cancel. */
     fun clear() {
         val existingId = _draft.value?.id
         _capture.value = null
         _draft.value = null
+        _target.value = null
         if (existingId != null) {
             viewModelScope.launch { draftRepository.delete(existingId) }
         }

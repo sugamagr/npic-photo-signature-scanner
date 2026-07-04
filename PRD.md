@@ -166,13 +166,13 @@ Additionally, after Photo capture, the Signature Prompt sheet (see §3 flow) sti
 - Full-screen white canvas (respects safe areas)
 - **Top bar:** Close (X, left), title "Draw Signature", Done (right, disabled until any stroke)
 - **Bottom toolbar:**
-  - Thickness slider (2px – 12px, default 4px)
+  - Thickness slider (2px – 12px, default 4px). **Global thickness** — the slider acts as a canvas-wide signature-weight setting: every committed stroke re-renders at the current thickness on each slider change, and new strokes inherit the same width. There is no per-stroke thickness lock; the user can adjust weight at any point before pressing Done and the entire signature adopts the new value. This is a deliberate deviation from an earlier per-stroke-freeze proposal — the retroactive model is easier to reason about and matches the "one signature, one weight" mental model teachers actually expect.
   - Undo button
   - Redo button
   - Clear button (with confirmation dialog)
 - **Pen:** black (#1A1613 — theme ink color), pressure not required
 - **Canvas aspect:** 3:1 landscape stored aspect; render fits screen with letterboxing if needed
-- **Output:** Rasterized PNG-then-flatten-to-JPEG at 1500×500px, white background
+- **Output:** Rasterized PNG-then-flatten-to-JPEG at 1500×500px, white background. The rasterizer reads the current global thickness at the moment `Done` is pressed and renders every stroke at that width.
 
 ### 4.5 Edit Screen (Reusable — used post-capture AND from gallery)
 The single most important reusable component. Adobe-Scan-parity.
@@ -181,9 +181,9 @@ The single most important reusable component. Adobe-Scan-parity.
 1. **Top bar:** Back (with unsaved-changes confirm), title ("Edit Photo" / "Edit Signature"), Save (right)
 2. **Image viewport:** ~60% of screen height
    - Displays the source image with the current crop quad overlaid
-   - 4 draggable corner handles (16dp saffron circles with white ring)
-   - 4 draggable edge midpoint handles (smaller)
-   - Magnifier bubble appears above the finger during handle drag (fixes fat-finger occlusion — Adobe Scan pattern)
+   - 4 draggable corner handles only (16dp saffron circles with white ring). Edge midpoint handles are intentionally omitted — testing showed the 4-corner-only model matches user expectation for passport-photo crops and reduces accidental adjacent-handle drags on small displays.
+   - The whole crop box is draggable — a drag that starts inside the quad and outside any corner hit region translates all four corners uniformly, clamped to source bounds.
+   - Pinch-to-zoom on the Crop tab lets the user zoom into the source (1×–4×) to place handles precisely; zoom resets when leaving the Crop tab.
 3. **Tool tabs:** Row of 4 icon+label tabs — `Crop`, `Filter`, `Adjust`, `Rotate`
 4. **Active tool panel:** ~20% height
    - **Crop:** Reset to auto-detected quad button, aspect-lock toggle (free / 3:4 / 3:1)
@@ -397,16 +397,20 @@ The output must visually replicate the portal's `PhotoWithSign.png` sample so th
 - **Encoding:** JPEG through the same compression algorithm (§6). Chroma subsampling 4:2:0 (default), progressive off (better for small file sizes).
 - **Fallback if signature is missing at export time:** The export refuses and shows a dialog: "This student has no signature. Add signature or export photo only?" with two options.
 
-### 6.3 Filename scheme (in exported ZIP)
+### 6.3 Filename scheme (in exported ZIP or single share)
 
-| Export mode | Filename pattern |
-|---|---|
-| Combined | `{class}{serial:04d}.jpg` (e.g. `090001.jpg`) — matches portal's `FormNumber` field, ready for bulk upload |
-| Combined (name mode) | `{Name_Underscored}_{class}.jpg` (e.g. `Rahul_Kumar_09.jpg`) |
-| Photo only | `photo_{class}{serial:04d}.jpg` or `photo_{name}_{class}.jpg` |
-| Signature only | `signature_{class}{serial:04d}.jpg` or `signature_{name}_{class}.jpg` |
+The record's naming mode determines the stem; the export format determines the blob inside but NOT the filename. Every export — Combined, Photo-only, Signature-only, single-share, or bulk ZIP — uses the same rule per record:
 
-**Note:** For Combined + Serial mode, the filename is the raw form number (no `photo_` prefix). This is because the portal's bulk-upload page expects filenames to be the form number directly. Verified from the sample `FormNumber` value `0002` on the portal.
+| Naming mode | Filename pattern | Example |
+|---|---|---|
+| Serial | `{class:02d}{serial:04d}.jpeg` | `090001.jpeg` |
+| Name | `{Name_Underscored}_{class:02d}.jpeg` | `Rahul_Kumar_09.jpeg` |
+
+**Rationale:** The portal's bulk-upload page expects filenames to be the form number directly (verified from sample `FormNumber` value `0002` on the portal). We drop the `photo_` / `signature_` prefixes that earlier drafts of this spec called for — the format is metadata the user picks in the export sheet; it doesn't need to appear in the filename. Extension is `.jpeg` (not `.jpg`) for portal parity.
+
+**Serial format is always exactly 4 digits.** The Save screen's serial input rejects anything shorter or longer, so `serial:04d` in the pattern is a formatter, not a truncation.
+
+**ZIP bundling name (when multi-record):** `export_{yyyy-MM-dd}_{N}-records.zip` (e.g. `export_2025-01-30_34-records.zip`). Human-readable date + count so teachers can identify old exports in their portal upload history.
 
 ---
 
@@ -643,7 +647,7 @@ Explicitly out of scope so we don't scope-creep:
 - [ ] Duplicate dialog appears for class+serial and class+name matches
 - [ ] Gallery: sort, filter chips, long-press select, multi-select export all work
 - [ ] Detail screen: photo & signature tap → Edit screen with existing state loaded
-- [ ] Export ZIP: correct filenames (`photo_090001.jpg`, `signature_090001.jpg`), all files in window
+- [ ] Export ZIP: correct filenames per §6.3 (`090001.jpeg`-style stems, no prefix, `.jpeg` extension), all files in the 10–30 KB window, ZIP name is `export_{yyyy-MM-dd}_{N}-records.zip`
 - [ ] Combined export renders photo-top signature-bottom on white canvas
 - [ ] Draft resume works after app kill mid-flow
 - [ ] Rotation, low-light, and busy-background test forms all produce usable outputs

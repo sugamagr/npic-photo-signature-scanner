@@ -102,10 +102,14 @@ fun ExportSheet(
             effectiveCount = state.effective.size,
             canExport = state.canExport,
             onCancel = onCancel,
-            onExport = {
-                viewModel.beginExport { result ->
-                    onShare(result, state.format)
-                }
+            onSaveToGallery = {
+                viewModel.beginSaveToGallery { result -> onShare(result, state.format) }
+            },
+            onShare = {
+                viewModel.beginExport { result -> onShare(result, state.format) }
+            },
+            onSaveAndShare = {
+                viewModel.beginSaveAndShare { result -> onShare(result, state.format) }
             },
         )
     }
@@ -380,27 +384,50 @@ private fun ExportActionRow(
     effectiveCount: Int,
     canExport: Boolean,
     onCancel: () -> Unit,
-    onExport: () -> Unit,
+    onSaveToGallery: () -> Unit,
+    onShare: () -> Unit,
+    onSaveAndShare: () -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
     ) {
+        val primaryLabel = when {
+            effectiveCount <= 0 -> "Nothing to export"
+            effectiveCount == 1 -> "Save & Share"
+            else                -> "Save & Share $effectiveCount"
+        }
+        NpicButton(
+            label = primaryLabel,
+            onClick = onSaveAndShare,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = canExport,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NpicButton(
+                label = "Save to Gallery",
+                onClick = onSaveToGallery,
+                style = NpicButtonStyle.Ghost,
+                modifier = Modifier.weight(1f),
+                enabled = canExport,
+            )
+            NpicButton(
+                label = "Share",
+                onClick = onShare,
+                style = NpicButtonStyle.Ghost,
+                modifier = Modifier.weight(1f),
+                enabled = canExport,
+            )
+        }
         NpicButton(
             label = "Cancel",
             onClick = onCancel,
             style = NpicButtonStyle.Ghost,
-        )
-        NpicButton(
-            label = when {
-                effectiveCount <= 0 -> "Nothing to export"
-                effectiveCount == 1 -> "Export"
-                else                -> "Export $effectiveCount items"
-            },
-            onClick = onExport,
-            modifier = Modifier.weight(1f),
-            enabled = canExport,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

@@ -10,6 +10,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,11 +34,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -194,10 +200,25 @@ private fun ImageViewport(
     onCropChange: (com.npic.photoandsignscanner.domain.model.CropQuad) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Viewport shrinks when a non-Crop tool opens per DESIGN §7.3.0.a — that shrink is
-    // driven entirely by the parent Column: this Box just fills whatever cell it gets,
-    // so the transition is smooth without a nested animateContentSize.
     val chrome = LocalNpicChrome.current
+
+    // m1679 pinch-zoom on Crop tab. Zoom + pan are hoisted at viewport scope so both the
+    // Image and the overlay share the same graphicsLayer transform — that keeps corner
+    // handles pixel-locked to source pixels regardless of zoom level. Reset when leaving
+    // Crop so re-entering the tab starts at 1× again (matches Adobe Scan behaviour).
+    var zoom by remember { mutableStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(state.activeTool) {
+        if (state.activeTool != EditTool.Crop) {
+            zoom = 1f
+            pan = Offset.Zero
+        }
+    }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        zoom = (zoom * zoomChange).coerceIn(1f, 4f)
+        pan += panChange
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -214,27 +235,48 @@ private fun ImageViewport(
         } else {
             state.livePreviewBitmap ?: state.sourceBitmap
         }
-        if (bitmap != null) {
-            val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
-            Image(
-                bitmap = imageBitmap,
-                contentDescription = if (state.edit.mode == CameraMode.Photo) {
-                    "Captured photo"
-                } else {
-                    "Captured signature"
-                },
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        if (state.activeTool == EditTool.Crop) {
-            NpicCropOverlay(
-                quad = state.edit.crop,
-                onQuadChange = onCropChange,
-                onLayoutSize = { /* layer 7c will feed this back into image-space math */ },
-                modifier = Modifier.fillMaxSize(),
-                aspectLock = state.edit.aspectLock,
-            )
+        // Zoom container: single graphicsLayer over both children guarantees the quad
+        // stays pixel-locked while the source pans/zooms underneath. transformable is
+        // only enabled on the Crop tab and reacts to 2+ pointers (Compose's default),
+        // so single-finger corner/box drags on the overlay still route to
+        // detectDragGestures inside NpicCropOverlay.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = zoom
+                    scaleY = zoom
+                    translationX = pan.x
+                    translationY = pan.y
+                }
+                .transformable(
+                    state = transformState,
+                    enabled = state.activeTool == EditTool.Crop,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (bitmap != null) {
+                val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
+                Image(
+                    bitmap = imageBitmap,
+                    contentDescription = if (state.edit.mode == CameraMode.Photo) {
+                        "Captured photo"
+                    } else {
+                        "Captured signature"
+                    },
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            if (state.activeTool == EditTool.Crop) {
+                NpicCropOverlay(
+                    quad = state.edit.crop,
+                    onQuadChange = onCropChange,
+                    onLayoutSize = { /* layer 7c will feed this back into image-space math */ },
+                    modifier = Modifier.fillMaxSize(),
+                    aspectLock = state.edit.aspectLock,
+                )
+            }
         }
         AnimatedVisibility(
             visible = state.showInkFallbackBanner,

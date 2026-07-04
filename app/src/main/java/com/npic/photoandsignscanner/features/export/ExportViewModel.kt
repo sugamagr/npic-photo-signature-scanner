@@ -2,10 +2,12 @@ package com.npic.photoandsignscanner.features.export
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.npic.photoandsignscanner.data.export.MediaStoreExporter
 import com.npic.photoandsignscanner.data.export.ZipExporter
 import com.npic.photoandsignscanner.data.imaging.CombinedRenderer
 import com.npic.photoandsignscanner.data.imaging.JpegCompressor
@@ -61,6 +63,7 @@ class ExportViewModel(
     private val jpegCompressor: JpegCompressor,
     private val combinedRenderer: CombinedRenderer,
     private val zipExporter: ZipExporter,
+    private val mediaStoreExporter: MediaStoreExporter,
     private val cacheDir: File,
 ) : ViewModel() {
 
@@ -109,10 +112,83 @@ class ExportViewModel(
         }
     }
 
+    /**
+     * Save the rendered export payload(s) to the device Gallery via MediaStore. Runs the
+     * SAME pipeline as [beginExport] (render → compress → filename), then writes each
+     * payload as an individual JPEG under `Pictures/NPIC/`. Even when [beginExport] would
+     * ZIP a multi-record set, this method skips ZIP because Gallery apps can't index ZIP
+     * contents — users want to see the individual photos in their library.
+     *
+     * Shares the [ExportUiState.exporting] guard with [beginExport] so double-tap across
+     * either action can't fire the pipeline twice.
+     */
+    fun beginSaveToGallery(onReady: (ExportResult) -> Unit) {
+        if (_state.value.exporting) return
+        val snapshot = _state.value
+        val effective = snapshot.effective
+        if (effective.isEmpty()) return
+        _state.value = snapshot.copy(exporting = true, underMinCount = 0)
+
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { saveToGallery(effective, snapshot.format) }
+                    .onFailure { Log.e(TAG, "saveToGallery failed: ${it.message}", it) }
+                    .getOrNull()
+            } ?: ExportResult.Failed
+            _state.value = _state.value.copy(
+                exporting = false,
+                underMinCount = when (result) {
+                    is ExportResult.Ready -> result.underMinCount
+                    is ExportResult.Saved -> result.underMinCount
+                    else -> 0
+                },
+            )
+            onReady(result)
+        }
+    }
+
+    /**
+     * Run the pipeline once, save every payload to Gallery AND write the share bundle
+     * (single JPEG or ZIP). Emits an [ExportResult.SavedAndReady] carrying both outcomes
+     * so the caller can raise the "Saved N to Gallery" toast and immediately fire the
+     * share sheet with the same bytes — compression runs exactly once.
+     */
+    fun beginSaveAndShare(onReady: (ExportResult) -> Unit) {
+        if (_state.value.exporting) return
+        val snapshot = _state.value
+        val effective = snapshot.effective
+        if (effective.isEmpty()) return
+        _state.value = snapshot.copy(exporting = true, underMinCount = 0)
+
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { saveAndShare(effective, snapshot.format) }
+                    .onFailure { Log.e(TAG, "saveAndShare failed: ${it.message}", it) }
+                    .getOrNull()
+            } ?: ExportResult.Failed
+            _state.value = _state.value.copy(
+                exporting = false,
+                underMinCount = when (result) {
+                    is ExportResult.Ready -> result.underMinCount
+                    is ExportResult.Saved -> result.underMinCount
+                    is ExportResult.SavedAndReady -> result.share.underMinCount
+                    else -> 0
+                },
+            )
+            onReady(result)
+        }
+    }
+
     // ------------------------------------------------------------------ pipeline
 
-    private suspend fun produceBundle(records: List<StudentRecord>, format: ExportFormat): ExportResult {
-        val outputs = records.mapNotNull { record ->
+    /**
+     * Shared render pipeline for every export action. Returns per-record payloads
+     * (filename + compressed bytes + under-min flag). Called by [produceBundle],
+     * [saveToGallery], and [saveAndShare] so compression runs exactly once per
+     * user-initiated export regardless of destination fan-out.
+     */
+    private fun renderPayloads(records: List<StudentRecord>, format: ExportFormat): List<Payload> =
+        records.mapNotNull { record ->
             renderRecord(record, format)?.let { (bytes, underMin) ->
                 Payload(
                     filename = GenerateFileName.forExport(record, format, inferNamingKind(record)),
@@ -121,8 +197,44 @@ class ExportViewModel(
                 )
             }
         }
-        if (outputs.isEmpty()) return ExportResult.Failed
 
+    private suspend fun produceBundle(records: List<StudentRecord>, format: ExportFormat): ExportResult {
+        val outputs = renderPayloads(records, format)
+        if (outputs.isEmpty()) return ExportResult.Failed
+        return bundleForShare(outputs)
+    }
+
+    private suspend fun saveToGallery(records: List<StudentRecord>, format: ExportFormat): ExportResult {
+        val outputs = renderPayloads(records, format)
+        if (outputs.isEmpty()) return ExportResult.Failed
+        val saved = writeAllToGallery(outputs)
+        if (saved.isEmpty()) return ExportResult.Failed
+        return ExportResult.Saved(saved, outputs.count { it.underMin })
+    }
+
+    private suspend fun saveAndShare(records: List<StudentRecord>, format: ExportFormat): ExportResult {
+        val outputs = renderPayloads(records, format)
+        if (outputs.isEmpty()) return ExportResult.Failed
+        val saved = writeAllToGallery(outputs)
+        val underMinCount = outputs.count { it.underMin }
+        val share = bundleForShare(outputs)
+        return if (share is ExportResult.Ready && saved.isNotEmpty()) {
+            ExportResult.SavedAndReady(
+                gallery = ExportResult.Saved(saved, underMinCount),
+                share = share,
+            )
+        } else if (share is ExportResult.Ready) {
+            // Gallery write failed for every record but the share bundle exists — degrade
+            // gracefully to share-only rather than dropping the whole action.
+            share
+        } else if (saved.isNotEmpty()) {
+            ExportResult.Saved(saved, underMinCount)
+        } else {
+            ExportResult.Failed
+        }
+    }
+
+    private suspend fun bundleForShare(outputs: List<Payload>): ExportResult {
         val underMinCount = outputs.count { it.underMin }
         return when {
             outputs.size == 1 -> {
@@ -139,6 +251,11 @@ class ExportViewModel(
             }
         }
     }
+
+    private suspend fun writeAllToGallery(outputs: List<Payload>): List<Uri> =
+        outputs.mapNotNull { payload ->
+            mediaStoreExporter.saveJpeg(payload.filename, payload.bytes)
+        }
 
     private fun renderRecord(record: StudentRecord, format: ExportFormat): Pair<ByteArray, Boolean>? {
         val photo = if (format.requiresPhoto) decode(record.photoPath) else null
@@ -229,6 +346,7 @@ class ExportViewModel(
         private val jpegCompressor: JpegCompressor,
         private val combinedRenderer: CombinedRenderer,
         private val zipExporter: ZipExporter,
+        private val mediaStoreExporter: MediaStoreExporter,
         private val cacheDir: File,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -240,6 +358,7 @@ class ExportViewModel(
                 jpegCompressor,
                 combinedRenderer,
                 zipExporter,
+                mediaStoreExporter,
                 cacheDir,
             ) as T
     }
@@ -258,9 +377,16 @@ class ExportViewModel(
 }
 
 /**
- * Sealed outcome of [ExportViewModel.beginExport]. The caller pattern-matches to fire the
- * correct share intent (single JPEG vs. ZIP bundle) and to raise the PRD §6.1 under-min
- * toast.
+ * Sealed outcome of the three export actions on [ExportViewModel]. The caller
+ * pattern-matches to fire the correct share intent, raise the "Saved N to Gallery" toast,
+ * and surface the PRD §6.1 under-min warning.
+ *
+ * Variants:
+ * - [Ready.Single] / [Ready.Zip] — share-only path (beginExport)
+ * - [Saved] — Gallery-only path (beginSaveToGallery)
+ * - [SavedAndReady] — both (beginSaveAndShare); nests the two sinks so callers can
+ *   independently raise the save toast and fire the share sheet
+ * - [Failed] — terminal error
  */
 sealed interface ExportResult {
     sealed interface Ready : ExportResult {
@@ -272,6 +398,19 @@ sealed interface ExportResult {
         /** Multi-record export: ZIP at [path]. Shared as `application/zip`. */
         data class Zip(val path: String, override val underMinCount: Int, val entryCount: Int) : Ready
     }
+
+    /**
+     * Save-to-Gallery outcome. [galleryUris] holds the content:// URIs of the JPEGs
+     * written to `Pictures/NPIC/` via MediaStore. Caller raises "Saved N to Gallery"
+     * plus the under-min toast if [underMinCount] > 0.
+     */
+    data class Saved(val galleryUris: List<android.net.Uri>, val underMinCount: Int) : ExportResult
+
+    /**
+     * Save-and-share outcome. Both sinks succeeded; caller raises the save toast
+     * AND fires the share sheet with [share].
+     */
+    data class SavedAndReady(val gallery: Saved, val share: Ready) : ExportResult
 
     /** Terminal failure — nothing to share. Caller shows an error toast. */
     data object Failed : ExportResult

@@ -104,6 +104,7 @@ class InMemoryStudentRepository(
             displayName   = input.displayName,
             photoPath     = photoPath ?: "",
             signaturePath = signaturePath,
+            namingKind    = input.naming.kind,
             createdAt     = createdAt,
             updatedAt     = now,
         )

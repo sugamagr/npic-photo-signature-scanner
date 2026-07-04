@@ -33,6 +33,22 @@ data class CropQuad(
         return copy(tl = c(tl), tr = c(tr), br = c(br), bl = c(bl))
     }
 
+    /**
+     * Uniformly scale every corner by [factor]. Used to translate a crop selection from
+     * one coordinate space to another when the same [EditState] is rendered against a
+     * downsampled preview bitmap (`Dispatchers.Default` live preview at 384px long-side)
+     * as well as the full-resolution source at commit time. Without this, an OpenCV
+     * warpPerspective seeded with source-space quad coordinates on a preview-sized bitmap
+     * samples entirely out-of-bounds and fills the output with the border constant — the
+     * flat gray blob observed in m1653/m1780.
+     */
+    fun scaledBy(factor: Float): CropQuad = copy(
+        tl = Offset(tl.x * factor, tl.y * factor),
+        tr = Offset(tr.x * factor, tr.y * factor),
+        br = Offset(br.x * factor, br.y * factor),
+        bl = Offset(bl.x * factor, bl.y * factor),
+    )
+
     companion object {
         fun full(width: Float, height: Float): CropQuad = CropQuad(
             tl = Offset(0f, 0f),

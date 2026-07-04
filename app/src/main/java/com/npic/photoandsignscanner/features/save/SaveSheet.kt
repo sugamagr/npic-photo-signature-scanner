@@ -38,6 +38,7 @@ import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
+import com.npic.photoandsignscanner.core.theme.rememberNpicHaptics
 import com.npic.photoandsignscanner.core.ui.NpicBottomSheet
 import com.npic.photoandsignscanner.core.ui.NpicButton
 import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
@@ -64,6 +65,7 @@ fun SaveSheet(
     onAddSignature: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val haptics = rememberNpicHaptics()
 
     // Fire the completion callback exactly once when the ViewModel signals success. The
     // destination is responsible for popping the back stack + navigating to the Camera
@@ -71,6 +73,7 @@ fun SaveSheet(
     // clears the id so process-restore / config-change re-collects don't double-navigate.
     androidx.compose.runtime.LaunchedEffect(state.completedRecordId) {
         state.completedRecordId?.let {
+            haptics.performLongPress()
             onSaved(it)
             viewModel.consumeCompleted()
         }
@@ -142,6 +145,7 @@ fun SaveSheet(
                 label = "Serial number",
                 placeholder = "e.g. 0001",
                 helper = state.filenamePreview?.let { "Will be saved as: $it" },
+                errorText = state.serialError,
                 keyboardType = KeyboardType.Number,
             )
             NamingMode.Kind.Name -> NpicTextField(

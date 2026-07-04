@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Draw
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
@@ -106,8 +107,9 @@ fun GalleryScreen(
     onRecordClick: (String) -> Unit,
     onExportSelection: (Set<String>) -> Unit,
     onDeleteSelection: (Set<String>) -> Unit,
+    onRequestDeleteAll: () -> Unit = {},
     onSearchClick: () -> Unit = {},
-    onOverflowClick: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     // Oracle m-8c1 consistency: lifecycle-aware collection stops StateFlow work when the
     // Gallery is off-screen (Camera/Edit/Save/Detail cover it). Matches Detail/Edit/Save.
@@ -123,8 +125,9 @@ fun GalleryScreen(
         onSelectAll         = viewModel::selectAll,
         onExportSelection   = onExportSelection,
         onDeleteSelection   = onDeleteSelection,
+        onRequestDeleteAll  = onRequestDeleteAll,
         onSearchClick       = onSearchClick,
-        onOverflowClick     = onOverflowClick,
+        onOpenSettings      = onOpenSettings,
     )
 }
 
@@ -140,8 +143,9 @@ private fun GalleryContent(
     onSelectAll: () -> Unit,
     onExportSelection: (Set<String>) -> Unit,
     onDeleteSelection: (Set<String>) -> Unit,
+    onRequestDeleteAll: () -> Unit,
     onSearchClick: () -> Unit,
-    onOverflowClick: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(NpicColors.Ivory)) {
         Column(Modifier.fillMaxSize()) {
@@ -154,10 +158,12 @@ private fun GalleryContent(
                 )
             } else {
                 GalleryTopBar(
-                    sortMode        = state.sortMode,
-                    onSortChange    = onSortModeChange,
-                    onSearchClick   = onSearchClick,
-                    onOverflowClick = onOverflowClick,
+                    sortMode           = state.sortMode,
+                    onSortChange       = onSortModeChange,
+                    onSearchClick      = onSearchClick,
+                    onSelectAll        = onSelectAll,
+                    onRequestDeleteAll = onRequestDeleteAll,
+                    onOpenSettings     = onOpenSettings,
                 )
             }
 
@@ -229,23 +235,35 @@ private fun GalleryTopBar(
     sortMode: SortMode,
     onSortChange: (SortMode) -> Unit,
     onSearchClick: () -> Unit,
-    onOverflowClick: () -> Unit,
+    onSelectAll: () -> Unit,
+    onRequestDeleteAll: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var sortMenuOpen by remember { mutableStateOf(false) }
+    var overflowMenuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(96.dp)
-            .padding(horizontal = NpicSpacing.md),
+            .padding(horizontal = NpicSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
+        // Hamburger anchor for the Settings drawer (user m1551 S3). Placed at the
+        // leading edge as the industry-standard drawer affordance — everything else
+        // (Search, Sort, Overflow) stays trailing.
+        NpicIconButton(
+            icon = Icons.Outlined.Menu,
+            contentDescription = "Open settings",
+            onClick = onOpenSettings,
+        )
         Text(
             text  = "Gallery",
             color = NpicColors.Ink,
             style = MaterialTheme.typography.displayMedium,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = NpicSpacing.xxs),
         )
         Row(
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
@@ -279,11 +297,35 @@ private fun GalleryTopBar(
                     }
                 }
             }
-            NpicIconButton(
-                icon = Icons.Outlined.MoreVert,
-                contentDescription = "More options",
-                onClick = onOverflowClick,
-            )
+            Box {
+                NpicIconButton(
+                    icon = Icons.Outlined.MoreVert,
+                    contentDescription = "More options",
+                    onClick = { overflowMenuOpen = true },
+                )
+                // Anchored overflow (user m1551 S3 restructure): Settings moved out to the
+                // leading hamburger; this menu now carries only the two bulk-record actions.
+                // Mirrors the Sort menu pattern above so tap targets and animation match.
+                DropdownMenu(
+                    expanded = overflowMenuOpen,
+                    onDismissRequest = { overflowMenuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Select all") },
+                        onClick = {
+                            onSelectAll()
+                            overflowMenuOpen = false
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete all", color = NpicColors.Terracotta) },
+                        onClick = {
+                            onRequestDeleteAll()
+                            overflowMenuOpen = false
+                        },
+                    )
+                }
+            }
         }
     }
 }

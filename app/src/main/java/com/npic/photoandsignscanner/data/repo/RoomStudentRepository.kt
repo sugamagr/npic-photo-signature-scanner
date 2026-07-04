@@ -70,6 +70,7 @@ class RoomStudentRepository(
             displayName   = input.displayName,
             photoPath     = draft.photoPath.orEmpty(),
             signaturePath = draft.signaturePath,
+            namingKind    = input.naming.kind,
             createdAt     = draft.createdAt,
             updatedAt     = now,
         )
@@ -116,6 +117,7 @@ class RoomStudentRepository(
             displayName   = input.displayName,
             photoPath     = draft.photoPath.orEmpty(),
             signaturePath = draft.signaturePath,
+            namingKind    = input.naming.kind,
             createdAt     = draft.createdAt,
             updatedAt     = now,
         )

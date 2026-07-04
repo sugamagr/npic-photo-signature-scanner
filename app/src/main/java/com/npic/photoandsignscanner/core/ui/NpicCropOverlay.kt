@@ -55,6 +55,7 @@ fun NpicCropOverlay(
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     var dragging by remember { mutableStateOf(false) }
     var activeHandle by remember { mutableStateOf<CropHandle?>(null) }
+    var dragMode by remember { mutableStateOf(DragMode.None) }
 
     val currentQuad = rememberUpdatedState(quad)
     val currentAspectLock = rememberUpdatedState(aspectLock)
@@ -64,29 +65,47 @@ fun NpicCropOverlay(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(Unit) {
+                val cornerHitThresholdPx = 44.dp.toPx()
                 detectDragGestures(
                     onDragStart = { pos ->
-                        activeHandle = currentQuad.value.nearestCorner(pos)
-                        dragging = true
+                        val q = currentQuad.value
+                        val nearest = q.nearestCorner(pos)
+                        val nearestDist = (q.cornerFor(nearest) - pos).getDistance()
+                        dragMode = when {
+                            nearestDist <= cornerHitThresholdPx -> DragMode.Corner.also {
+                                activeHandle = nearest
+                            }
+                            q.contains(pos) -> DragMode.Box.also { activeHandle = null }
+                            else -> DragMode.None.also { activeHandle = null }
+                        }
+                        dragging = dragMode != DragMode.None
                     },
                     onDragEnd = {
                         dragging = false
                         activeHandle = null
+                        dragMode = DragMode.None
                     },
                     onDragCancel = {
                         dragging = false
                         activeHandle = null
+                        dragMode = DragMode.None
                     },
                     onDrag = { change, drag ->
+                        if (dragMode == DragMode.None) return@detectDragGestures
                         change.consume()
                         val q = currentQuad.value
-                        val handle = activeHandle ?: q.nearestCorner(change.position)
-                        val moved = q.moveCorner(
-                            handle,
-                            drag,
-                            currentAspectLock.value,
-                            boxSize,
-                        )
+                        val moved = when (dragMode) {
+                            DragMode.Corner -> {
+                                val handle = activeHandle ?: q.nearestCorner(change.position)
+                                q.moveCorner(handle, drag, currentAspectLock.value, boxSize)
+                            }
+                            DragMode.Box -> q.translated(
+                                drag,
+                                size.width.toFloat(),
+                                size.height.toFloat(),
+                            )
+                            DragMode.None -> q
+                        }
                         currentOnQuadChange.value(
                             moved.clampedTo(size.width.toFloat(), size.height.toFloat())
                         )
@@ -149,6 +168,84 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHandle(
  * exists solely to route pointer events on the overlay Canvas.
  */
 enum class CropHandle { TL, TR, BR, BL }
+
+/**
+ * Classifies what an in-flight drag is manipulating. Set in `onDragStart` and held for the
+ * lifetime of the drag so `onDrag` can route each pointer event to the correct math path
+ * without recomputing hit tests every frame.
+ *
+ * Per user m1679: dragging INSIDE the quad (but outside the 44dp corner hit region)
+ * translates the whole box; dragging near a corner resizes it. `None` means the drag started
+ * outside the quad — swallowed rather than routed to some fallback because pointer input on
+ * the surrounding overlay canvas should be inert.
+ */
+enum class DragMode { Corner, Box, None }
+
+/**
+ * Fast projection from a corner enum to the [Offset] it names. Kept as an extension so the
+ * routing code in the overlay stays declarative (`q.cornerFor(handle)`) without a temporary
+ * when-block at each callsite.
+ */
+fun CropQuad.cornerFor(handle: CropHandle): Offset = when (handle) {
+    CropHandle.TL -> tl
+    CropHandle.TR -> tr
+    CropHandle.BR -> br
+    CropHandle.BL -> bl
+}
+
+/**
+ * Convex point-in-quad test using the cross-product sign method.
+ *
+ * For each edge `(v_i → v_{i+1})` we compute `cross((v_{i+1} - v_i), (p - v_i))`. A point is
+ * strictly inside a convex polygon iff all four cross products carry the same sign; a point
+ * on an edge produces a zero cross. Because [CropQuad] is convex by construction (both the
+ * initial full-image quad and every `moveCorner` result preserve convexity), this test is
+ * sufficient and avoids the winding-number counter-loop overhead.
+ *
+ * Boundary points (cross == 0) count as inside — a user who taps exactly on an edge should
+ * still trigger box-drag mode, not fall through to the outer overlay canvas.
+ */
+fun CropQuad.contains(p: Offset): Boolean {
+    fun sideSign(a: Offset, b: Offset, q: Offset): Float {
+        // cross of (b - a) × (q - a); positive on left of a→b, negative on right, 0 on the line.
+        return (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x)
+    }
+    val s1 = sideSign(tl, tr, p)
+    val s2 = sideSign(tr, br, p)
+    val s3 = sideSign(br, bl, p)
+    val s4 = sideSign(bl, tl, p)
+    val allNonNeg = s1 >= 0f && s2 >= 0f && s3 >= 0f && s4 >= 0f
+    val allNonPos = s1 <= 0f && s2 <= 0f && s3 <= 0f && s4 <= 0f
+    return allNonNeg || allNonPos
+}
+
+/**
+ * Translate every corner of the quad by [delta], but clamp the translation so the resulting
+ * quad's axis-aligned bounding box stays inside `[0, boxW] × [0, boxH]`.
+ *
+ * The AABB approach (not per-corner clamping) is deliberate: per-corner clamping would let
+ * one corner stop while others move, deforming the quad. AABB clamping preserves shape — the
+ * quad slides as a rigid body until its bounding box kisses a wall, then stops.
+ *
+ * Per m1679: user expects the whole crop box to move as one; deforming it on a wall hit
+ * would feel like a bug even if the corners stay inside.
+ */
+fun CropQuad.translated(delta: Offset, boxW: Float, boxH: Float): CropQuad {
+    val minX = minOf(tl.x, tr.x, br.x, bl.x)
+    val maxX = maxOf(tl.x, tr.x, br.x, bl.x)
+    val minY = minOf(tl.y, tr.y, br.y, bl.y)
+    val maxY = maxOf(tl.y, tr.y, br.y, bl.y)
+    // Clamp translation so [minX+dx, maxX+dx] stays in [0, boxW] and same for Y.
+    val dx = delta.x.coerceIn(-minX, boxW - maxX)
+    val dy = delta.y.coerceIn(-minY, boxH - maxY)
+    val d = Offset(dx, dy)
+    return CropQuad(
+        tl = tl + d,
+        tr = tr + d,
+        br = br + d,
+        bl = bl + d,
+    )
+}
 
 /**
  * Nearest-corner Voronoi routing for a pointer position (DESIGN §6.15). Extension on the

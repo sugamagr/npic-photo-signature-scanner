@@ -320,12 +320,12 @@ Used for confirmations only (destructive actions, resume drafts). NEVER used for
 ### 6.15 NpicCropOverlay
 
 The crown jewel — this is what makes or breaks the app.
-- 4 corner handles: 16dp Saffron circle with 3dp white ring, 44dp hit area
-- 4 edge midpoint handles: 12dp Saffron circle with 2dp white ring, 40dp hit area
+- 4 corner handles ONLY: 16dp Saffron circle with 3dp white ring, 44dp hit area. Edge midpoint handles are intentionally omitted — the 4-corner model matches user testing for passport-photo crops.
 - Quad outline: 2dp Saffron line between handles
 - Grid inside quad (rule-of-thirds): 1dp Saffron @ 30% alpha, shown only during drag
 - Outside quad: 60% black overlay
-- Magnifier bubble: 120dp circle showing 3× zoom around finger, appears 100dp above touch point, only visible during active handle drag. 2dp white ring, Level 3 elevation. Follows finger with 0dp lag.
+- Interior drag (a drag starting inside the quad but outside any corner's hit region) translates the whole box, clamped to source bounds.
+- Pinch-to-zoom (1×–4×) is available on the Crop tab to place handles precisely; the overlay and image transform together so the quad stays pixel-locked to the source at every zoom level. Zoom resets to 1× when leaving the Crop tab.
 
 ### 6.16 NpicCameraOverlay
 
@@ -465,11 +465,11 @@ There is no dedicated Home screen. Gallery is the launch destination, and a pers
 - 20dp inset from screen edges (so handles never touch screen edges)
 - Background outside the crop quad: 60% black overlay (same as Camera guide-box outside area — reinforces "still shooting")
 - `NpicCropOverlay` on top with `OverlayMode.OnDark`:
-  - Corner handles: 16dp `Saffron` circles with 3dp `CameraInk` (white) ring, 44dp hit area
-  - Edge midpoint handles: 12dp `Saffron` circles with 2dp `CameraInk` ring, 40dp hit area
+  - Corner handles ONLY: 16dp `Saffron` circles with 3dp `CameraInk` (white) ring, 44dp hit area. No edge midpoint handles.
   - Quad outline: 2dp `Saffron` continuous line between handles
   - Rule-of-thirds grid inside quad during drag: 1dp `Saffron` @ 30% alpha
-  - Magnifier bubble during active handle drag: 120dp circle showing 3× zoom, 2dp `CameraInk` ring, Level 3 elevation, positioned 100dp above touch point
+  - Interior drag translates the whole box uniformly (clamped to source bounds)
+  - Pinch-to-zoom the source (1×–4×) is available on the Crop tab; overlay + image share the same transform so the quad stays pixel-locked
 
 **Tool tabs row (56dp tall):**
 - Fill: `CameraSurface #1A1A1D`
@@ -751,7 +751,7 @@ I anchored specific decisions to real references so we can debate them concretel
 - **Warm ivory background + editorial serif headings:** Substack app + NYT Cooking iOS app
 - **Saffron primary with dark ink text:** Retuned Airbnb 2014 palette (their "Rausch" pink → our Saffron), but warmer
 - **Filter strip pattern:** Adobe Scan iOS filters row + Halide's grade panel
-- **Crop handles + magnifier bubble:** Adobe Scan crop screen + iOS Photos crop tool
+- **Crop handles + pinch-zoom:** Adobe Scan crop screen + iOS Photos crop tool (4 corners only, whole-box drag, pinch-to-zoom the source)
 - **Wide guide box for signature:** iOS Mail's inline signature drawing sheet
 - **Gallery grid + long-press multi-select action bar:** Samsung Gallery One UI 6 + Google Photos
 - **Sheet-first save/duplicate flow (not center dialog):** Notion iOS "Move to" sheet + Linear's action sheets

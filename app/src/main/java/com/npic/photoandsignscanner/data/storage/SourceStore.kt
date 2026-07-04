@@ -73,6 +73,19 @@ class SourceStore(private val filesDir: File) {
         runCatching { signatureFile(studentId).delete() }
     }
 
+    /**
+     * User m1551 S3 destructive Clear-all-data: wipe every file under `sources/`.
+     * Idempotent — a missing directory is treated as already-clear. Errors are logged
+     * per-file so a single stubborn asset doesn't abort the sweep.
+     */
+    suspend fun deleteAll(): Unit = withContext(Dispatchers.IO) {
+        val files = sourcesDir.listFiles() ?: return@withContext
+        for (file in files) {
+            runCatching { file.delete() }
+                .onFailure { Log.w(TAG, "deleteAll skipped ${file.name}: ${it.message}") }
+        }
+    }
+
     // ------------------------------------------------------------------ internals
 
     private suspend fun writeSized(source: Bitmap, target: File, longSide: Int): String? =

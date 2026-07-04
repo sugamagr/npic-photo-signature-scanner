@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * Root Room database (PRD §8.1). Version 1 — schema JSON exports to `app/schemas/` so any
- * future migration has a diff baseline. Three tables:
+ * Root Room database (PRD §8.1). Schema JSON exports to `app/schemas/` so every migration
+ * has a diff baseline. Three tables:
  *
  *  * [StudentEntity]      — persisted student records surfaced by Gallery/Detail/Export
  *  * [ClassCounterEntity] — monotonic per-class serial counter (nextSerial atomicity)
@@ -31,22 +33,84 @@ abstract class NpicDatabase : RoomDatabase() {
         private const val DB_NAME = "npic.db"
 
         /**
-         * v2 schema adds:
-         *   - `students.nameKey` + composite (classNum, nameKey) index (Oracle O5-B4 / PRD §8.1)
-         *   - `drafts.rawPath` / `rawMode` / `capturedAt` / `guideBox{Left,Top,Right,Bottom}`
-         *     to persist CameraCapture across process kill (Oracle O1-7)
+         * Explicit v1 → v2 migration. Adds:
+         *   - `students.nameKey` (TEXT NOT NULL, backfilled from displayName via the same
+         *     TRIM + collapse-whitespace + LOWER pipeline that Kotlin's [normalizeNameKey]
+         *     uses; ASCII-equivalent so the SQLite pass is byte-for-byte identical for
+         *     English names)
+         *   - composite index (classNum, nameKey) — replaces the previous (displayName)
+         *     scan index
+         *   - `drafts.rawPath`, `rawMode`, `capturedAt`, `guideBoxLeft/Top/Right/Bottom`
+         *     (all NULLABLE) — persists [CameraCapture] across process kill for the
+         *     resume-prompt (Oracle O1-7)
          *
-         * v1 → v2 uses destructive migration because the app has not shipped yet (DEFERRED-
-         * DECISIONS B4 freezes migration flow at the v1.0 tag). Dev installs lose any test
-         * records — acceptable per user directive m1114. Once v1.0 ships this must be
-         * replaced with an explicit Migration(1, 2) that ADD COLUMN + backfills nameKey.
+         * DEFERRED-DECISIONS C2 lands this migration ahead of any real user data so v1.0
+         * ships with a working migration baseline (per user directive m1537 B4: "if easier
+         * and will not take muh time do not otherwise in v2"). This one is ~30 min of work
+         * with a clean SQL diff so it lives in v1.0.
          */
+        internal val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Students: add nameKey (populated deterministically to match
+                // normalizeNameKey), then swap displayName index for the composite lookup.
+                db.execSQL("ALTER TABLE students ADD COLUMN nameKey TEXT NOT NULL DEFAULT ''")
+                // Backfill: LOWER(TRIM(displayName)) collapses whitespace to match Kotlin's
+                // normalizeNameKey. SQLite has no WHILE loop, so we approximate `\s+` → ` `
+                // via two stacked REPLACE chains. Inner chain collapses runs of 2..8 into
+                // one space; outer chain re-collapses whatever the inner pass produced.
+                // Two passes handle any input up to ~64 consecutive spaces — well beyond
+                // any real name. Oracle qc-round-8 flagged the single-pass version as
+                // leaving 2 spaces on 9+ space runs.
+                db.execSQL(
+                    """
+                    UPDATE students SET nameKey = LOWER(TRIM(
+                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                                displayName,
+                                '        ', ' '),
+                                '       ', ' '),
+                                '      ', ' '),
+                                '     ', ' '),
+                                '    ', ' '),
+                                '   ', ' '),
+                                '  ', ' '),
+                                '  ', ' '),
+                            '        ', ' '),
+                            '       ', ' '),
+                            '      ', ' '),
+                            '     ', ' '),
+                            '    ', ' '),
+                            '   ', ' '),
+                            '  ', ' '),
+                            '  ', ' ')
+                    ))
+                    """.trimIndent()
+                )
+                db.execSQL("DROP INDEX IF EXISTS `index_students_displayName`")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_students_classNum_nameKey` " +
+                        "ON students (classNum, nameKey)"
+                )
+
+                // Drafts: add the seven capture-rehydration columns. All nullable so
+                // existing v1 rows (which predate the columns) sit at NULL — matching the
+                // "no capture yet" branch of DraftEntity.toCameraCaptureOrNull().
+                db.execSQL("ALTER TABLE drafts ADD COLUMN rawPath TEXT")
+                db.execSQL("ALTER TABLE drafts ADD COLUMN rawMode TEXT")
+                db.execSQL("ALTER TABLE drafts ADD COLUMN capturedAt INTEGER")
+                db.execSQL("ALTER TABLE drafts ADD COLUMN guideBoxLeft INTEGER")
+                db.execSQL("ALTER TABLE drafts ADD COLUMN guideBoxTop INTEGER")
+                db.execSQL("ALTER TABLE drafts ADD COLUMN guideBoxRight INTEGER")
+                db.execSQL("ALTER TABLE drafts ADD COLUMN guideBoxBottom INTEGER")
+            }
+        }
+
         fun create(context: Context): NpicDatabase = Room.databaseBuilder(
             context = context.applicationContext,
             klass = NpicDatabase::class.java,
             name = DB_NAME,
         )
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_1_2)
             .build()
     }
 }

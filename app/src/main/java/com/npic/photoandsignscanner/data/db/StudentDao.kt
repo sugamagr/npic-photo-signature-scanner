@@ -45,6 +45,23 @@ interface StudentDao {
     suspend fun delete(id: String)
 
     /**
+     * User m1551 S3 destructive Clear-all-data affordance. Wipes both tables in a
+     * single transaction so observers can't glimpse a half-cleared state where
+     * students are gone but counters still report advanced serials.
+     */
+    @Transaction
+    suspend fun clearAll() {
+        deleteAllStudents()
+        deleteAllCounters()
+    }
+
+    @Query("DELETE FROM students")
+    suspend fun deleteAllStudents()
+
+    @Query("DELETE FROM class_counters")
+    suspend fun deleteAllCounters()
+
+    /**
      * PRD §4.7 replace-existing path: delete then insert in the same transaction so
      * observers see one atomic swap instead of a brief "record vanished" flicker.
      */

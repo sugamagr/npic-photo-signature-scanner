@@ -61,6 +61,7 @@ object MockGalleryData {
             displayName   = name,
             photoPath     = "mock://photo/$id",
             signaturePath = if (hasSig) "mock://sig/$id" else null,
+            namingKind    = com.npic.photoandsignscanner.domain.model.NamingMode.Kind.Serial,
             createdAt     = at,
             updatedAt     = at,
         )

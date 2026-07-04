@@ -34,9 +34,33 @@ data class SaveUiState(
     val completedRecordId: String? = null,
     val errorMessage: String? = null,
 ) {
-    /** Currently-typed serial as an Int, or null if the input isn't a valid 1..9999 number. */
+    /**
+     * Currently-typed serial as an Int, or null unless the input is exactly 4 digits AND
+     * parses inside [NamingMode.Serial.MIN]..[NamingMode.Serial.MAX]. User m1537 B6c locks
+     * serial input to exactly four digits — e.g. `0001`, `0034`, `9999`. Anything shorter
+     * (`123`) or longer (rejected upstream by [SaveViewModel.setSerialText]) leaves the
+     * Save button disabled.
+     */
     val serialNumber: Int?
-        get() = serialText.toIntOrNull()?.takeIf { it in NamingMode.Serial.MIN..NamingMode.Serial.MAX }
+        get() = serialText
+            .takeIf { it.length == SERIAL_TEXT_LENGTH }
+            ?.toIntOrNull()
+            ?.takeIf { it in NamingMode.Serial.MIN..NamingMode.Serial.MAX }
+
+    /**
+     * User-facing validation copy for the Serial field. Surfaces only after the user has
+     * typed something so an empty field looks like a normal placeholder rather than a
+     * scolding error. `0000` is rejected explicitly since [NamingMode.Serial.MIN] is 1.
+     */
+    val serialError: String?
+        get() = when {
+            namingKind != NamingMode.Kind.Serial -> null
+            serialText.isEmpty() -> null
+            serialText.length < SERIAL_TEXT_LENGTH -> "Serial needs 4 digits (e.g. 0001)."
+            serialText.toIntOrNull() == 0 -> "Serial can't be 0000."
+            serialNumber == null -> "Serial must be between 0001 and 9999."
+            else -> null
+        }
 
     /** Whether the current inputs form a valid [NamingMode]. */
     val naming: NamingMode?
@@ -67,4 +91,8 @@ data class SaveUiState(
     /** PRD §4.6 empty-state message under the preview strip. */
     val previewHint: String?
         get() = if (draft.hasAnyMedia) null else "Add a photo or signature to save."
+
+    companion object {
+        const val SERIAL_TEXT_LENGTH = 4
+    }
 }

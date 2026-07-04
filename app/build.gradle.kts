@@ -63,6 +63,9 @@ android {
 
     buildFeatures {
         compose = true
+        // Enables the generated `BuildConfig` class so we can read `VERSION_NAME` from
+        // Settings drawer footer (user m1551 S3). AGP 8+ opts this out by default.
+        buildConfig = true
     }
 
     packaging {

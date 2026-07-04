@@ -46,7 +46,7 @@ class ZipExporter(private val cacheDir: File) {
     suspend fun bundle(files: List<Pair<String, ByteArray>>): File? =
         withContext(Dispatchers.IO) {
             if (files.isEmpty()) return@withContext null
-            val target = File(exportsDir, "export_${System.currentTimeMillis()}.zip")
+            val target = File(exportsDir, buildZipFilename(files.size))
             try {
                 ZipOutputStream(FileOutputStream(target)).use { zip ->
                     files.forEach { (name, payload) ->
@@ -84,6 +84,17 @@ class ZipExporter(private val cacheDir: File) {
      * no crafted layering survives, (3) strip any remaining slashes as a belt-and-
      * suspenders defense against %2f-decoded upstream input.
      */
+    /**
+     * Human-readable filename: `export_2025-01-30_34-records.zip`. Uses local date (not UTC)
+     * so a teacher's morning export shows today's date to them regardless of tz. Record
+     * count is more useful in the file browser than a bare epoch stamp.
+     */
+    private fun buildZipFilename(recordCount: Int): String {
+        val date = java.time.LocalDate.now().toString()
+        val suffix = if (recordCount == 1) "1-record" else "$recordCount-records"
+        return "export_${date}_$suffix.zip"
+    }
+
     private fun sanitizeEntryName(raw: String): String {
         val basename = raw
             .substringAfterLast('/')

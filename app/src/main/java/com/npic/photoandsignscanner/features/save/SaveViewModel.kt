@@ -31,6 +31,7 @@ class SaveViewModel(
     private val repo: StudentRepository,
     private val draft: StudentDraft,
     private val onDiscardDraftAssets: (draftId: String) -> Unit = {},
+    preselectedClass: ClassNum? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SaveUiState(draft = draft))
@@ -40,6 +41,14 @@ class SaveViewModel(
     // stale prior-class serial over the current selection (Oracle M-8b-M1 race).
     private var nextSerialJob: Job? = null
     private var saveJob: Job? = null
+
+    init {
+        // User m1555 duplicate-to-another-class: caller pre-seeds the target class so
+        // the user lands on the Save sheet with class already picked and auto-serial
+        // resolving in the background. setClass() also triggers the async nextSerial()
+        // lookup that the sheet needs before the Serial input can auto-populate.
+        if (preselectedClass != null) setClass(preselectedClass)
+    }
 
     fun setClass(classNum: ClassNum) {
         val current = _state.value
@@ -53,7 +62,7 @@ class SaveViewModel(
                     s.copy(
                         autoSerialForClass = s.autoSerialForClass + (classNum to next),
                         serialText = if (s.namingKind == NamingMode.Kind.Serial && s.serialText.isBlank())
-                            next.toString()
+                            formatSerial(next)
                         else s.serialText,
                     )
                 }
@@ -66,7 +75,7 @@ class SaveViewModel(
         val next = current.copy(namingKind = kind, errorMessage = null)
         // On first switch to Serial, seed the field from cached auto-serial for the picked class.
         val patched = if (kind == NamingMode.Kind.Serial && next.serialText.isBlank()) {
-            next.classNum?.let { next.autoSerialForClass[it] }?.let { next.copy(serialText = it.toString()) } ?: next
+            next.classNum?.let { next.autoSerialForClass[it] }?.let { next.copy(serialText = formatSerial(it)) } ?: next
         } else next
         _state.value = patched
     }
@@ -139,6 +148,11 @@ class SaveViewModel(
         _state.value = _state.value.copy(duplicate = null)
     }
 
+    // Zero-pad to the 4-digit format the Serial input requires (user m1537 B6c). Auto-serial
+    // seeding must produce a value the [SaveUiState.serialError] validator accepts, otherwise
+    // just picking a class would immediately paint the input Terracotta.
+    private fun formatSerial(n: Int): String = n.toString().padStart(SaveUiState.SERIAL_TEXT_LENGTH, '0')
+
     /**
      * Factory injected at MainActivity level so both the destination composable and the
      * repository singleton stay wired without Hilt. The factory carries the [draft]
@@ -148,9 +162,10 @@ class SaveViewModel(
         private val repo: StudentRepository,
         private val draft: StudentDraft,
         private val onDiscardDraftAssets: (draftId: String) -> Unit = {},
+        private val preselectedClass: ClassNum? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SaveViewModel(repo, draft, onDiscardDraftAssets) as T
+            SaveViewModel(repo, draft, onDiscardDraftAssets, preselectedClass) as T
     }
 }

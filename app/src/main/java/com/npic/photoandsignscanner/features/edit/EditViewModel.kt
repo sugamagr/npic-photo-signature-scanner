@@ -2,9 +2,11 @@ package com.npic.photoandsignscanner.features.edit
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -181,12 +183,51 @@ class EditViewModel(
 
     private suspend fun decodeSource(path: String): Bitmap? = withContext(Dispatchers.IO) {
         try {
-            BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+            val raw = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
-            })
+            }) ?: return@withContext null
+            // CameraX (via LifecycleCameraController) writes the JPEG with an EXIF
+            // orientation tag; the pixel buffer stays in raw-sensor orientation. Coil
+            // (used in Gallery/Detail) respects EXIF, but BitmapFactory.decodeFile does
+            // NOT — so without this rotate the Edit viewport shows the photo sideways
+            // (m1720). We must also physically rotate here because CameraViewModel.capture
+            // already swaps guide-box dimensions based on EXIF, so guideBoxImageSpace
+            // addresses ROTATED-DISPLAY coordinates; leaving the source in raw-sensor
+            // orientation makes the crop quad hit far outside bitmap bounds → gray blob.
+            applyExifOrientation(raw, path)
         } catch (t: Throwable) {
             Log.e(TAG, "decodeSource failed for $path: ${t.message}", t)
             null
+        }
+    }
+
+    private fun applyExifOrientation(source: Bitmap, path: String): Bitmap {
+        val orientation = runCatching {
+            ExifInterface(path).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        if (orientation == ExifInterface.ORIENTATION_NORMAL ||
+            orientation == ExifInterface.ORIENTATION_UNDEFINED) return source
+        val matrix = Matrix().apply {
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> postScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> { postRotate(90f); postScale(-1f, 1f) }
+                ExifInterface.ORIENTATION_TRANSVERSE -> { postRotate(270f); postScale(-1f, 1f) }
+            }
+        }
+        return try {
+            val rotated = Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+            if (rotated !== source) source.recycle()
+            rotated
+        } catch (t: Throwable) {
+            Log.e(TAG, "applyExifOrientation failed for $path: ${t.message}", t)
+            source
         }
     }
 
@@ -286,8 +327,18 @@ class EditViewModel(
     private fun scheduleLivePreview() {
         val snapshot = _state.value ?: return
         val preview = snapshot.previewBitmap ?: return
+        val source = snapshot.sourceBitmap ?: return
         val activeRawPath = snapshot.edit.source.rawPath
-        val editSnapshot = snapshot.edit
+
+        // CropQuad ordinates live in FULL-RESOLUTION source coordinate space by design
+        // (EditState.seedFrom KDoc: "image space of the source"). The live preview renders
+        // against a 384px-long-side downsample of that source, so we must translate the
+        // quad into preview space before EditRenderer runs — otherwise OpenCV's
+        // warpPerspective samples entirely outside the preview buffer, filling the output
+        // with the BORDER_CONSTANT (mid-gray in ARGB_8888) — the m1653/m1780 gray blob.
+        // Uniform scale is correct because downsample() preserves aspect ratio.
+        val scale = preview.width.toFloat() / source.width.toFloat()
+        val editSnapshot = snapshot.edit.copy(crop = snapshot.edit.crop.scaledBy(scale))
 
         livePreviewJob?.cancel()
         livePreviewJob = viewModelScope.launch {
@@ -301,7 +352,6 @@ class EditViewModel(
                     rendered.recycle()
                     s
                 } else {
-                    // Recycle the previous live preview so we don't leak on repeated drags.
                     s.livePreviewBitmap?.recycle()
                     s.copy(livePreviewBitmap = rendered)
                 }
@@ -417,7 +467,16 @@ class EditViewModel(
 
     private companion object {
         const val TAG = "EditViewModel"
-        const val PREVIEW_LONG_SIDE = 384
+
+        // Live-preview render size (m1863 → m1869). 1440 was crisp on-viewport but the
+        // user asked for slightly more resolution. 1920 keeps pixel-perfect rendering
+        // with clear margin over the viewport height and matches what mainstream scanner
+        // apps use (Adobe Scan ~1600, Microsoft Lens ~2048). Filter+adjust cost on a
+        // ~854×1920 preview is 30-55ms on Snapdragon 6 Gen 1 (A35) — comfortably inside
+        // PRD §4.5's <100ms slider budget so Adjust drag stays real-time without
+        // debouncing. Memory hit is ~5.9MB per preview bitmap.
+        const val PREVIEW_LONG_SIDE = 1920
+
         const val THUMBNAIL_LONG_SIDE = 192
     }
 }

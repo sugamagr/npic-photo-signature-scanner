@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.npic.photoandsignscanner.domain.model.ClassNum
+import com.npic.photoandsignscanner.domain.model.NamingMode
 import com.npic.photoandsignscanner.domain.model.StudentRecord
 import kotlinx.datetime.Instant
 
@@ -87,6 +88,10 @@ internal fun StudentEntity.toRecord(): StudentRecord = StudentRecord(
     displayName = displayName,
     photoPath = photoPath,
     signaturePath = signaturePath,
+    // Forward-compat: unknown persisted values fall back to Serial. The v1→v2 migration
+    // backfills the column with an empty default for legacy rows, and the m2232 fix
+    // depends on this round-trip so add-signature update flows can reconstruct SaveInput.
+    namingKind = runCatching { NamingMode.Kind.valueOf(namingKind) }.getOrDefault(NamingMode.Kind.Serial),
     createdAt = Instant.fromEpochMilliseconds(createdAt),
     updatedAt = Instant.fromEpochMilliseconds(updatedAt),
 )

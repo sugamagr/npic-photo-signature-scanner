@@ -1,20 +1,22 @@
 # Deferred Decisions Log
 
-This doc has **two sections** per the m1319 overnight brief:
+This doc has **three sections** per the m1319 overnight brief + m1537 review:
 
-- **Section A** — decisions I took autonomously from the prior "deferred" list so
-  you can review them and reverse any you disagree with.
+- **Section A** — decisions I took autonomously or you approved during review;
+  logged so you can course-correct if anything drifted.
 - **Section B** — items still needing your explicit decision, with my
-  recommendation and a rationale for each.
+  recommendation and rationale for each.
+- **Section C** — v2 backlog. Items explicitly deferred out of v1.0 scope by
+  your direction; captured so we don't lose them.
 
 Anchored against `PRD.md` and `DESIGN.md` at the repo root.
 
 ---
 
-## Section A — Auto-implemented decisions (review these)
+## Section A — Decisions locked
 
-Every item here was on the deferred list. I picked a direction, shipped it,
-and logged the choice so you can course-correct if my read of intent was wrong.
+Every entry here is settled. If you want to reverse one, delete the entry or
+annotate it with the new direction.
 
 ### A1. `SharedCaptureHolder.draftIdOrMint()` returns the *live* draft id, never rewrites
 
@@ -63,24 +65,23 @@ first attempt had reached the check gate first.
 **Reverse if:** you want the race to surface as a distinct error message
 ("another save is in progress") instead of pretending it was a duplicate.
 
-### A4. Bug#10 signature thickness applied *retroactively* to committed strokes
+### A4. Signature thickness is **retroactive** (canvas-global weight)
 
-**Deferred as:** "PRD §4.4 v1.0 says thickness is per-stroke; user brief bug
-#10 says slider should re-render existing strokes."
+**Locked by:** user directive m1537 B5.
 
-**Choice I took:** user brief wins. `SignatureCanvas` reads `liveWidthPx`
-from `state.thicknessPx` for both committed and in-flight strokes. Each
-`DrawStroke.widthPx` field is kept for `SignatureRasterizer` compatibility
-but is ignored by the live canvas render.
+**Choice:** the thickness slider is a canvas-wide weight setting, not a
+per-stroke lock. Every committed stroke re-renders at the current thickness
+on each slider change; new strokes inherit the same width; the rasterizer
+reads the slider value at `Done`.
 
-**Impact:** thickness slider now behaves like a global "signature weight"
-setting. Rasterizer preserves whatever the last committed width was at
-`onDone`, which may not match the original stroke intent if the user swept
-the slider between strokes.
+**Where it lives:** `SignatureCanvas` reads `liveWidthPx` from
+`state.thicknessPx` for both committed and in-flight strokes.
+`SignatureRasterizer` uses the same value when flattening at `Done`.
+`DrawStroke.widthPx` is retained on each stroke for backward compatibility
+but is ignored by both the live canvas render and the rasterizer.
 
-**Reverse if:** you want v1.0 fidelity — per-stroke width preserved through
-the whole edit. Would require adding a mode toggle in the SignatureDraw UI
-("apply to all strokes" vs "next stroke only").
+**Impact:** simpler mental model ("one signature, one weight") matches user
+expectation. PRD §4.4 was updated to describe this behavior explicitly.
 
 ### A5. Bug#3 Edit tabs live-preview render is preview-only, not source-of-truth
 
@@ -88,17 +89,21 @@ the whole edit. Would require adding a mode toggle in the SignatureDraw UI
 without re-running the full pipeline on the 2-4MB source bitmap?"
 
 **Choice I took:** `EditViewModel.scheduleLivePreview()` runs `EditRenderer`
-on the **384px preview downsample**, not the source. Cancels prior job on
+on a **1920px preview downsample** (bumped from an earlier 384px after user
+feedback on preview quality), not the full source. Cancels prior job on
 each mutation. Publishes to `livePreviewBitmap`. The full-res render only
-happens at `commitEdits()` time.
+happens at `commitEdits()` time. The crop quad is scaled from source
+coordinates into preview coordinates via `CropQuad.scaledBy(factor)` before
+the render so `warpPerspective` samples in the right space — this fix
+resolved the m1780 gray-blob bug.
 
-**Impact:** tab feedback is instant. There's a ~250ms window on very slow
-devices where the last live preview may lag the state; the committed render
-is always correct.
+**Impact:** tab feedback is instant with high-fidelity preview. There's a
+~50ms window on very slow devices where the last live preview may lag the
+state; the committed render is always correct.
 
-**Reverse if:** you want the tab preview to always match the final pixels.
-Would require rendering at full res with a longer debounce and a spinner
-during in-flight renders.
+**Reverse if:** you want full-res live preview. Would require rendering at
+source resolution with a longer debounce and a spinner during in-flight
+renders.
 
 ### A6. Bug#3 Crop tab bypasses live preview and shows the raw source
 
@@ -135,40 +140,29 @@ the Edit → Save hop.
 
 ### A8. Bug#12 `ClassFilterTile` two-line dominant-count design
 
-**Deferred as:** "Class filter chip UX rework — how to visualize count vs
-class label?"
-
-**Choice I took:** two-line tile with count in `titleLarge` bold (dominant)
-and class label in `labelSmall` (quiet). Selection surface = SaffronSoft +
-1.5dp Saffron border + SaffronDeep title color.
+**Choice:** two-line tile with count in `titleLarge` bold (dominant) and
+class label in `labelSmall` (quiet). Selection surface = SaffronSoft + 2dp
+Saffron border + SaffronDeep title color.
 
 **Impact:** scannable at a glance ("Class 12 has 34 students, Class 9 has
 0") — count is what teachers look at first, class label is context.
 
-**Reverse if:** you want the class label dominant (matches typical filter
-chip UI). Swap the typography — count small, label large.
+**Reverse if:** you want the class label dominant. Swap the typography —
+count small, label large.
 
 ### A9. Bug#14 sort icon changed to `Icons.AutoMirrored.Outlined.Sort`
 
-**Deferred as:** "Sort icon needs to feel intuitive."
+**Choice:** `AutoMirrored.Outlined.Sort` (horizontal lines with descending
+length) instead of `SwapVert`. Auto-mirrored variant respects RTL locales.
 
-**Choice I took:** `AutoMirrored.Outlined.Sort` (horizontal lines with
-descending length) instead of `SwapVert`. Auto-mirrored variant respects RTL
-locales.
-
-**Impact:** matches Material-3 Sort convention. If you preferred SwapVert's
-"two directions" hint, this reads as "sort" instead.
-
-**Reverse if:** you want more explicit direction indication.
+**Impact:** matches Material-3 Sort convention.
 
 ### A10. Bug#15 Search filter runs client-side over `observeAll()`
 
-**Deferred as:** "Search — DAO LIKE query or client-side filter?"
-
-**Choice I took:** client-side. `SearchViewModel` combines a
-`debounce(120ms)` query flow with `repository.observeAll()` and filters via
-`filterRecords()` on `Default`. Ranking priority: name-prefix → name-substr
-→ class-exact → class-substr → serial-exact → serial-prefix.
+**Choice:** client-side. `SearchViewModel` combines a `debounce(120ms)`
+query flow with `repository.observeAll()` and filters via `filterRecords()`
+on `Default`. Ranking priority: name-prefix → name-substr → class-exact →
+class-substr → serial-exact → serial-prefix.
 
 **Impact:** simpler ownership (single Flow join), works with the
 sub-thousand-record bound expected for a single teacher's roster. No
@@ -178,307 +172,363 @@ per-keystroke DB query.
 `StudentDao.searchByPrefix(query: String): Flow<List<StudentEntity>>` with
 SQLite FTS4 indexed on `displayName` + `serial`.
 
-### A11. Detail edit-existing route via `clear()` + `pushCapture()` funnels
-through DuplicateSheet.replace-existing
+### A11. Detail edit-existing route via `clear()` + `pushCapture()` funnels through DuplicateSheet.replace-existing
 
-**Deferred as:** "Edit Photo / Edit Signature from Detail — replace in place
-or route through duplicate dialog?"
-
-**Choice I took:** replace in place via the duplicate-dialog branch. The
-existing record's assets are overwritten, and the duplicate dialog surfaces
-so the user can compare old vs new before confirming.
+**Choice:** replace in place via the duplicate-dialog branch. The existing
+record's assets are overwritten, and the duplicate dialog surfaces so the
+user can compare old vs new before confirming.
 
 **Impact:** consistent with the capture flow (any save that hits an existing
 `(class, serial)` shows the dialog). No accidental silent overwrites.
 
-**Reverse if:** you want Edit-from-Detail to be a silent update without any
-dialog. Would require a "skipDuplicateCheck" flag on the SaveSheet path.
-
 ### A12. Detail import launcher uses `PickVisualMedia(ImageOnly)`, not full SAF
 
-**Deferred as:** "Import Photo/Signature from Detail — photo picker or
-generic file picker?"
-
-**Choice I took:** `ActivityResultContracts.PickVisualMedia` with
-`ImageOnly` type. Copies Uri to `cache/drafts/{uuid}.jpg` on Dispatchers.IO
-via `copyUriToDraftsCache`.
+**Choice:** `ActivityResultContracts.PickVisualMedia` with `ImageOnly` type.
+Copies Uri to `cache/drafts/{uuid}.jpg` on Dispatchers.IO via
+`copyUriToDraftsCache`.
 
 **Impact:** modern Android photo picker (Android 13+ native picker, older
 SDKs fall back to SAF). No permission needed. Image-only filter matches
 intent.
 
-**Reverse if:** you want to accept PDF or other formats too.
+### A13. Gallery ZeroState is a hand-drawn Canvas emblem (no Lottie)
 
-### A13. `A14 Duplicate-to-another-class` is a Toast stub
-
-**Deferred as:** "Detail overflow → duplicate to another class."
-
-**Choice I took:** Toast "coming soon". PRD §4.9 doesn't require it; DESIGN
-mentions it once as a convenience action. Not blocking.
-
-**Impact:** menu item is present so the interaction discoverability is
-there; tapping just shows a message.
-
-**Reverse if:** you want a real implementation — spec exactly what the
-duplicate should do (fresh id? same id under new class? re-run Save
-duplicate check?).
-
-### A14. Gallery Delete-all + Overflow Settings both route through confirm
-dialogs / Toast stubs
-
-**Deferred as:** "Overflow menu — full spec or minimum viable?"
-
-**Choice I took:** Overflow menu shows three rows (Select all, Delete all,
-Settings). Select all works. Delete all routes through the same confirm
-dialog as multi-select delete. Settings toasts "coming soon".
-
-**Impact:** destructive actions always require a confirm. Settings entry
-point is discoverable but non-functional.
-
-**Reverse if:** you want to hide the Settings row entirely until it lands.
-
-### A15. Bug#11 Gallery ZeroState is a hand-drawn Canvas emblem (no Lottie)
-
-**Deferred as:** "Beautiful empty state — vector illustration or
-placeholder icon?"
-
-**Choice I took:** hand-drawn Canvas emblem — three rounded cards fanned
-±8° with a Saffron accent dot signaling 'signature captured'. Zero external
-assets. Layered typography + two hint tiles + primary CTA.
+**Choice:** hand-drawn Canvas emblem — three rounded cards fanned ±8° with
+a Saffron accent dot signaling 'signature captured'. Zero external assets.
+Layered typography + two hint tiles + primary CTA.
 
 **Impact:** brand-consistent (Saffron accent, SaffronSoft tints, Fraunces
 headings), zero binary weight, easy to iterate.
 
-**Reverse if:** you want a proper illustrator-drawn asset. Would require
-importing an SVG or Lottie file — I didn't touch app/build.gradle deps.
+### A14. Layer 11 preview→image-space uses FILL_CENTER inverse against decoded JPEG bounds
 
-### A16. Layer 11 preview→image-space uses FILL_CENTER inverse against decoded
-JPEG bounds
-
-**Deferred as:** "PreviewView.getOutputTransform() vs manual FILL_CENTER
-math."
-
-**Choice I took:** manual FILL_CENTER inverse. Rationale: OutputTransform
-API is fragile across CameraX versions and coupled to the PreviewView
-lifecycle. Manual math is 12 lines, deterministic, easy to unit-test.
+**Choice:** manual FILL_CENTER inverse. Rationale: `OutputTransform` API is
+fragile across CameraX versions and coupled to the PreviewView lifecycle.
+Manual math is 12 lines, deterministic, easy to unit-test.
 
 **Impact:** guide-box → image-space projection is now accurate. Detection
 seed is finally usable instead of the pre-Layer-11 identity stub.
 
-**Reverse if:** OutputTransform lands as stable API in a future CameraX
-release and you want to align with framework surface. Would replace
-`PreviewGuide.toImageSpace()` internals.
+### A15. `DeviceTilt` α=0.15 low-pass filter constant
 
-### A17. Layer 13 `DeviceTilt` α=0.15 low-pass filter constant
-
-**Deferred as:** "Accelerometer smoothing — how aggressive?"
-
-**Choice I took:** α=0.15 (15% raw + 85% previous). Balances jitter
-suppression (device sitting in hand at 60Hz has ±1° noise) against lag when
-the user actively levels the phone.
+**Choice:** α=0.15 (15% raw + 85% previous). Balances jitter suppression
+(device sitting in hand at 60Hz has ±1° noise) against lag when the user
+actively levels the phone.
 
 **Impact:** Sage snap-to-level bracket lights up smoothly when the user is
 within ±2° of horizontal. Doesn't twitch when hand-held.
 
-**Reverse if:** you want more responsive tilt (α higher, e.g. 0.3) or more
-stable (α lower, e.g. 0.05).
+### A16. Localization scaffolding NOT extracted; English strings stay inline for v1.0
+
+**Locked by:** user directive m1537 B2 — "english only fine for now will
+thign in furture if need hindi".
+
+**Choice:** ~150 hardcoded English strings stay inline. No `strings.xml`,
+no `hi-IN` locale, no Devanagari font. If Hindi lands later, we'll extract
+in one sweep at that time.
+
+**Impact:** faster path to v1.0 ship; ~1 day of extraction work deferred
+until it's actually needed.
+
+**Reverse if:** you decide to support Hindi within v1.0's lifetime. Cost is
+1-3 days of extraction + `Noto Sans Devanagari` font wiring.
+
+### A17. Detail Share uses the compressed portal blob
+
+**Locked by:** user directive m1537 B7 — "i need compress share only
+everywhere".
+
+**Choice:** the Share icon in Detail's top bar routes to the same Export
+pipeline as bulk share — renders the JPEG through the 10–30 KB compressor,
+applies the PRD §6.3 filename, and hands the resulting Uri to the system
+share sheet. Nothing shares the raw ~2MB source file.
+
+**Impact:** everything shared out of the app is portal-ready. No confusion
+about which file the teacher just DM'd to a parent.
+
+### A18. `WRITE_EXTERNAL_STORAGE` declared with `maxSdkVersion="28"`, no runtime prompt
+
+**Locked by:** user directive m1537 B8 — "ok do nothing".
+
+**Choice:** manifest declares the permission with `maxSdkVersion="28"`.
+Android 6-9 auto-grants at install; Android 10+ doesn't need it (scoped
+storage). No runtime re-request UI.
+
+**Impact:** no scary prompt on first launch. Old install-then-revoke edge
+case remains unhandled (extremely rare).
+
+### A19. Draft resume prompt is single-active (newest only)
+
+**Locked by:** user directive m1537 B9 — "ok".
+
+**Choice:** `DraftDao.observeActive()` returns `ORDER BY updatedAt DESC
+LIMIT 1`. If the user has two half-finished captures, only the newest is
+offered on resume.
+
+**Impact:** simple UI, matches PRD §8.3 wording. Multi-active raises hard
+questions about draft eviction and UI space we don't need to answer for
+v1.0.
+
+### A20. ZIP filename is human-readable with record count
+
+**Locked by:** user directive m1537 B6a.
+
+**Choice:** `export_{yyyy-MM-dd}_{N}-records.zip` (e.g.
+`export_2025-01-30_34-records.zip`). Local date (not UTC) so the filename
+matches what the teacher perceives as "today". Singular "1-record" vs
+plural "N-records" suffix.
+
+**Where it lives:** `ZipExporter.buildZipFilename(recordCount: Int)`.
+
+### A21. Photo/signature filenames drop the format prefix; extension is `.jpeg`
+
+**Locked by:** user directive m1537 B6b — "no prefix. Serial→090001,
+Name→Student_Name_09. bulk AND individual."
+
+**Choice:** every exported blob per record — whether it's a Combined JPEG,
+a Photo-only JPEG, or a Signature-only JPEG — uses the same filename:
+
+- Serial mode: `{class:02d}{serial:04d}.jpeg` (e.g. `090001.jpeg`)
+- Name mode:   `{Name_Underscored}_{class:02d}.jpeg` (e.g. `Rahul_Kumar_09.jpeg`)
+
+No `photo_` or `signature_` prefix. Extension is `.jpeg` (not `.jpg`) for
+portal parity.
+
+**Where it lives:** `GenerateFileName.forExport(record, format,
+namingMode)`. The `format` parameter is accepted but ignored — the format
+determines the *contents* of the blob, not the *name*.
+
+**Impact:** ZIP contents are `090001.jpeg`, `090002.jpeg`, etc. Teachers
+can drop the ZIP straight into the portal's bulk-upload page without
+renaming.
+
+### A22. Save-screen Serial input is EXACTLY 4 digits
+
+**Locked by:** user directive m1537 B6c — "when takeing serial number as
+input in save screen there should be exactly four digits in input no less
+no more".
+
+**Choice:**
+
+- `SaveViewModel.setSerialText` filters to digits only and truncates to
+  4 characters (upper bound).
+- `SaveUiState.serialNumber` returns non-null only when
+  `serialText.length == SERIAL_TEXT_LENGTH` (i.e. exactly 4 digits, lower
+  bound).
+- New `SaveUiState.serialError` surfaces validation:
+  - empty → `null` (no scolding on blank field)
+  - length < 4 → "Serial needs 4 digits (e.g. 0001)."
+  - `0000` → "Serial can't be 0000."
+  - number out of `1..9999` → "Serial must be between 0001 and 9999."
+- `SaveSheet` passes `errorText = state.serialError` to `NpicTextField`,
+  which paints Terracotta border + label sub-text.
+- Auto-serial seeding (on class pick or Serial-mode select) zero-pads via
+  `formatSerial(n) = n.toString().padStart(4, '0')` so freshly-picked
+  classes show `0001` not `1`.
+
+**Impact:** Save button stays disabled until the user types 4 digits. No
+class silently rolls the counter to a short-form serial.
+
+### A23. Save-to-Gallery ships alongside Share (three-button action row)
+
+**Locked by:** user directive m1704/m1706 — "ok fine implement it" with
+defaults locked to my recommendations.
+
+**Choice:** the Export sheet now shows three actions: a primary
+`Save & Share $N` CTA at the top plus a `Save to Gallery` / `Share` split
+row below. Save-to-Gallery writes individual JPEGs (never a ZIP) to
+`Pictures/NPIC/` via `MediaStore` with the `IS_PENDING = 1 → 0` two-phase
+protocol on SDK 29+ (single-phase fallback on ≤28). Filenames match A21
+so MediaStore's auto-suffix on collision doesn't diverge from Share
+filenames.
+
+**Where it lives:** `MediaStoreExporter.saveJpeg(displayName, bytes)` +
+`ExportViewModel.beginSaveToGallery` / `beginSaveAndShare` /
+`beginExport`. The three methods share `state.exporting` guard and use a
+common `renderPayloads` helper so the render pipeline runs exactly once
+per action.
+
+**Impact:** teachers can save to Gallery for future reference AND share to
+the portal, or do either alone. Graceful degradation on `beginSaveAndShare`:
+Gallery fails but share succeeds → share-only; only Gallery succeeds →
+Saved; both fail → Failed toast.
+
+### A24. Camera chrome uses vertical scrim gradients, not backdrop blur
+
+**Locked by:** user directive m1597 (industry-standard fixes only) after
+m1599 device report showed the shutter/mode pills invisible against dark
+preview.
+
+**Choice:** replaced `Modifier.blur(24.dp)` on Camera top/bottom bars with
+`Brush.verticalGradient` scrims — top scrim fades `cameraBg@0.95 → 0`,
+bottom scrim mirrors it. Matches Google Camera / VSCO / Adobe Lightroom
+Mobile chrome pattern.
+
+**Where it lives:** `topBarScrim(bg)` / `bottomBarScrim(bg)` helpers in
+`features/camera/CameraScreen.kt`. Scrims are applied before window insets
+so gradients fade cleanly into the status/nav bar zones.
+
+**Impact:** shutter ring (`CameraInk` white 4dp Stroke) is fully visible
+against dark preview. `Modifier.blur` was blurring the composable AND its
+descendants (RenderNode.setRenderEffect layer behaviour); Compose has no
+first-class backdrop-blur primitive yet.
+
+### A25. `EditRenderer.render()` guarantees non-alias return
+
+**Locked by:** user directive m1597 (industry-standard fixes only) after
+diagnosing the blank-viewport bug.
+
+**Choice:** the renderer's docstring promises "source is never mutated;
+the final rendered Bitmap is a fresh allocation." Two aliasing paths were
+found where the promise didn't hold — no-rotation-no-straighten
+`applyRectCrop` on a full-cover quad returned source; the OpenCV path's
+in-place `filters.apply` / `adjustments.apply` then mutated source.
+`EditRenderer` now runs an identity check at return and copies via
+`Bitmap.copy(config, isMutable=true)` if `cropped === source`.
+
+**Where it lives:** `data/imaging/EditRenderer.kt` — the `owned` block at
+the return. Comment enumerates both aliasing paths and the failure chain.
+
+**Impact:** caller can always safely `recycle()` the returned bitmap
+without corrupting the source. This unblocked the live-preview cycle
+that was recycling `previewBitmap` two frames later.
+
+### A26. `EditRenderer` handles the normalized-quad sentinel
+
+**Locked by:** user directive m1597 after finding `initialCropFor()` had
+been emitting a degenerate all-zero quad when `capture.guideBoxImageSpace
+== null`, which OpenCV translated to a 1×1 output bitmap → gray blob.
+
+**Choice:** `EditState.initialCropFor` now returns a unit-square quad
+(0..1) as a normalized sentinel when guideBoxImageSpace is null.
+`EditRenderer.render` detects the sentinel via
+`isNormalizedSentinel(quad)` (max ordinate < 1.5) and remaps to full
+source bounds before `applyCrop`.
+
+**Where it lives:** `domain/model/EditState.kt` (`NORMALIZED = 1f`,
+`NORMALIZED_SENTINEL_THRESHOLD = 1.5f`) + `data/imaging/EditRenderer.kt`
+sentinel-detection block.
+
+**Impact:** first-render from Camera never produces a 1×1 crop. Fresh
+captures show the full photo in the Edit viewport.
+
+### A27. EXIF orientation applied at decode time
+
+**Locked by:** user report m1720 (photos loaded rotated in Edit).
+
+**Choice:** `EditViewModel.decodeSource(path)` reads
+`ExifInterface(path).getAttributeInt(TAG_ORIENTATION, ...)` and applies
+the appropriate `Matrix` transform (ROTATE_90/180/270 + FLIP_H/V +
+TRANSPOSE + TRANSVERSE + NORMAL/UNDEFINED passthrough) via
+`Bitmap.createBitmap(source, 0, 0, w, h, matrix, true)`. The rotated
+bitmap replaces the source; the original is recycled if a fresh
+allocation resulted.
+
+**Where it lives:** `applyExifOrientation(source, path): Bitmap` helper
+in `features/edit/EditViewModel.kt`.
+
+**Impact:** rotated captures from CameraX now display upright on the
+Edit screen. Coil (used elsewhere for thumbnails) reads EXIF natively,
+so this brings BitmapFactory-decoded paths into parity.
 
 ---
 
 ## Section B — Still needing your decision
 
-I did **not** implement these. Each one has a real choice space that I
-shouldn't autonomously make without you seeing it first.
+Nothing outstanding. Every earlier B-item has been either promoted to
+Section A (with your call locked in) or moved to Section C (v2 backlog).
 
-### B1. Crop-handle magnifier bubble on Edit drag
+If a new deferral surfaces mid-development, add it here with the same
+shape: what's deferred, options, recommendation, rationale.
 
-**What DESIGN says:** DESIGN mentions an Adobe-Scan-style 88dp circular
-bubble above the actively-dragged crop handle showing a 2× zoom of the
-source pixels around the corner.
+---
 
-**Why I stopped:** requires plumbing the source `Bitmap` from EditViewModel
-→ EditScreen ImageViewport → NpicCropOverlay signature. That's a ripple
-touching 3 files and changing the overlay's public API from
-`(quad, aspectLock)` to `(quad, aspectLock, sourceBitmap?)`. Non-blocking
-polish that isn't in PRD §13 acceptance list.
+## Section C — v2 backlog
 
-**Options:**
-1. **Full 2× zoom magnifier** — matches DESIGN spec, best UX. ~120 LOC ripple.
-2. **Numeric bubble ("324, 892 px")** — half the work, less useful UX.
-3. **Skip for v1.0** — mark as post-launch polish.
+Items explicitly out of v1.0 scope by your direction. Captured so the
+work isn't forgotten when v1.0 ships and we plan v2.
 
-**My recommendation:** #3 for v1.0 ship, then #1 in a follow-up polish
-sprint. The crop tool already works precisely; the magnifier is a delight
-feature, not a correctness feature.
+### C1. Auto-capture on stable edge detection
 
-### B2. Localization + Devanagari font fallback
+**Deferred by:** user directive m1537 B3 — "wil implement but in v2".
 
-**What PRD says:** English-only for v1.0.
+**Scope:** watch the OpenCV edge-detection quad for stability, and after
+a 500 ms hold at high-confidence convergence, auto-fire the shutter with
+a haptic tap. Manual shutter remains available always.
 
-**Current state:** ~150 hardcoded English strings across every screen. No
-`strings.xml`. No Devanagari font loaded — student names entered in Hindi
-would render as tofu boxes.
+**Estimated cost:** ~1 day. Requires a convergence heuristic (rolling
+buffer of quads, IoU stability threshold), a debounce timer, and a
+haptic feedback plumb. UI signals could reuse the existing tilt-level
+Sage snap indicator.
 
-**Options:**
-1. **Extract to strings.xml + wire `hi-IN` locale + add Noto Sans Devanagari
-   font** — full localization. 3-5 days of work.
-2. **Extract to strings.xml + English-only for v1.0, Hindi later** — sets up
-   the scaffolding but ships English-only. 1 day of work.
-3. **Skip entirely for v1.0** — every string stays inline.
+**Blockers to resolve at v2 planning time:** what heuristic thresholds
+work in real classroom lighting (needs on-device tuning), whether we
+want an in-app toggle to disable it (probably yes).
 
-**My recommendation:** #2. Even if you're not shipping Hindi in v1.0, having
-`R.string.*` referenced from code prevents "we'll fix it later" from
-becoming "we can't fix it without rewriting every screen". Also unblocks
-easier copy iteration.
+### C2. Room DB Migration(1,2) — conditional
 
-### B3. Auto-capture
+**Deferred by:** user directive m1537 B4 — "if easier and will not take
+muh time do not otherwise in v2".
 
-**What PRD says:** PRD §12 open questions — deferred to v1.1+.
+**Scope:** the current `NpicDatabase` uses `fallbackToDestructiveMigration()`
+which wipes user data on any schema change. Before the school starts
+using the app in earnest, we should either:
 
-**Current state:** manual shutter only.
+- freeze the schema at v1.0 and write real `Migration(1,2)` when the
+  next change lands, or
+- accept destructive migrations during pre-1.0 (fine now, no
+  distribution yet).
 
-**Options:**
-1. **Ship v1.0 without it** — matches PRD.
-2. **Add now** — needs edge-detection convergence heuristic + 500ms hold
-   timer + haptic feedback.
+**Estimated cost:** ~30-60 min to write a stub Migration(1,2) that's a
+no-op today, so any future schema change can slot in. Otherwise, v2.
 
-**My recommendation:** #1. It's already deferred; keeping v1.0 scope tight
-matters more than shipping a bonus feature.
+**Recommendation:** probe the writability at v1.0 ship time. If <30 min
+of work, land it in v1.0 as insurance. Otherwise, v2 has room.
 
-### B4. Room DB migration flow beyond fresh install
+### C3. Devanagari support (font + locale + normalization)
 
-**What PRD says:** silent on migrations.
+**Deferred by:** user directive m1537 B2 + B10 — "no hindi names will be
+entered. we alwwayws export to opload to portal for now".
 
-**Current state:** version=1 schema. Any change breaks existing installs
-(destructive migration or manual export/reimport).
+**Scope in v2 if Hindi is added:**
 
-**Options:**
-1. **Freeze schema at v1.0** — bump version + write real migrations for
-   every future change.
-2. **Allow destructive migrations for now** — user re-captures if we ship a
-   schema change pre-1.0.
-3. **Ship v1.0 with an export button** — user backs up JSON, we restore on
-   fresh install.
+- Extract ~150 English strings to `strings.xml`.
+- Add `hi-IN` locale variant.
+- Bundle `Noto Sans Devanagari` and wire the Compose font fallback so
+  Hindi names don't render as tofu boxes.
+- Normalize `displayName` to NFKC before writing to the
+  `StudentEntity.nameKey` column so duplicate detection collates ZWJ
+  and Nukta variants.
 
-**My recommendation:** #1 once you tag v1.0. Between now and tag, #2 is
-fine (school hasn't distributed the app yet).
+**Estimated cost:** 3-5 days of focused work.
 
-### B5. Signature thickness: retroactive vs per-stroke
+**Trigger:** any request to enter a name in Hindi (script other than
+Latin/Arabic/etc.).
 
-**What A4 says:** I chose retroactive per your bug #10.
+### C4. Signature Draw process-death SavedStateHandle wiring
 
-**Why this needs your call:** PRD §4.4 v1.0 says per-stroke. Your bug report
-says retroactive. They're contradictory. I picked user brief because it was
-newer + explicit, but this is a scope decision, not a bug.
+**Deferred as:** "if the OS kills the process mid-draw, we lose the
+stroke buffer."
 
-**Options:**
-1. **Keep retroactive** (current) — thickness is a global "signature
-   weight."
-2. **Revert to per-stroke** (PRD §4.4) — each stroke keeps the width it was
-   drawn at.
-3. **Mode toggle** — user picks per-signature which behavior applies.
+**Scope:** wire `SignatureDrawViewModel` to `SavedStateHandle` so committed
+strokes survive process death. Currently only in-memory.
 
-**My recommendation:** keep #1 (retroactive). Simpler mental model, matches
-your bug report.
+**Estimated cost:** ~2 hours. `List<DrawStroke>` serializes cleanly to a
+Bundle-safe form.
 
-### B6. ZIP file naming for multi-share
-
-**What PRD says:** `export_{timestamp}.zip`.
-
-**Current state:** `cacheDir/exports/export_{ts}.zip` where `ts` is
-`System.currentTimeMillis()`.
-
-**Options:**
-1. **Keep epoch ms** (current) — sortable, ugly.
-2. **Human-readable ISO date** — `export_2025-01-30T14-32-05.zip`.
-3. **Include record count** — `export_2025-01-30_34-records.zip`.
-
-**My recommendation:** #3. When teachers see the file in their portal
-upload history, "34 records from Jan 30" is more useful than a bare
-timestamp.
-
-### B7. Detail Share menu action
-
-**What PRD says:** PRD §4.9 mentions it. DESIGN doesn't spell out what it
-shares.
-
-**Current state:** the Share icon in Detail's top bar routes to the Export
-flow (multi-share for single record). No dedicated "share JUST this photo"
-shortcut.
-
-**Options:**
-1. **Route to Export flow with pre-selected record** (current) — user picks
-   format.
-2. **Share raw source directly** — skips compression, skips format picker,
-   dumps the on-disk file into an ACTION_SEND. Faster path for "just DM this
-   to the parent."
-3. **Both, via a submenu** — Share as portal JPEG / Share raw source.
-
-**My recommendation:** #1 for now. Adding raw-source share means education
-about "the file you're about to share is 3MB not the 20KB portal blob," and
-that risk isn't worth the shortcut.
-
-### B8. WRITE_EXTERNAL_STORAGE runtime request
-
-**What PRD says:** PRD §10 — declare only, no runtime request needed since
-Android 6+ auto-grants for install-time permissions (SDK ≤28) that we now
-declare via `maxSdkVersion="28"`.
-
-**Current state:** declared in manifest with maxSdk 28. No runtime prompt
-code path.
-
-**Options:**
-1. **Do nothing** (current) — SDK ≤28 auto-grants at install; ≥29 doesn't
-   need it (scoped storage).
-2. **Add runtime check** — safer for old devices that install through
-   sideload after storage permission was manually revoked.
-
-**My recommendation:** #1. The scenarios where a runtime re-request is
-useful are vanishingly rare and adding permission UI adds a scary prompt on
-first launch.
-
-### B9. Draft resume prompt: single-active vs multi-active
-
-**What PRD says:** PRD §8.3 — resume-prompt AlertDialog on Gallery reload.
-
-**Current state:** single-active. `DraftDao.observeActive()` returns
-`ORDER BY updatedAt DESC LIMIT 1`. If the user has two half-finished
-captures, only the newest is offered on resume.
-
-**Options:**
-1. **Single-active** (current) — simple, matches PRD wording.
-2. **Multi-active list** — Gallery shows a "drafts" section above records.
-
-**My recommendation:** #1 for v1.0. Multi-active raises hard questions
-about draft eviction and UI space.
-
-### B10. Devanagari name normalization for `findByClassName` duplicate check
-
-**What PRD says:** duplicate detection by name matches after "trim + lowercase
-+ whitespace normalization."
-
-**Current state:** `StudentDao.findByClassName` uses SQLite
-`LOWER(TRIM(REPLACE(displayName, '  ', ' ')))` which handles ASCII correctly
-but is a no-op for Devanagari case (no case in Devanagari script) and
-doesn't normalize Nukta forms or ZWJ variants.
-
-**Options:**
-1. **Leave it** (current) — English-name schools work correctly; Hindi-name
-   schools may get false negatives on duplicates ("राम" != "राम " with ZWJ).
-2. **Normalize to NFKC in Kotlin before DB comparison** — cover Nukta/ZWJ.
-3. **Case-insensitive compare via ICU collator** — heaviest, best fidelity.
-
-**My recommendation:** #2 when you ship Hindi. Until then #1 is fine.
+**Priority:** low. Signature draw sessions are short (<30s typically);
+Android rarely kills a foreground process mid-draw.
 
 ---
 
 ## How to extend this doc
 
-When you review Section A and want to reverse a choice, delete or annotate
-the entry with the new direction. When you resolve a Section B item, move
-it to Section A with the choice you made. When new deferrals crop up during
-future development, add them to Section B with your recommendation.
+When a Section B item resolves, promote it to Section A with the choice
+you made. When a new deferral surfaces, add it to Section B. When a
+Section A choice needs reversing, delete the entry or annotate it with
+the new direction. When something's explicitly v2, park it in Section C
+so we don't rediscover it late.
 
-Each entry should keep the same shape: What was deferred, what I/we chose,
-impact, reverse-conditions (Section A) or Options + Recommendation (Section
-B). That keeps the doc scannable when it grows.
+Each entry keeps the same shape: what was deferred, what was chosen,
+where it lives in the code, impact, and (Section A only) reverse-conditions.
+That keeps the doc scannable as it grows.
