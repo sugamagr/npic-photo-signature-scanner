@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,10 +25,17 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
 
 /**
  * Draggable crop quadrilateral. Per DESIGN §6.15:
- *   • Four corner handles: 16dp Saffron dot inside a 3dp white ring, 44dp hit slop.
- *   • Four edge-midpoint handles: 12dp Saffron dot inside a 2dp white ring, 40dp hit slop.
+ *   • Four corner handles: 16dp Saffron dot inside a 3dp white ring; hit area is the
+ *     nearest-handle Voronoi cell around each corner, unbounded within the overlay.
+ *   • Four edge-midpoint handles: 12dp Saffron dot inside a 2dp white ring; same
+ *     nearest-handle routing so effective hit slop always meets 44dp WCAG target size
+ *     regardless of how tightly the user zooms in on the crop rectangle.
  *   • Rule-of-thirds grid: 1dp Saffron 30% alpha, visible ONLY while dragging.
  * Magnifier bubble is intentionally deferred to the Edit feature (it needs the bitmap).
+ *
+ * Edge midpoints translate along their perpendicular axis only — top/bottom moves in Y,
+ * left/right moves in X. Corners translate freely in both axes so users can reshape into
+ * a non-rectangular quad after edge detection.
  *
  * Coordinates are stored in the overlay's own layout box in [Offset]s (px). Callers translate
  * to source-image coordinates via [onQuadChange] and [onLayoutSize].
@@ -43,13 +51,18 @@ fun NpicCropOverlay(
     var dragging by remember { mutableStateOf(false) }
     var activeHandle by remember { mutableStateOf<CropHandle?>(null) }
 
+    // Latest quad + callback snapshots so the pointerInput block can key on Unit
+    // (avoiding gesture-detector restarts on every drag frame) while still reading fresh values.
+    val currentQuad = rememberUpdatedState(quad)
+    val currentOnQuadChange = rememberUpdatedState(onQuadChange)
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(quad) {
+            .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { pos ->
-                        activeHandle = quad.nearestHandle(pos)
+                        activeHandle = currentQuad.value.nearestHandle(pos)
                         dragging = true
                     },
                     onDragEnd = {
@@ -62,9 +75,12 @@ fun NpicCropOverlay(
                     },
                     onDrag = { change, drag ->
                         change.consume()
-                        val handle = activeHandle ?: quad.nearestHandle(change.position)
-                        val moved = quad.moveHandle(handle, drag)
-                        onQuadChange(moved.clampedTo(size.width.toFloat(), size.height.toFloat()))
+                        val q = currentQuad.value
+                        val handle = activeHandle ?: q.nearestHandle(change.position)
+                        val moved = q.moveHandle(handle, drag)
+                        currentOnQuadChange.value(
+                            moved.clampedTo(size.width.toFloat(), size.height.toFloat())
+                        )
                     },
                 )
             },
@@ -102,25 +118,33 @@ fun NpicCropOverlay(
 
             val cornerDotR  = 8.dp.toPx()
             val cornerRingR = cornerDotR + 3.dp.toPx()
-            listOf(quad.tl, quad.tr, quad.br, quad.bl).forEach { p ->
-                drawCircle(Color.White,        radius = cornerRingR, center = p)
-                drawCircle(NpicColors.Saffron, radius = cornerDotR,  center = p)
-            }
+            drawHandle(quad.tl, cornerDotR, cornerRingR)
+            drawHandle(quad.tr, cornerDotR, cornerRingR)
+            drawHandle(quad.br, cornerDotR, cornerRingR)
+            drawHandle(quad.bl, cornerDotR, cornerRingR)
 
             val edgeDotR  = 6.dp.toPx()
             val edgeRingR = edgeDotR + 2.dp.toPx()
-            listOf(quad.topMid, quad.rightMid, quad.bottomMid, quad.leftMid).forEach { p ->
-                drawCircle(Color.White,        radius = edgeRingR, center = p)
-                drawCircle(NpicColors.Saffron, radius = edgeDotR,  center = p)
-            }
+            drawHandle(quad.topMid,    edgeDotR, edgeRingR)
+            drawHandle(quad.rightMid,  edgeDotR, edgeRingR)
+            drawHandle(quad.bottomMid, edgeDotR, edgeRingR)
+            drawHandle(quad.leftMid,   edgeDotR, edgeRingR)
         }
     }
 }
 
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHandle(
+    center: Offset,
+    dotR: Float,
+    ringR: Float,
+) {
+    drawCircle(Color.White,        radius = ringR, center = center)
+    drawCircle(NpicColors.Saffron, radius = dotR,  center = center)
+}
+
 /**
  * A grabbable point on the crop overlay: one of the four corners or one of the four edge
- * midpoints. Corners translate a single vertex; edge midpoints translate both endpoints of
- * the corresponding edge together (parallel move).
+ * midpoints. Corners translate freely; edges translate along their perpendicular axis only.
  */
 sealed interface CropHandle {
     enum class Corner : CropHandle { TL, TR, BR, BL }
@@ -140,28 +164,34 @@ data class CropQuad(
     val leftMid:   Offset get() = (bl + tl) / 2f
 
     fun nearestHandle(p: Offset): CropHandle {
-        val candidates: List<Pair<CropHandle, Float>> = listOf(
-            CropHandle.Corner.TL     to (tl        - p).getDistance(),
-            CropHandle.Corner.TR     to (tr        - p).getDistance(),
-            CropHandle.Corner.BR     to (br        - p).getDistance(),
-            CropHandle.Corner.BL     to (bl        - p).getDistance(),
-            CropHandle.Edge.Top      to (topMid    - p).getDistance(),
-            CropHandle.Edge.Right    to (rightMid  - p).getDistance(),
-            CropHandle.Edge.Bottom   to (bottomMid - p).getDistance(),
-            CropHandle.Edge.Left     to (leftMid   - p).getDistance(),
-        )
-        return candidates.minBy { it.second }.first
+        var best: CropHandle = CropHandle.Corner.TL
+        var bestD = (tl - p).getDistance()
+        fun tryHandle(h: CropHandle, d: Float) {
+            if (d < bestD) { best = h; bestD = d }
+        }
+        tryHandle(CropHandle.Corner.TR,     (tr        - p).getDistance())
+        tryHandle(CropHandle.Corner.BR,     (br        - p).getDistance())
+        tryHandle(CropHandle.Corner.BL,     (bl        - p).getDistance())
+        tryHandle(CropHandle.Edge.Top,      (topMid    - p).getDistance())
+        tryHandle(CropHandle.Edge.Right,    (rightMid  - p).getDistance())
+        tryHandle(CropHandle.Edge.Bottom,   (bottomMid - p).getDistance())
+        tryHandle(CropHandle.Edge.Left,     (leftMid   - p).getDistance())
+        return best
     }
 
-    fun moveHandle(handle: CropHandle, delta: Offset): CropQuad = when (handle) {
-        CropHandle.Corner.TL   -> copy(tl = tl + delta)
-        CropHandle.Corner.TR   -> copy(tr = tr + delta)
-        CropHandle.Corner.BR   -> copy(br = br + delta)
-        CropHandle.Corner.BL   -> copy(bl = bl + delta)
-        CropHandle.Edge.Top    -> copy(tl = tl + delta, tr = tr + delta)
-        CropHandle.Edge.Right  -> copy(tr = tr + delta, br = br + delta)
-        CropHandle.Edge.Bottom -> copy(br = br + delta, bl = bl + delta)
-        CropHandle.Edge.Left   -> copy(bl = bl + delta, tl = tl + delta)
+    fun moveHandle(handle: CropHandle, delta: Offset): CropQuad {
+        val dx = Offset(delta.x, 0f)
+        val dy = Offset(0f, delta.y)
+        return when (handle) {
+            CropHandle.Corner.TL   -> copy(tl = tl + delta)
+            CropHandle.Corner.TR   -> copy(tr = tr + delta)
+            CropHandle.Corner.BR   -> copy(br = br + delta)
+            CropHandle.Corner.BL   -> copy(bl = bl + delta)
+            CropHandle.Edge.Top    -> copy(tl = tl + dy, tr = tr + dy)
+            CropHandle.Edge.Bottom -> copy(br = br + dy, bl = bl + dy)
+            CropHandle.Edge.Left   -> copy(bl = bl + dx, tl = tl + dx)
+            CropHandle.Edge.Right  -> copy(tr = tr + dx, br = br + dx)
+        }
     }
 
     fun clampedTo(w: Float, h: Float): CropQuad {

@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.domain.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.datetime.Instant
 
 /**
@@ -18,6 +19,7 @@ import kotlinx.datetime.Instant
  * when the repository lands. Selection sets in [GalleryViewModel] flip to `Set<String>` at
  * the same time.
  */
+@Immutable
 data class StudentRecord(
     val id: Long,
     val classNum: ClassNum,

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -37,13 +39,15 @@ import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
 
 /**
- * Selectable pill. 36dp tall, `NpicShapes.full`. Used for:
+ * Selectable pill. 34dp visual bounds inside a 44dp touch-target wrapper (WCAG 2.5.5), shape
+ * `NpicShapes.xs` per DESIGN §6.5. Used for:
  * - Gallery class filters (All / 9 / 10 / 11 / 12)
  * - Sort mode (Newest / Oldest / Class / Name)
  * - Filter preset picker in Edit
  *
- * Selection is a container swap (Ivory → SaffronSoft) + border swap (BorderStrong → Saffron)
+ * Selection is a container swap (Surface → SaffronSoft) + border swap (BorderStrong → Saffron)
  * animated over `NpicMotion.StandardMs` (DESIGN §5.2). Label weight bumps 500 → 600 on select.
+ * TalkBack announces `Role.Button` with the current `selected` state.
  */
 @Composable
 fun NpicChip(
@@ -78,23 +82,28 @@ fun NpicChip(
 
     Box(
         modifier = modifier
-            .semantics { role = Role.Button }
-            .defaultMinSize(minHeight = 34.dp)
-            .clip(NpicShapes.xs)
-            .background(container, NpicShapes.xs)
-            .border(width = 1.dp, color = border, shape = NpicShapes.xs)
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                this.selected = selected
+            }
+            .defaultMinSize(minHeight = 44.dp)
             .clickable(
                 interactionSource = interactionSource,
                 indication = ripple(bounded = true, color = label_),
                 enabled = enabled,
                 onClick = onClick,
-            )
-            .padding(PaddingValues(horizontal = 14.dp, vertical = NpicSpacing.xxs)),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
+            modifier = Modifier
+                .height(34.dp)
+                .clip(NpicShapes.xs)
+                .background(container, NpicShapes.xs)
+                .border(width = 1.dp, color = border, shape = NpicShapes.xs)
+                .padding(PaddingValues(horizontal = 14.dp, vertical = NpicSpacing.xxs)),
         ) {
             if (leadingIcon != null) {
                 Icon(

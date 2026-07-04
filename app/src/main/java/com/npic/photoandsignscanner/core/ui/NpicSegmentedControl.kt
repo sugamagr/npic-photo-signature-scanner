@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +19,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -29,9 +34,13 @@ import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
 
 /**
- * Equal-width segmented picker. 48dp tall, `NpicShapes.md`, 1dp outer border. The active
- * segment fills with `SaffronSoft` and Ink label at weight 600; inactive segments are
- * transparent with InkMuted labels at weight 500.
+ * Equal-width segmented picker. Per DESIGN §6.9: 44dp tall, `NpicShapes.sm` outer + `xs`
+ * inner segments, 1dp outer BorderStrong, Ivory outer fill. The active segment fills with
+ * Surface (white) and gets its own 1dp BorderStrong plus Ink label at weight 600; inactive
+ * segments are transparent with InkMuted labels at weight 500.
+ *
+ * TalkBack: the row is announced as a selectable group; each segment carries
+ * `Role.RadioButton` and its own `selected` state.
  *
  * Used by:
  * - Save dialog Class picker (9 / 10 / 11 / 12)
@@ -59,12 +68,11 @@ fun <T> NpicSegmentedControl(
             .clip(NpicShapes.sm)
             .background(NpicColors.Ivory, NpicShapes.sm)
             .border(1.dp, chrome.borderStrong, NpicShapes.sm)
-            .padding(NpicSpacing.xxs),
+            .padding(NpicSpacing.xxs)
+            .selectableGroup(),
     ) {
         options.forEach { option ->
             val isSelected = option == selected
-            // DESIGN §6.9: Selected segment fill Surface (not SaffronSoft), 1dp BorderStrong all around,
-            // small shadow (Level 1). Unselected segments transparent.
             val container by animateColorAsState(
                 targetValue = if (isSelected) NpicColors.Surface else Color.Transparent,
                 animationSpec = NpicMotion.standard(),
@@ -72,23 +80,29 @@ fun <T> NpicSegmentedControl(
             )
             val label by animateColorAsState(
                 targetValue = when {
-                    !enabled  -> chrome.inkFaint
+                    !enabled   -> chrome.inkFaint
                     isSelected -> NpicColors.Ink
                     else       -> chrome.inkMuted
                 },
                 animationSpec = NpicMotion.standard(),
                 label = "segment_label",
             )
+            val segmentModifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .semantics {
+                    role = Role.RadioButton
+                    this.selected = isSelected
+                }
+                .clip(NpicShapes.xs)
+                .background(container, NpicShapes.xs)
+                .then(
+                    if (isSelected) Modifier.border(1.dp, chrome.borderStrong, NpicShapes.xs)
+                    else Modifier
+                )
+                .clickable(enabled = enabled) { onSelect(option) }
             Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(NpicShapes.xs)
-                    .background(container, NpicShapes.xs)
-                    .let { m ->
-                        if (isSelected) m.border(1.dp, chrome.borderStrong, NpicShapes.xs) else m
-                    }
-                    .clickable(enabled = enabled) { onSelect(option) },
+                modifier = segmentModifier,
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

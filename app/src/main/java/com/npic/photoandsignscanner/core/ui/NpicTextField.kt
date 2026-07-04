@@ -119,7 +119,7 @@ fun NpicTextField(
                 if (value.isEmpty() && placeholder != null) {
                     Text(
                         text  = placeholder,
-                        color = chrome.inkFaint,
+                        color = chrome.inkMuted,
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
@@ -143,18 +143,29 @@ fun NpicTextField(
             }
 
             if (trailingIcon != null) {
-                Icon(
-                    imageVector = trailingIcon,
-                    contentDescription = null,
-                    tint = chrome.inkMuted,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .let { m ->
-                            if (onTrailingIconClick != null) {
-                                m.clip(NpicShapes.full).clickable(onClick = onTrailingIconClick)
-                            } else m
-                        },
-                )
+                if (onTrailingIconClick != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(NpicShapes.full)
+                            .clickable(onClick = onTrailingIconClick),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = trailingIcon,
+                            contentDescription = null,
+                            tint = chrome.inkMuted,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = trailingIcon,
+                        contentDescription = null,
+                        tint = chrome.inkMuted,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
 

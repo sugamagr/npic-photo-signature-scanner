@@ -66,7 +66,7 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
 enum class NpicButtonStyle { Primary, Secondary, Destructive, Ghost }
 
 enum class NpicButtonSize(val heightDp: Int, val horizontalPaddingDp: Int) {
-    Large(heightDp = 52, horizontalPaddingDp = 24),
+    Large(heightDp = 52, horizontalPaddingDp = 20),
     Small(heightDp = 44, horizontalPaddingDp = 20),
 }
 

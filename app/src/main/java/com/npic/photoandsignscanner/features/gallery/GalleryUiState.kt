@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.features.gallery
 
+import androidx.compose.runtime.Immutable
 import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.SortMode
 import com.npic.photoandsignscanner.domain.model.StudentRecord
@@ -13,6 +14,7 @@ import com.npic.photoandsignscanner.domain.model.StudentRecord
  * Selection mode is entered on long-press. When [selectedIds] is non-empty, the FAB is
  * replaced by the export/delete action bar (DESIGN §6.1, PRD §5.6).
  */
+@Immutable
 data class GalleryUiState(
     val records: List<StudentRecord> = emptyList(),
     val totalCount: Int = 0,

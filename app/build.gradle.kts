@@ -91,7 +91,6 @@ kotlin {
         // Strict null-safety + explicit API discipline
         freeCompilerArgs.addAll(
             "-Xjvm-default=all",
-            "-Xcontext-receivers",
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
             "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
