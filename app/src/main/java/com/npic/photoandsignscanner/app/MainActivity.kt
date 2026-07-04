@@ -31,6 +31,8 @@ import com.npic.photoandsignscanner.features.edit.EditViewModel
 import com.npic.photoandsignscanner.features.edit.SharedCaptureHolder
 import com.npic.photoandsignscanner.features.gallery.GalleryScreen
 import com.npic.photoandsignscanner.features.gallery.GalleryViewModel
+import com.npic.photoandsignscanner.features.signaturedraw.SignatureDrawResult
+import com.npic.photoandsignscanner.features.signaturedraw.SignatureDrawScreen
 
 /**
  * Single-activity entry point.
@@ -89,9 +91,10 @@ class MainActivity : ComponentActivity() {
 }
 
 private object Route {
-    const val Gallery = "gallery"
-    const val Camera  = "camera"
-    const val Edit    = "edit"
+    const val Gallery       = "gallery"
+    const val Camera        = "camera"
+    const val Edit          = "edit"
+    const val SignatureDraw = "signature_draw"
 }
 
 @Composable
@@ -115,6 +118,7 @@ private fun NpicNavHost(
                         popUpTo(Route.Camera) { inclusive = true }
                     }
                 },
+                onDrawInsteadClick = { navController.navigate(Route.SignatureDraw) },
             )
         }
         composable(Route.Edit) {
@@ -122,6 +126,12 @@ private fun NpicNavHost(
                 captureHolder = captureHolder,
                 editVmFactory = editVmFactory,
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable(Route.SignatureDraw) {
+            SignatureDrawDestination(
+                onBack = { navController.popBackStack() },
+                onDone = { navController.popBackStack() },
             )
         }
     }
@@ -156,14 +166,13 @@ private fun GalleryDestination(onCaptureClick: () -> Unit) {
 private fun CameraDestination(
     onBack: () -> Unit,
     onCaptureComplete: (com.npic.photoandsignscanner.domain.model.CameraCapture) -> Unit,
+    onDrawInsteadClick: () -> Unit,
 ) {
     val context = LocalContext.current
     CameraScreen(
         onBack = onBack,
         onCaptureComplete = onCaptureComplete,
-        onDrawInsteadClick = {
-            Toast.makeText(context, "Draw signature (next layer)", Toast.LENGTH_SHORT).show()
-        },
+        onDrawInsteadClick = onDrawInsteadClick,
         onImportFromGalleryClick = {
             Toast.makeText(context, "Import from Photos (next layer)", Toast.LENGTH_SHORT).show()
         },
@@ -201,5 +210,24 @@ private fun EditDestination(
             Toast.makeText(context, "Signature prompt (next layer)", Toast.LENGTH_SHORT).show()
         },
         viewModel = editViewModel,
+    )
+}
+
+@Composable
+private fun SignatureDrawDestination(
+    onBack: () -> Unit,
+    onDone: (SignatureDrawResult) -> Unit,
+) {
+    val context = LocalContext.current
+    SignatureDrawScreen(
+        onBack = onBack,
+        onDone = { result ->
+            Toast.makeText(
+                context,
+                "Drew signature with ${result.strokes.size} stroke(s) → Save (next layer)",
+                Toast.LENGTH_SHORT,
+            ).show()
+            onDone(result)
+        },
     )
 }
