@@ -1,32 +1,32 @@
 package com.npic.photoandsignscanner.app
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
+import com.npic.photoandsignscanner.features.gallery.GalleryScreen
+import com.npic.photoandsignscanner.features.gallery.GalleryViewModel
 
 /**
  * Single-activity entry point.
  *
- * Theme layer: hosts the design-system probe. Navigation and the Gallery home screen are
- * wired in the Gallery layer once the core/ui components are in place.
+ * Renders the Gallery screen (which IS the Home per DESIGN §6). Navigation to Camera /
+ * Edit / Signature / Save / Detail / Export slots in during their respective layers via
+ * NavHost — for the shell we log intents to a Toast so the interaction model is testable
+ * end-to-end before the destinations exist.
  */
 class MainActivity : ComponentActivity() {
+
+    private val galleryViewModel: GalleryViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -40,55 +40,27 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color    = MaterialTheme.colorScheme.background,
                 ) {
-                    ThemeProbe()
+                    val context = LocalContext.current
+                    GalleryScreen(
+                        viewModel = galleryViewModel,
+                        onCaptureClick = {
+                            Toast.makeText(context, "Capture → Camera (next layer)", Toast.LENGTH_SHORT).show()
+                        },
+                        onRecordClick = { id ->
+                            Toast.makeText(context, "Open record #$id → Detail (next layer)", Toast.LENGTH_SHORT).show()
+                        },
+                        onExportSelection = { ids ->
+                            Toast.makeText(context, "Export ${ids.size} record(s) → Share sheet (next layer)", Toast.LENGTH_SHORT).show()
+                        },
+                        onDeleteSelection = { ids ->
+                            Toast.makeText(context, "Delete ${ids.size} record(s) → Confirm dialog (next layer)", Toast.LENGTH_SHORT).show()
+                        },
+                        onOverflowClick = {
+                            Toast.makeText(context, "Overflow menu (next layer)", Toast.LENGTH_SHORT).show()
+                        },
+                    )
                 }
             }
         }
     }
-}
-
-/**
- * A minimal probe that renders text at three levels of the type scale on the app background.
- *
- * Its job is to prove — at runtime and in Compose previews — that:
- * 1. `NpicTheme` composes without crashing.
- * 2. Fraunces and Inter variable fonts are resolvable.
- * 3. `MaterialTheme.colorScheme` and `MaterialTheme.typography` resolve to the Warm
- *    Editorial palette and scale.
- *
- * Replaced by Gallery in the next layer.
- */
-@Composable
-private fun ThemeProbe() {
-    Box(
-        modifier = Modifier.fillMaxSize().padding(NpicSpacing.xl),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(NpicSpacing.md),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text  = "NPIC Scanner",
-                style = MaterialTheme.typography.displayMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text  = "Foundation online",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text  = "Photo and signature scanner for admission forms",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Preview(name = "Theme probe", showBackground = true)
-@Composable
-private fun ThemeProbePreview() {
-    NpicTheme { ThemeProbe() }
 }
