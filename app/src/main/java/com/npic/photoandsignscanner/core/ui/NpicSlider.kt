@@ -38,6 +38,11 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
  *
  * The `onDark` variant swaps track/thumb/label colors for the dark camera chrome (Edit ⇢
  * Adjust, Signature Draw).
+ *
+ * [showHeader] toggles the built-in label + value chip row. Edit → Adjust renders labels
+ * inline in its own row layout (icon + fixed-width label + slider + right-aligned value)
+ * per DESIGN §7.3, so it passes `showHeader = false` and provides its own affordances.
+ * The [label] and [valueLabel] are still used for accessibility semantics regardless.
  */
 @Composable
 fun NpicSlider(
@@ -51,6 +56,7 @@ fun NpicSlider(
     onValueChangeFinished: (() -> Unit)? = null,
     enabled: Boolean = true,
     onDark: Boolean = false,
+    showHeader: Boolean = true,
 ) {
     val chrome = LocalNpicChrome.current
     val labelColor = if (onDark) chrome.cameraInk else NpicColors.Ink
@@ -60,21 +66,23 @@ fun NpicSlider(
     val thumbColor    = NpicColors.Saffron
 
     Column(modifier = modifier.fillMaxWidth().padding(vertical = NpicSpacing.xs)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text  = label,
-                color = labelColor,
-                style = MaterialTheme.typography.labelLarge,
-            )
-            Text(
-                text  = valueLabel,
-                color = valueColor,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
-            )
+        if (showHeader) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text  = label,
+                    color = labelColor,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    text  = valueLabel,
+                    color = valueColor,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
+                )
+            }
         }
         Slider(
             value = value,
