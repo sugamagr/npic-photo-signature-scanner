@@ -40,9 +40,11 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
  * appeared when a signature was present, so users had to remember "absence
  * means missing" — DESIGN §6.7's original signal). Two variants:
  *   • Present: 24dp Saffron circle + 14dp Ivory `Draw` glyph.
- *   • Missing: 24dp inkMuted circle + 14dp Ivory `Draw` glyph + 2dp Terracotta
- *     diagonal strike-through line drawn across the circle. Matches the visual
- *     language of "banned/off" indicators (Wi-Fi off, camera off).
+ *   • Missing: same 24dp Saffron circle + 14dp Ivory `Draw` glyph, plus a
+ *     2dp Terracotta diagonal strike-through line drawn across it (m2278).
+ *     Shape stays consistent between states; only the strike-through
+ *     communicates absence. Matches the visual language of "banned/off"
+ *     indicators (Wi-Fi off, camera off).
  *
  * Selected state (multi-select): 3dp Saffron ring outside the thumb + white check on a
  * Saffron circle top-right. Whole cell scales to 96%.
@@ -96,7 +98,12 @@ fun NpicThumbnail(
         // Draw glyph is Icons.Outlined.Draw (Material 3's "hand drawing a signature").
         // Was Icons.Outlined.Edit until m2354 Bug I — users mistook the pencil for an
         // edit affordance and tapped by accident.
-        val badgeContainerColor = if (missingSignature) chrome.inkMuted else NpicColors.Saffron
+        //
+        // m2278: circle stays Saffron in BOTH states — the pre-m2278 inkMuted grey
+        // read as "faded / disabled" which looked bad on device. Shape consistency
+        // is intentional; the Terracotta strike-through below is the only signal for
+        // the missing state.
+        val badgeContainerColor = NpicColors.Saffron
         val badgeContentDescription =
             if (missingSignature) "No signature" else "Has signature"
         Box(

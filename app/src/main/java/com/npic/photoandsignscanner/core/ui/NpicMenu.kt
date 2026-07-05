@@ -1,5 +1,12 @@
 package com.npic.photoandsignscanner.core.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,7 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,10 +29,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -37,27 +45,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicElevation
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 
 /**
- * Popup anchored menu — the NPIC replacement for Material 3's [androidx.compose.material3.DropdownMenu]
- * (m2056 Item 5).
+ * Popup anchored menu — the NPIC replacement for Material 3's
+ * [androidx.compose.material3.DropdownMenu] (m2056 Item 5).
  *
- * Container is [NpicColors.SurfaceRaised] with [NpicShapes.md] corners, level-3 shadow, and
- * a 1 dp `borderSoft` hairline. Items are 44 dp min-height rows with an optional 20 dp leading
- * icon in `inkMuted`, `bodyMedium` label in [NpicColors.Ink], and an optional trailing
- * checkmark for [NpicMenuItem.selected] state. Destructive items ([NpicMenuItem.destructive])
- * render with `Terracotta` text and icon. Separators are 1 dp `borderSoft` dividers between
- * groups, inset by the leading icon column.
+ * Container is [NpicColors.SurfaceRaised] with [NpicShapes.md] corners, level-3
+ * shadow, and a 1 dp `borderSoft` hairline. Items are 44 dp min-height rows with
+ * an optional 20 dp leading icon, `bodyMedium` label in [NpicColors.Ink], and an
+ * optional trailing checkmark for selected state. Destructive items render with
+ * `Terracotta` text and icon. Separators are 1 dp `borderSoft` dividers, inset by
+ * the leading icon column so they don't cut across icon-less items.
  *
- * The caller anchors the menu by wrapping the trigger and the [NpicMenu] in the same [Box],
- * matching Material 3's positional contract — the popup opens at the anchor's bottom edge.
+ * The caller anchors the menu by wrapping the trigger and the [NpicMenu] in the
+ * same [Box], matching Material 3's positional contract — the popup opens at the
+ * anchor's bottom edge.
  *
- * Dismissal: tap outside, tap any non-destructive item's onClick, tap the system-back key.
- * The parent is responsible for clearing the `expanded` flag on any of these paths.
+ * ## m2278 size + motion rewrite
+ *
+ * The initial implementation set `widthIn(min = minWidth)` with no max, and the
+ * inner Column had `fillMaxWidth()`. Result on device: the popup stretched to
+ * the full screen width because Popup gives its child unbounded width
+ * constraints. Fix: `widthIn(min, max)` bounds the container, and the inner
+ * Column uses `Modifier.width(IntrinsicSize.Max)` semantics by dropping
+ * `fillMaxWidth()` — each item Row still fills the container but the container
+ * itself measures to content.
+ *
+ * The initial implementation also had no entrance/exit motion — the popup
+ * snapped in and out. Fix: [AnimatedVisibility] with a scaleIn + fadeIn from the
+ * anchor's top-end corner (matches M3 Expressive menu motion). Gated on
+ * [LocalReduceMotion] so users who dislike motion get the instant snap.
+ *
+ * Dismissal: tap outside, tap any non-destructive item's onClick, tap the
+ * system-back key. The parent is responsible for clearing the `expanded` flag on
+ * any of these paths.
  */
 @Composable
 fun NpicMenu(
@@ -66,10 +92,20 @@ fun NpicMenu(
     modifier: Modifier = Modifier,
     offset: DpOffset = DpOffset(0.dp, NpicSpacing.xs),
     minWidth: androidx.compose.ui.unit.Dp = 200.dp,
+    maxWidth: androidx.compose.ui.unit.Dp = 280.dp,
     content: NpicMenuScope.() -> Unit,
 ) {
-    if (!expanded) return
+    // MutableTransitionState so AnimatedVisibility runs the exit transition
+    // before the Popup dismount — otherwise the popup disappears instantly the
+    // moment `expanded` flips to false.
+    val transition = remember { MutableTransitionState(false) }
+    transition.targetState = expanded
+    val visuallyActive = transition.currentState || transition.targetState
+    if (!visuallyActive) return
+
     val chrome = LocalNpicChrome.current
+    val reduceMotion = LocalReduceMotion.current
+
     Popup(
         onDismissRequest = onDismissRequest,
         properties = PopupProperties(
@@ -79,21 +115,40 @@ fun NpicMenu(
         ),
         offset = androidx.compose.ui.unit.IntOffset(0, 0),
     ) {
-        Box(
-            modifier = modifier
-                .padding(top = offset.y, start = offset.x)
-                .shadow(NpicElevation.level3, NpicShapes.md, clip = false)
-                .clip(NpicShapes.md)
-                .background(NpicColors.SurfaceRaised, NpicShapes.md)
-                .border(1.dp, chrome.borderSoft, NpicShapes.md)
-                .widthIn(min = minWidth),
+        val enterSpec = if (reduceMotion) tween<Float>(0) else tween<Float>(180)
+        val exitSpec = if (reduceMotion) tween<Float>(0) else tween<Float>(140)
+        AnimatedVisibility(
+            visibleState = transition,
+            enter = fadeIn(animationSpec = enterSpec) +
+                scaleIn(
+                    animationSpec = enterSpec,
+                    initialScale = 0.92f,
+                    // Anchor grows from its top-end corner so the animation reads as
+                    // "sliding down from the icon that opened it" rather than the
+                    // middle of the popup.
+                    transformOrigin = TransformOrigin(1f, 0f),
+                ),
+            exit = fadeOut(animationSpec = exitSpec) +
+                scaleOut(
+                    animationSpec = exitSpec,
+                    targetScale = 0.94f,
+                    transformOrigin = TransformOrigin(1f, 0f),
+                ),
         ) {
-            val scope = NpicMenuScopeImpl(chrome = chrome, onDismissRequest = onDismissRequest)
             Column(
-                modifier = Modifier
-                    .padding(vertical = NpicSpacing.xxs)
-                    .fillMaxWidth(),
+                modifier = modifier
+                    .padding(top = offset.y, start = offset.x)
+                    .shadow(NpicElevation.level3, NpicShapes.md, clip = false)
+                    .clip(NpicShapes.md)
+                    .background(NpicColors.SurfaceRaised, NpicShapes.md)
+                    .border(1.dp, chrome.borderSoft, NpicShapes.md)
+                    .widthIn(min = minWidth, max = maxWidth)
+                    .padding(vertical = NpicSpacing.xxs),
             ) {
+                val scope = NpicMenuScopeImpl(
+                    chrome = chrome,
+                    onDismissRequest = onDismissRequest,
+                )
                 scope.content()
                 scope.render()
             }
@@ -204,20 +259,15 @@ private class NpicMenuScopeImpl(
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = if (entry.selected) FontWeight(600) else FontWeight(500),
                         ),
-                        modifier = Modifier
-                            .let { m -> if (entry.selected) m else m.padding(end = NpicSpacing.sm) }
-                            .semantics { role = Role.Button },
+                        modifier = Modifier.weight(1f),
                     )
                     if (entry.selected) {
-                        Spacer(Modifier.width(NpicSpacing.md))
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = "Selected",
-                                tint = NpicColors.SaffronDeep,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Selected",
+                            tint = NpicColors.SaffronDeep,
+                            modifier = Modifier.size(18.dp),
+                        )
                     }
                 }
                 NpicMenuEntry.Kind.Divider -> Box(
@@ -231,7 +281,3 @@ private class NpicMenuScopeImpl(
         }
     }
 }
-
-/** Dummy — suppresses "declared but never used" on the WindowInsets import above. */
-@Suppress("unused")
-private val _keepWindowInsetsUsage: WindowInsets = WindowInsets(0)

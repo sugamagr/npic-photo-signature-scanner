@@ -641,44 +641,55 @@ private fun GalleryGrid(
     // survives recomposition so recycled cells and filter swaps never re-run it.
     val enteredIds = remember { mutableSetOf<String>() }
 
-    // m2056 Item 2 — drag-to-select. Each visible thumbnail registers its grid-
-    // local Rect here on layout; a grid-level pointerInput runs a long-press-then-
-    // drag detector that hit-tests the finger position against these rects and
-    // toggles selection on cells the finger enters. Semantics match Samsung
-    // Gallery / Google Photos: long-press one thumb, then slide across adjacent
-    // thumbs without lifting.
+    // m2056 Item 2 — drag-to-select (m2278 revision).
+    //
+    // First revision put detectDragGesturesAfterLongPress on the grid-level Box.
+    // That caught every long-press before the per-thumbnail combinedClickable
+    // could see it — the normal long-press-to-enter-selection path broke.
+    //
+    // Fix: gate the grid-level drag detector on `selectionMode`. While selection
+    // mode is OFF, the grid pointerInput is a no-op — the normal per-thumbnail
+    // long-press path fires first and toggles selection mode on. Once selection
+    // mode is ON, subsequent long-press-then-drag on ANY cell enters drag-select
+    // mode and extends the selection across the swiped range.
+    //
+    // Samsung Gallery / Google Photos use the same pattern: the first cell is
+    // always the "commit" long-press, drag-extend only works after the first
+    // pick is committed.
     val cellBounds = remember { mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
     val visitedThisDrag = remember { mutableSetOf<String>() }
     val haptics = com.npic.photoandsignscanner.core.theme.rememberNpicHaptics()
 
     Box(
-        modifier = Modifier.pointerInput(Unit) {
-            detectDragGesturesAfterLongPress(
-                onDragStart = { start: androidx.compose.ui.geometry.Offset ->
-                    visitedThisDrag.clear()
-                    // Toggle the anchor cell (matches the long-press semantics the
-                    // per-item onLongPress already provided — this makes the drag
-                    // start work whether or not selection mode was already on).
-                    hitTestCell(cellBounds, start)?.let { id ->
-                        haptics.performLongPress()
-                        longPressRef.value(id)
-                        visitedThisDrag += id
+        modifier = Modifier
+            .then(
+                if (state.isSelectionMode) {
+                    Modifier.pointerInput(Unit) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { start: androidx.compose.ui.geometry.Offset ->
+                                visitedThisDrag.clear()
+                                hitTestCell(cellBounds, start)?.let { id ->
+                                    haptics.performLongPress()
+                                    longPressRef.value(id)
+                                    visitedThisDrag += id
+                                }
+                            },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                hitTestCell(cellBounds, change.position)?.let { id ->
+                                    if (id !in visitedThisDrag) {
+                                        haptics.performClick()
+                                        longPressRef.value(id)
+                                        visitedThisDrag += id
+                                    }
+                                }
+                            },
+                            onDragEnd = { visitedThisDrag.clear() },
+                            onDragCancel = { visitedThisDrag.clear() },
+                        )
                     }
-                },
-                onDrag = { change, _ ->
-                    change.consume()
-                    hitTestCell(cellBounds, change.position)?.let { id ->
-                        if (id !in visitedThisDrag) {
-                            haptics.performClick()
-                            longPressRef.value(id)
-                            visitedThisDrag += id
-                        }
-                    }
-                },
-                onDragEnd = { visitedThisDrag.clear() },
-                onDragCancel = { visitedThisDrag.clear() },
-            )
-        },
+                } else Modifier,
+            ),
     ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),

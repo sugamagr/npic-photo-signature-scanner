@@ -742,9 +742,13 @@ private fun TargetClassPickerDialog(
 
 /**
  * Photo / Signature card header. Symmetric across both media types. When [editPill] is
- * non-null the header renders a compact Saffron "Edit" affordance in the trailing edge
+ * non-null the header renders a filled Saffron "Edit" affordance in the trailing edge
  * so the edit action stays discoverable without needing the passive "Tap to edit" hint
  * that used to sit under the media.
+ *
+ * m2278: the pill's visual treatment matches the Export primary button (filled Saffron
+ * container + Ivory content). Was SaffronSoft container + SaffronDeep content — read
+ * as a passive chip rather than a real button next to the Export CTA below.
  */
 @Immutable
 private data class SectionHeaderPill(val onClick: () -> Unit)
@@ -765,22 +769,22 @@ private fun SectionHeader(title: String, editPill: SectionHeaderPill?) {
             Row(
                 modifier = Modifier
                     .clip(NpicShapes.full)
-                    .background(NpicColors.SaffronSoft)
+                    .background(NpicColors.Saffron)
                     .semantics { role = Role.Button }
                     .clickable(onClick = editPill.onClick)
-                    .padding(horizontal = NpicSpacing.sm, vertical = NpicSpacing.xxs),
+                    .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Edit,
                     contentDescription = null,
-                    tint = NpicColors.SaffronDeep,
+                    tint = NpicColors.Ivory,
                     modifier = Modifier.size(14.dp),
                 )
                 Text(
                     text  = "Edit",
-                    color = NpicColors.SaffronDeep,
+                    color = NpicColors.Ivory,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
                 )
             }

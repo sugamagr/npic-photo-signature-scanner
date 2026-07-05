@@ -142,17 +142,19 @@ private fun SearchTopBar(
 ) {
     val chrome = LocalNpicChrome.current
     val focusRequester = remember { FocusRequester() }
-    // Auto-focus when the screen enters composition — user tapped Search intending to type.
-    //
-    // The naive `LaunchedEffect(Unit) { focusRequester.requestFocus() }` fires on the FIRST
-    // composition frame, before BasicTextField has been measured, positioned, or attached to
-    // the focus graph. On Samsung One UI 6 the request lands in a void and Compose silently
-    // drops it — result: keyboard never opens, taps on the bar don't route to the field,
-    // typing does nothing. Defer with a 50 ms delay so layout attaches first, and wrap in
-    // runCatching so a "not yet initialized" throw at cold-start doesn't crash the screen.
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    // Auto-focus on entry. The previous m2132 attempt used delay(50) + runCatching,
+    // which didn't work on device — root cause was not focus timing but the
+    // placeholder Text stacked over BasicTextField in a plain Box: on some Compose
+    // + One UI combos, the Text intercepts touch events for the empty area,
+    // preventing the field below from receiving them. m2278 fix moves the
+    // placeholder into BasicTextField.decorationBox (the built-in placeholder
+    // slot), where it never competes for events. Also explicitly show the IME
+    // via LocalSoftwareKeyboardController so the keyboard opens even if some
+    // ancestor consumed the natural show-on-focus signal.
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(50)
         runCatching { focusRequester.requestFocus() }
+        keyboard?.show()
     }
 
     Row(
@@ -172,10 +174,17 @@ private fun SearchTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .weight(1f)
                 .height(48.dp)
                 .clip(NpicShapes.sm)
                 .background(NpicColors.Surface)
                 .border(1.dp, chrome.borderStrong, NpicShapes.sm)
+                // Tapping any pixel of the visible search bar refocuses the field. Belt-
+                // and-suspenders in case the auto-focus above lost the race.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { runCatching { focusRequester.requestFocus() }; keyboard?.show() }
                 .padding(horizontal = NpicSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
@@ -186,33 +195,34 @@ private fun SearchTopBar(
                 tint = chrome.inkMuted,
                 modifier = Modifier.size(20.dp),
             )
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                if (query.isEmpty()) {
-                    Text(
-                        text  = "Name, serial, or class",
-                        color = chrome.inkFaint,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                    singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(
-                        color = NpicColors.Ink,
-                        fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                    ),
-                    cursorBrush = SolidColor(NpicColors.Saffron),
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Search,
-                    ),
-                    interactionSource = remember { MutableInteractionSource() },
-                )
-            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .focusRequester(focusRequester)
+                    .weight(1f),
+                singleLine = true,
+                textStyle = LocalTextStyle.current.copy(
+                    color = NpicColors.Ink,
+                    fontSize = MaterialTheme.typography.bodyLarge.fontSize,
+                ),
+                cursorBrush = SolidColor(NpicColors.Saffron),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Words,
+                    imeAction = ImeAction.Search,
+                ),
+                interactionSource = remember { MutableInteractionSource() },
+                decorationBox = { innerField ->
+                    if (query.isEmpty()) {
+                        Text(
+                            text  = "Name, serial, or class",
+                            color = chrome.inkFaint,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    innerField()
+                },
+            )
             if (query.isNotEmpty()) {
                 // WCAG 2.5.5 / DESIGN §1.6: 44dp tap target. Icon glyph stays 18dp for the
                 // visual weight the search bar wants — the outer Box handles the hit region.
