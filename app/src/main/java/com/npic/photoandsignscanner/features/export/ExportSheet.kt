@@ -57,6 +57,7 @@ import com.npic.photoandsignscanner.core.ui.NpicButton
 import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicCard
 import com.npic.photoandsignscanner.domain.model.ExportFormat
+import com.npic.photoandsignscanner.domain.model.NamingMode
 
 /**
  * Export Format Sheet (PRD §4.10 + DESIGN §7.8). Three radio-selectable format cards,
@@ -85,6 +86,17 @@ fun ExportSheet(
             selected = state.format,
             onSelect = viewModel::setFormat,
         )
+
+        // m2496: naming-mode toggle. Only rendered when at least one selected record
+        // was originally saved under Name mode — pure-Serial batches export as
+        // `090001.jpeg` regardless, so the toggle would be a dead switch.
+        if (state.showNamingToggle) {
+            Spacer(Modifier.height(NpicSpacing.md))
+            NamingToggleSection(
+                override = state.namingOverride,
+                onSelect = viewModel::setNamingOverride,
+            )
+        }
 
         if (state.hasWarning) {
             Spacer(Modifier.height(NpicSpacing.md))
@@ -447,4 +459,51 @@ private fun missingMediaMessage(
     } else {
         "$count items don't have a $missing. They'll be skipped."
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Naming-mode toggle (m2496)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Filename naming-mode picker. Visible in the sheet only when at least one selected
+ * record was originally saved under Name mode (see [ExportUiState.showNamingToggle]).
+ * User picks whether to export Name-mode records under their typed name or their
+ * class + serial. Serial-mode records ignore the toggle — their filename is always
+ * `{portalCode}{serial:04d}.jpeg`.
+ */
+@Composable
+private fun NamingToggleSection(
+    override: NamingMode.Kind?,
+    onSelect: (NamingMode.Kind) -> Unit,
+) {
+    val chrome = LocalNpicChrome.current
+    // Toggle defaults to Name when no override is set — matches how a Name-mode
+    // record would export without the toggle at all.
+    val selected = override ?: NamingMode.Kind.Name
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text  = "Filename",
+            color = chrome.inkMuted,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Spacer(Modifier.height(NpicSpacing.xxs))
+        Text(
+            text  = "For records saved with a name. Serial-only records always export as their portal number.",
+            color = chrome.inkMuted,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(NpicSpacing.sm))
+        com.npic.photoandsignscanner.core.ui.NpicSegmentedControl(
+            options  = listOf(NamingMode.Kind.Name, NamingMode.Kind.Serial),
+            selected = selected,
+            onSelect = onSelect,
+            labelOf  = ::namingKindLabel,
+        )
+    }
+}
+
+private fun namingKindLabel(kind: NamingMode.Kind): String = when (kind) {
+    NamingMode.Kind.Name   -> "By name"
+    NamingMode.Kind.Serial -> "By serial"
 }

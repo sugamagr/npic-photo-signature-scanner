@@ -2,6 +2,7 @@ package com.npic.photoandsignscanner.features.export
 
 import androidx.compose.runtime.Stable
 import com.npic.photoandsignscanner.domain.model.ExportFormat
+import com.npic.photoandsignscanner.domain.model.NamingMode
 import com.npic.photoandsignscanner.domain.model.StudentRecord
 
 /**
@@ -28,6 +29,14 @@ data class ExportUiState(
      * user so they know the portal MAY reject those items.
      */
     val underMinCount: Int = 0,
+    /**
+     * m2496: user-chosen filename naming mode override. `null` (default) means each
+     * record exports under its own persisted [StudentRecord.namingKind]. Setting to
+     * [NamingMode.Kind.Serial] or [NamingMode.Kind.Name] forces that filename shape
+     * for every Name-mode record in the batch (Serial-mode records ignore the
+     * override — they only have one meaningful filename).
+     */
+    val namingOverride: NamingMode.Kind? = null,
 ) {
     val recordCount: Int get() = records.size
     val isMulti: Boolean  get() = records.size > 1
@@ -41,6 +50,14 @@ data class ExportUiState(
 
     val hasWarning: Boolean get() = skipped.isNotEmpty()
     val canExport: Boolean get() = !exporting && effective.isNotEmpty()
+
+    /**
+     * m2496: the naming toggle is only meaningful when at least one selected record was
+     * originally saved under Name mode. Pure-Serial batches all export as `090001.jpeg`
+     * regardless of the toggle — showing it would just be a dead switch.
+     */
+    val showNamingToggle: Boolean
+        get() = records.any { it.namingKind == NamingMode.Kind.Name }
 
     private fun hasRequiredMedia(r: StudentRecord): Boolean {
         val hasPhoto = r.photoPath.isNotBlank()

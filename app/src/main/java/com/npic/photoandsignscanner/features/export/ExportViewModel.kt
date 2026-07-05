@@ -45,12 +45,13 @@ import java.io.FileOutputStream
  *     ZIP path to [ExportResult.Zip] (PRD §4.10 multi-share prefers ZIP over
  *     ACTION_SEND_MULTIPLE so desktop / portal receivers get one clean attachment).
  *
- * ### Naming mode inference
- * Layer 9 does not yet persist the user's Save-time Serial/Name choice on the record
- * (that moves onto [StudentRecord] with Room in Layer 10). Until then, infer: if
- * [StudentRecord.displayName] matches the Serial-mode default `Serial N` (or is blank),
- * treat as Serial mode; otherwise Name mode. This preserves the intent for both mock and
- * real records and will be replaced by a real persisted enum in Layer 10.
+ * ### Naming mode (m2496)
+ * Each record's `namingKind` is now persisted on [StudentRecord] (m2232 Room v2), so we
+ * use it as the source of truth. The user can also override on a per-batch basis via
+ * [setNamingOverride] — but only for Name-mode records. Serial-mode records ignore the
+ * override because their `displayName` is placeholder text ("Serial 42"), not a real
+ * name; forcing them to Name-mode filenames would produce `Serial_42_09.jpeg`, which
+ * is worse than the deterministic `090001.jpeg`.
  *
  * ### Under-min accepted
  * When [JpegCompressor] returns `underMinAccepted = true` (PRD §6.1 Option A — Q95 on a
@@ -86,6 +87,15 @@ class ExportViewModel(
     }
 
     /**
+     * m2496: user-chosen filename naming override for the current export batch. Applied
+     * to Name-mode records only (Serial-mode records ignore it — they only have one
+     * meaningful filename). Setting `null` restores each record's persisted default.
+     */
+    fun setNamingOverride(kind: NamingMode.Kind?) {
+        _state.value = _state.value.copy(namingOverride = kind)
+    }
+
+    /**
      * Prepare the export bundle for the current [ExportUiState.format]. Fires [onReady]
      * with an [ExportResult] describing what to hand to
      * [com.npic.photoandsignscanner.data.export.FileShareLauncher]. The caller owns the
@@ -102,7 +112,7 @@ class ExportViewModel(
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { produceBundle(effective, snapshot.format) }
+                runCatching { produceBundle(effective, snapshot.format, snapshot.namingOverride) }
                     .onFailure { Log.e(TAG, "produceBundle failed: ${it.message}", it) }
                     .getOrNull()
             } ?: ExportResult.Failed
@@ -133,7 +143,7 @@ class ExportViewModel(
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { saveToGallery(effective, snapshot.format) }
+                runCatching { saveToGallery(effective, snapshot.format, snapshot.namingOverride) }
                     .onFailure { Log.e(TAG, "saveToGallery failed: ${it.message}", it) }
                     .getOrNull()
             } ?: ExportResult.Failed
@@ -164,7 +174,7 @@ class ExportViewModel(
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { saveAndShare(effective, snapshot.format) }
+                runCatching { saveAndShare(effective, snapshot.format, snapshot.namingOverride) }
                     .onFailure { Log.e(TAG, "saveAndShare failed: ${it.message}", it) }
                     .getOrNull()
             } ?: ExportResult.Failed
@@ -188,34 +198,74 @@ class ExportViewModel(
      * (filename + compressed bytes + under-min flag). Called by [produceBundle],
      * [saveToGallery], and [saveAndShare] so compression runs exactly once per
      * user-initiated export regardless of destination fan-out.
+     *
+     * m2496: filename honors [ExportUiState.namingOverride] when set — but only for
+     * records that were originally saved under Name mode. Serial-mode records always
+     * export as `090001.jpeg` regardless of the toggle, because their displayName
+     * is placeholder text ("Serial 42"), not a real name the user typed.
      */
-    private fun renderPayloads(records: List<StudentRecord>, format: ExportFormat): List<Payload> =
+    private fun renderPayloads(
+        records: List<StudentRecord>,
+        format: ExportFormat,
+        namingOverride: NamingMode.Kind?,
+    ): List<Payload> =
         records.mapNotNull { record ->
             renderRecord(record, format)?.let { (bytes, underMin) ->
                 Payload(
-                    filename = GenerateFileName.forExport(record, format, inferNamingKind(record)),
+                    filename = GenerateFileName.forExport(
+                        record = record,
+                        format = format,
+                        namingMode = resolveNamingKind(record, namingOverride),
+                    ),
                     bytes = bytes,
                     underMin = underMin,
                 )
             }
         }
 
-    private suspend fun produceBundle(records: List<StudentRecord>, format: ExportFormat): ExportResult {
-        val outputs = renderPayloads(records, format)
+    /**
+     * m2496: resolve the filename naming mode for a single record given the batch-wide
+     * override. Serial-mode records ignore the override (their displayName is
+     * placeholder text); Name-mode records take the override when set, else fall
+     * back to Name (their persisted default).
+     */
+    private fun resolveNamingKind(
+        record: StudentRecord,
+        override: NamingMode.Kind?,
+    ): NamingMode.Kind =
+        when (record.namingKind) {
+            NamingMode.Kind.Serial -> NamingMode.Kind.Serial
+            NamingMode.Kind.Name   -> override ?: NamingMode.Kind.Name
+        }
+
+    private suspend fun produceBundle(
+        records: List<StudentRecord>,
+        format: ExportFormat,
+        namingOverride: NamingMode.Kind?,
+    ): ExportResult {
+        val outputs = renderPayloads(records, format, namingOverride)
         if (outputs.isEmpty()) return ExportResult.Failed
         return bundleForShare(outputs)
     }
 
-    private suspend fun saveToGallery(records: List<StudentRecord>, format: ExportFormat): ExportResult {
-        val outputs = renderPayloads(records, format)
+    private suspend fun saveToGallery(
+        records: List<StudentRecord>,
+        format: ExportFormat,
+        namingOverride: NamingMode.Kind?,
+    ): ExportResult {
+        val outputs = renderPayloads(records, format, namingOverride)
         if (outputs.isEmpty()) return ExportResult.Failed
         val saved = writeAllToGallery(outputs)
         if (saved.isEmpty()) return ExportResult.Failed
         return ExportResult.Saved(saved, outputs.count { it.underMin })
     }
 
-    private suspend fun saveAndShare(records: List<StudentRecord>, format: ExportFormat): ExportResult {
-        val outputs = renderPayloads(records, format)
+    private suspend fun saveAndShare(
+        records: List<StudentRecord>,
+        format: ExportFormat,
+        namingOverride: NamingMode.Kind?,
+    ): ExportResult {
+        val outputs = renderPayloads(records, format, namingOverride)
         if (outputs.isEmpty()) return ExportResult.Failed
         val saved = writeAllToGallery(outputs)
         val underMinCount = outputs.count { it.underMin }
@@ -325,17 +375,6 @@ class ExportViewModel(
 
     private fun exportsCacheDir(): File = File(cacheDir, EXPORTS_SUBDIR).apply { mkdirs() }
 
-    /**
-     * Best-effort inference of the user's original Save-time naming choice per record.
-     * Layer 10 replaces this with a persisted enum on [StudentRecord]. See class KDoc.
-     */
-    private fun inferNamingKind(record: StudentRecord): NamingMode.Kind =
-        if (record.displayName.isBlank() || record.displayName.matches(SERIAL_PLACEHOLDER)) {
-            NamingMode.Kind.Serial
-        } else {
-            NamingMode.Kind.Name
-        }
-
     private fun loadRecords() {
         viewModelScope.launch {
             val loaded: List<StudentRecord> = recordIds.mapNotNull { id -> repository.getById(id) }
@@ -375,13 +414,6 @@ class ExportViewModel(
     private companion object {
         const val TAG = "ExportViewModel"
         const val EXPORTS_SUBDIR = "exports"
-
-        /**
-         * Matches the placeholder displayName Layer 8b uses when the user picks Serial
-         * naming mode and never types a name: `"Serial 42"`. Used by [inferNamingKind]
-         * to route back to Serial-format filenames. Layer 10 removes this heuristic.
-         */
-        val SERIAL_PLACEHOLDER = Regex("^Serial \\d+$")
     }
 }
 
