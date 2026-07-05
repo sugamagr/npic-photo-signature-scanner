@@ -157,7 +157,9 @@ private fun CameraOverlayPhotoPreview() {
 private fun CameraOverlaySignaturePreview() {
     NpicTheme {
         Box(Modifier.background(NpicColors.Ink).size(320.dp, 480.dp)) {
-            NpicCameraOverlay(aspect = 3f / 1f, fillFraction = 0.85f)
+            // m1814/m1817: mirror the shipped Signature.guideFillFraction (0.60), not the
+            // pre-m1814 0.85. Previews must match runtime or a design QA against them lies.
+            NpicCameraOverlay(aspect = 3f / 1f, fillFraction = 0.60f)
         }
     }
 }
