@@ -331,6 +331,10 @@ private fun SearchResultRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NpicSpacing.md),
     ) {
+        // m2470: leading slot renders the actual photo thumbnail via Coil.
+        // Falls back to the SaffronSoft + class-label chip (the pre-m2470 shape)
+        // when the record has no photo on disk yet — matches how Gallery grid
+        // handles missing-photo cells.
         Box(
             modifier = Modifier
                 .size(44.dp)
@@ -338,11 +342,20 @@ private fun SearchResultRow(
                 .background(chrome.saffronSoft),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text  = record.classNum.label,
-                color = NpicColors.SaffronDeep,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight(700)),
-            )
+            if (record.photoPath.isNotBlank()) {
+                coil.compose.AsyncImage(
+                    model = java.io.File(record.photoPath),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text  = record.classNum.label,
+                    color = NpicColors.SaffronDeep,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight(700)),
+                )
+            }
         }
         Column(Modifier.weight(1f)) {
             Text(

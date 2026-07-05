@@ -29,17 +29,21 @@ class GalleryViewModel(
     private val repository: StudentRepository,
 ) : ViewModel() {
 
-    private val _classFilter = MutableStateFlow<ClassNum?>(null)
-    private val _sortMode    = MutableStateFlow(SortMode.Newest)
-    private val _selected    = MutableStateFlow<Set<String>>(emptySet())
+    private val _classFilter    = MutableStateFlow<ClassNum?>(null)
+    private val _sortMode       = MutableStateFlow(SortMode.Newest)
+    private val _selected       = MutableStateFlow<Set<String>>(emptySet())
+    // m2470: selection mode is separate from selection set — entering is on
+    // long-press, exiting is ONLY on explicit user cancel (Close button in the
+    // selection top bar, system back, or Delete/Export completion). Deriving
+    // it from `_selected.isNotEmpty()` auto-exited when the user deselected
+    // their last cell, which felt broken.
+    private val _selectionMode  = MutableStateFlow(false)
 
     val state: StateFlow<GalleryUiState> = combine(
-        repository.observeAll(),
-        _classFilter,
-        _sortMode,
-        _selected,
-    ) { all, filter, sort, selected ->
-        compute(all, filter, sort, selected)
+        combine(repository.observeAll(), _classFilter, _sortMode, ::Triple),
+        combine(_selected, _selectionMode, ::Pair),
+    ) { (all, filter, sort), (selected, selectionMode) ->
+        compute(all, filter, sort, selected, selectionMode)
     }.stateIn(
         scope        = viewModelScope,
         started      = SharingStarted.WhileSubscribed(STATE_TIMEOUT_MS),
@@ -50,18 +54,31 @@ class GalleryViewModel(
 
     fun setSortMode(mode: SortMode) { _sortMode.value = mode }
 
+    /**
+     * Enter selection mode and toggle [id]'s presence in the selection set. Called
+     * from long-press on a thumbnail (first cell of a session). Idempotent: if
+     * selection mode is already on and [id] is already selected, this deselects.
+     */
     fun toggleSelect(id: String) {
         _selected.update { current ->
             if (id in current) current - id else current + id
         }
+        _selectionMode.value = true
     }
 
+    /**
+     * Explicit user cancel — Close button in the selection top bar or system back.
+     * Empties the set AND leaves selection mode. This is the ONLY way (aside from
+     * Delete-completion in [deleteSelection]) that selection mode can turn off.
+     */
     fun clearSelection() {
-        if (_selected.value.isNotEmpty()) _selected.value = emptySet()
+        _selected.value = emptySet()
+        _selectionMode.value = false
     }
 
     fun selectAll() {
         _selected.value = state.value.records.map { it.id }.toSet()
+        _selectionMode.value = true
     }
 
     /**
@@ -74,6 +91,7 @@ class GalleryViewModel(
         viewModelScope.launch {
             ids.forEach { runCatching { repository.delete(it) } }
             _selected.value = emptySet()
+            _selectionMode.value = false
         }
     }
 
@@ -82,6 +100,7 @@ class GalleryViewModel(
         filter: ClassNum?,
         sort: SortMode,
         selected: Set<String>,
+        selectionMode: Boolean,
     ): GalleryUiState {
         val filtered = if (filter == null) all else all.filter { it.classNum == filter }
         val sorted = when (sort) {
@@ -105,13 +124,14 @@ class GalleryViewModel(
         val liveSelected = if (selected.all { it in existingIds }) selected
                            else selected.intersect(existingIds)
         return GalleryUiState(
-            records        = sorted,
-            totalCount     = all.size,
-            countsByClass  = counts,
-            classFilter    = filter,
-            sortMode       = sort,
-            selectedIds    = liveSelected,
-            isLoading      = false,
+            records         = sorted,
+            totalCount      = all.size,
+            countsByClass   = counts,
+            classFilter     = filter,
+            sortMode        = sort,
+            selectedIds     = liveSelected,
+            isSelectionMode = selectionMode,
+            isLoading       = false,
         )
     }
 
