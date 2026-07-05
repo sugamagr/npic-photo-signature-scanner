@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# m2509 H4: refuse to commit anything that looks like a real keystore or its
+# accompanying properties file. `.gitignore` already covers the same paths but
+# a `git add -f` or a rename can bypass it — this hook is the safety net.
+#
+# Install via: ./scripts/git-hooks/install.sh
+# Bypass (do NOT use unless you know exactly why): git commit --no-verify
+
+set -euo pipefail
+
+blocked=$(git diff --cached --name-only --diff-filter=ACM \
+    | grep -Ei '(^|/)keystore\.properties$|(^|/)keystore\.properties\.local$|\.jks$|\.keystore$' || true)
+
+if [ -n "$blocked" ]; then
+    echo ""
+    echo "ERROR: refusing to commit files that look like signing secrets:"
+    printf '  %s\n' $blocked
+    echo ""
+    echo "If this is genuinely an example / template with NO real secrets,"
+    echo "rename it to <name>.example (already whitelisted) and re-stage."
+    exit 1
+fi
+
+exit 0

@@ -8,10 +8,16 @@ sheet surfaces to the user. This document is the ship recipe for that flow.
 
 1. Keystore lives at `/Users/apple/Documents/RdQrScanner-KEYSTORE-BACKUP/keystore.jks`
    and is referenced from `keystore.properties` at the repo root (gitignored).
-   If `keystore.properties` is missing, `./gradlew assembleRelease` still succeeds
-   but the APK is unsigned — installing it over an existing user's copy will
-   fail with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
-2. `gh` CLI installed and authenticated: `gh auth status`.
+   If `keystore.properties` is missing when a release task runs, the build now
+   **fails at the config phase** with an explicit error (m2509 H3) rather than
+   silently producing an unsigned APK that would break `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+   on every user's first auto-update.
+2. Install the pre-commit hook once per fresh clone so `keystore.properties`
+   or a stray `.jks` can never sneak into a commit:
+   ```bash
+   ./scripts/git-hooks/install.sh
+   ```
+3. `gh` CLI installed and authenticated: `gh auth status`.
 
 ## Cutting a release
 

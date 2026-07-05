@@ -7,6 +7,7 @@ import android.net.Uri
 import android.util.Log
 import com.npic.photoandsignscanner.domain.model.UpdateManifest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -91,18 +92,37 @@ class UpdateDownloader(
         }
 
         val downloadId = downloadManager.enqueue(request)
+        // m2509 H1: `try/finally` with NonCancellable ensures DownloadManager.remove()
+        // + destination.delete() run when the flow collector is cancelled (user
+        // dismisses sheet, ViewModel cleared, navigation change). CancellationException
+        // is rethrown by coroutines and skips regular catch blocks, so cleanup MUST
+        // happen in finally under NonCancellable to actually reach the system service.
+        var completedNaturally = false
         try {
             while (true) {
-                val snapshot = queryProgress(downloadId)
+                val snapshot = queryProgressWithRetry(downloadId)
                 if (snapshot == null) {
                     emit(Progress.Failed(Reason.CANCELLED))
                     destination.delete()
                     return@flow
                 }
                 when (snapshot.status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> break
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        completedNaturally = true
+                        break
+                    }
                     DownloadManager.STATUS_FAILED -> {
-                        emit(Progress.Failed(Reason.NETWORK))
+                        // m2509 H2: read COLUMN_REASON so ERROR_INSUFFICIENT_SPACE +
+                        // ERROR_FILE_ERROR surface as "not enough storage" instead of
+                        // the misleading "check your connection" default. Everything
+                        // else stays NETWORK — HTTP_DATA_ERROR, CANNOT_RESUME, timeouts.
+                        val reason = when (snapshot.failureReason) {
+                            DownloadManager.ERROR_INSUFFICIENT_SPACE,
+                            DownloadManager.ERROR_FILE_ERROR,
+                            DownloadManager.ERROR_DEVICE_NOT_FOUND -> Reason.STORAGE
+                            else -> Reason.NETWORK
+                        }
+                        emit(Progress.Failed(reason))
                         destination.delete()
                         return@flow
                     }
@@ -115,11 +135,13 @@ class UpdateDownloader(
                 }
                 delay(POLL_INTERVAL_MS)
             }
-        } catch (throwable: Throwable) {
-            Log.w(TAG, "Download loop interrupted: ${throwable.message}")
-            runCatching { downloadManager.remove(downloadId) }
-            runCatching { destination.delete() }
-            throw throwable
+        } finally {
+            if (!completedNaturally) {
+                withContext(NonCancellable) {
+                    runCatching { downloadManager.remove(downloadId) }
+                    runCatching { destination.delete() }
+                }
+            }
         }
 
         emit(Progress.Verifying)
@@ -132,6 +154,24 @@ class UpdateDownloader(
         emit(Progress.Complete(destination))
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * m2509 H5: retry up to [SNAPSHOT_RETRY_ATTEMPTS] times with a short delay before
+     * concluding the download was cancelled. Transient DownloadManager cursor
+     * failures (database briefly locked, system service restarting) look identical
+     * to a real user cancellation from a single-query perspective; treating them
+     * the same misclassifies a network glitch as user intent. Three attempts at
+     * 100 ms adds at most 300 ms to a real cancellation detection — imperceptible.
+     */
+    private suspend fun queryProgressWithRetry(downloadId: Long): CursorSnapshot? {
+        var attempts = SNAPSHOT_RETRY_ATTEMPTS
+        while (attempts-- > 0) {
+            val snapshot = queryProgress(downloadId)
+            if (snapshot != null) return snapshot
+            if (attempts > 0) delay(SNAPSHOT_RETRY_DELAY_MS)
+        }
+        return null
+    }
+
     private fun queryProgress(downloadId: Long): CursorSnapshot? {
         val query = DownloadManager.Query().setFilterById(downloadId)
         return downloadManager.query(query)?.use { cursor: Cursor ->
@@ -143,7 +183,15 @@ class UpdateDownloader(
             val total = cursor.getLong(
                 cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
             )
-            CursorSnapshot(status = status, downloaded = downloaded, total = total)
+            val failureReason = if (status == DownloadManager.STATUS_FAILED) {
+                cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+            } else 0
+            CursorSnapshot(
+                status = status,
+                downloaded = downloaded,
+                total = total,
+                failureReason = failureReason,
+            )
         }
     }
 
@@ -176,12 +224,19 @@ class UpdateDownloader(
         data class Failed(val reason: Reason) : Progress
     }
 
-    enum class Reason { NETWORK, CHECKSUM, CANCELLED }
+    enum class Reason { NETWORK, STORAGE, CHECKSUM, CANCELLED }
 
-    private data class CursorSnapshot(val status: Int, val downloaded: Long, val total: Long)
+    private data class CursorSnapshot(
+        val status: Int,
+        val downloaded: Long,
+        val total: Long,
+        val failureReason: Int,
+    )
 
     companion object {
         private const val TAG = "UpdateDownloader"
         private const val POLL_INTERVAL_MS = 400L
+        private const val SNAPSHOT_RETRY_ATTEMPTS = 3
+        private const val SNAPSHOT_RETRY_DELAY_MS = 100L
     }
 }

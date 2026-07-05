@@ -311,14 +311,18 @@ class MainActivity : ComponentActivity() {
                             onOpenSettings = { drawerScope.launch { drawerState.open() } },
                         )
                     }
-                    // m2508: UpdateSheet is hosted at the top of the composition tree
-                    // (outside NavHost) so a pending update surfaces regardless of the
-                    // active route — Gallery, Camera, Edit, Save all share it. The sheet
-                    // returns immediately when state is Idle/Checking/UpToDate.
-                    if (updateState !is UpdateUiState.Idle &&
+                    // m2508 + m2509 B1: UpdateSheet lives above the NavHost so the state
+                    // machine is shared, but rendering is GATED to the Gallery route.
+                    // Rationale: mounting a ModalBottomSheet over Camera / Edit / Save
+                    // would darken the viewfinder or stack two sheets — real UX bugs
+                    // both audits flagged. Gallery is the safe idle surface. The user
+                    // gets back to Gallery within seconds of the check firing anyway.
+                    val safeToShowUpdate = currentRoute == null || currentRoute == Route.Gallery
+                    if (safeToShowUpdate &&
+                        updateState !is UpdateUiState.Idle &&
                         updateState !is UpdateUiState.Checking &&
                         updateState !is UpdateUiState.UpToDate) {
-                        UpdateSheet(viewModel = updateVm)
+                        UpdateSheet(viewModel = updateVm, activity = this@MainActivity)
                     }
                 }
             }

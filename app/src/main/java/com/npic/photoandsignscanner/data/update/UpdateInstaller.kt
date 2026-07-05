@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.data.update
 
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -83,25 +84,37 @@ class UpdateInstaller(
      * Register a receiver for [ACTION_INSTALL_STATUS]. The caller must unregister
      * when the update flow ends. The [callback] fires with the raw PackageInstaller
      * status code + the human-readable status message.
+     *
+     * m2509 B5: [activityForConfirm] is used to launch the system's install-confirm
+     * dialog on `STATUS_PENDING_USER_ACTION`. Starting an Activity from an
+     * applicationContext + `FLAG_ACTIVITY_NEW_TASK` works on stock AOSP but is
+     * fragile on Samsung One UI / Xiaomi MIUI where background-launch policies can
+     * silently swallow the intent — using the live Activity reference avoids the
+     * whole class of "install UI never appeared" reports.
      */
-    fun registerStatusReceiver(callback: (status: Int, message: String?) -> Unit): BroadcastReceiver {
+    fun registerStatusReceiver(
+        activityForConfirm: Activity?,
+        callback: (status: Int, message: String?) -> Unit,
+    ): BroadcastReceiver {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receivedContext: Context, intent: Intent) {
                 val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -999)
                 val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                 when (status) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                        // Route the system's install-confirm intent to the foreground so
-                        // the user sees the standard "Do you want to install this update?"
-                        // system dialog. This is the expected UX; not a bug.
                         val confirm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                         } else {
                             @Suppress("DEPRECATION")
                             intent.getParcelableExtra(Intent.EXTRA_INTENT) as? Intent
                         }
-                        confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        confirm?.let { runCatching { context.startActivity(it) } }
+                        confirm?.let { confirmIntent ->
+                            val launcher = activityForConfirm ?: context
+                            if (activityForConfirm == null) {
+                                confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runCatching { launcher.startActivity(confirmIntent) }
+                        }
                     }
                     else -> callback(status, message)
                 }
@@ -119,6 +132,33 @@ class UpdateInstaller(
 
     fun unregister(receiver: BroadcastReceiver) {
         runCatching { context.unregisterReceiver(receiver) }
+    }
+
+    /**
+     * m2509 B4: returns true when this app has any in-flight PackageInstaller session
+     * still open. Called from ViewModel init to detect a "user backgrounded the app
+     * mid-install, process was killed, they came back" scenario — otherwise the
+     * ViewModel state defaults to Idle while the OS still holds an open session,
+     * hiding the update sheet on a device that legitimately has a pending install.
+     */
+    fun hasPendingSession(): Boolean {
+        return runCatching {
+            context.packageManager.packageInstaller.mySessions.isNotEmpty()
+        }.getOrDefault(false)
+    }
+
+    /**
+     * m2509 B4: abandons every open session this app owns. Used on next launch when
+     * we detect a stale session from a killed install flow — leaving abandoned
+     * sessions around wastes cache and can confuse future commits.
+     */
+    fun abandonPendingSessions() {
+        runCatching {
+            val installer = context.packageManager.packageInstaller
+            for (session in installer.mySessions) {
+                runCatching { installer.abandonSession(session.sessionId) }
+            }
+        }
     }
 
     /**

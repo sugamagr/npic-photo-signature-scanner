@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.features.update
 
+import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,12 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -26,7 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.npic.photoandsignscanner.BuildConfig
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
@@ -53,9 +60,24 @@ import com.npic.photoandsignscanner.domain.model.UpdateManifest
  * cannot escape without upgrading.
  */
 @Composable
-fun UpdateSheet(viewModel: UpdateViewModel) {
+fun UpdateSheet(viewModel: UpdateViewModel, activity: Activity) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // m2509 B2: re-check the "Install unknown apps" grant on ON_RESUME so returning
+    // from Settings advances state to ReadyToInstall ONLY when the user actually
+    // toggled it. Previous version optimistically flipped state before the user
+    // returned, creating a confusing loop on denial (both audits flagged BLOCKER).
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onReturnedFromPermissionSettings()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val manifest = when (state) {
         is UpdateUiState.Available -> (state as UpdateUiState.Available).manifest
@@ -93,12 +115,18 @@ fun UpdateSheet(viewModel: UpdateViewModel) {
             state = state,
             manifest = manifest,
             blocking = blocking,
+            isAutoBlockerDevice = installer.isLikelyAutoBlockerDevice(),
             onLater = { viewModel.dismiss() },
             onUpdate = { viewModel.startDownload() },
-            onInstall = { viewModel.install(context) },
+            onInstall = { viewModel.install(activity) },
             onGrantPermission = {
+                // m2509 B2: do NOT call retryInstallAfterPermission() here — the
+                // ON_RESUME observer above does it AFTER the user returns AND only
+                // when canRequestInstalls() actually flipped to true.
                 context.startActivity(installer.unknownSourcesIntent())
-                viewModel.retryInstallAfterPermission()
+            },
+            onOpenAutoBlockerSettings = {
+                context.startActivity(installer.autoBlockerSettingsIntent())
             },
             onRetry = { viewModel.retry() },
         )
@@ -110,17 +138,22 @@ private fun UpdateSheetContent(
     state: UpdateUiState,
     manifest: UpdateManifest,
     blocking: Boolean,
+    isAutoBlockerDevice: Boolean,
     onLater: () -> Unit,
     onUpdate: () -> Unit,
     onInstall: () -> Unit,
     onGrantPermission: () -> Unit,
+    onOpenAutoBlockerSettings: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
 
     HeaderRow(
-        title = when (state) {
-            is UpdateUiState.Failed -> "Update failed"
+        title = when {
+            state is UpdateUiState.Failed -> "Update failed"
+            // m2509 M1: signal "must upgrade" clearly instead of the ambiguous
+            // "Update available" copy that both audits called out.
+            blocking -> "Required update"
             else -> "Update available"
         },
         subtitle = "v${BuildConfig.VERSION_NAME} → v${manifest.versionName}",
@@ -141,6 +174,10 @@ private fun UpdateSheetContent(
             text = manifest.changelog.trim(),
             style = MaterialTheme.typography.bodyMedium,
             color = NpicColors.Ink,
+            // m2509 M2: server-controlled string. Cap render lines so a malicious
+            // or accidentally-huge changelog can't push the action row off-screen.
+            maxLines = 12,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(NpicSpacing.md))
     }
@@ -171,21 +208,36 @@ private fun UpdateSheetContent(
 
     if (state is UpdateUiState.Failed) {
         Spacer(Modifier.height(NpicSpacing.xs))
-        Text(
-            text = state.reason,
-            style = MaterialTheme.typography.bodyMedium,
-            color = NpicColors.Terracotta,
-        )
+        // m2509 M3: pair the reason line with an outlined error icon so it
+        // matches the SaveSheet / ExportSheet MissingMediaWarning pattern —
+        // color alone isn't a strong enough signal for red-green colorblind
+        // users.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = NpicColors.Terracotta,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(NpicSpacing.xs))
+            Text(
+                text = state.reason,
+                style = MaterialTheme.typography.bodyMedium,
+                color = NpicColors.Terracotta,
+            )
+        }
         Spacer(Modifier.height(NpicSpacing.md))
     }
 
     ActionRow(
         state = state,
         blocking = blocking,
+        isAutoBlockerDevice = isAutoBlockerDevice,
         onLater = onLater,
         onUpdate = onUpdate,
         onInstall = onInstall,
         onGrantPermission = onGrantPermission,
+        onOpenAutoBlockerSettings = onOpenAutoBlockerSettings,
         onRetry = onRetry,
     )
 }
@@ -275,12 +327,28 @@ private fun DownloadProgressRow(
 private fun ActionRow(
     state: UpdateUiState,
     blocking: Boolean,
+    isAutoBlockerDevice: Boolean,
     onLater: () -> Unit,
     onUpdate: () -> Unit,
     onInstall: () -> Unit,
     onGrantPermission: () -> Unit,
+    onOpenAutoBlockerSettings: () -> Unit,
     onRetry: () -> Unit,
 ) {
+    // m2509 B3: Failed + Samsung → stack a Secondary "Open Auto Blocker" button
+    // above the primary "Try again" so the teacher can flip the toggle without
+    // hunting through three levels of Settings. Two-line layout only fires on
+    // this specific state combination.
+    if (state is UpdateUiState.Failed && state.recoverable && isAutoBlockerDevice) {
+        NpicButton(
+            label = "Open Auto Blocker settings",
+            onClick = onOpenAutoBlockerSettings,
+            style = NpicButtonStyle.Secondary,
+            size = NpicButtonSize.Large,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(NpicSpacing.sm))
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),

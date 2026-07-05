@@ -66,14 +66,29 @@ android {
 
     buildTypes {
         release {
-            // m2508: only sign with the release key when keystore.properties actually
-            // resolved to a file — otherwise AGP would fail the config phase asking
-            // for a storeFile. Debug-signed release APKs are useless for the self-
-            // updater but at least let a fresh clone still `./gradlew assembleRelease`
-            // without error to inspect the build graph.
+            // m2508 + m2509 H3: sign with the release key when keystore.properties
+            // resolved to a real file. If a release task is on the command line but
+            // no valid keystore exists, FAIL the config phase — a debug-signed or
+            // unsigned release APK would fail INSTALL_FAILED_UPDATE_INCOMPATIBLE on
+            // every user's device the first time they try to auto-update from a
+            // previously-release-signed install. Silent unsigned-release ships were
+            // the m2509 H3 audit finding.
             val releaseSigning = signingConfigs.getByName("release")
-            if (releaseSigning.storeFile?.exists() == true) {
+            val hasValidKeystore = releaseSigning.storeFile?.exists() == true
+            if (hasValidKeystore) {
                 signingConfig = releaseSigning
+            } else {
+                val runningReleaseTask = gradle.startParameter.taskNames.any {
+                    it.contains("Release", ignoreCase = true) ||
+                            it.contains("release", ignoreCase = false).not() && it.endsWith("Release")
+                }
+                if (runningReleaseTask) {
+                    throw GradleException(
+                        "Release build requires a valid keystore. " +
+                                "Populate `keystore.properties` at the repo root with a valid " +
+                                "storeFile path — see docs/RELEASE.md."
+                    )
+                }
             }
             isMinifyEnabled = true
             isShrinkResources = true

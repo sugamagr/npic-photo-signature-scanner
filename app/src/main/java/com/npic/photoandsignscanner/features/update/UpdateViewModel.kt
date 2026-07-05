@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.features.update
 
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.pm.PackageInstaller
@@ -43,6 +44,14 @@ class UpdateViewModel(
 
     private var activeJob: Job? = null
     private var statusReceiver: BroadcastReceiver? = null
+
+    init {
+        // m2509 B4: process may have been killed while a PackageInstaller session
+        // was open (user backgrounded app mid-install-confirm). Sessions survive
+        // process death for ~24h. Abandoning stale ones on next launch means the
+        // status broadcast tree stays clean and the next real install starts fresh.
+        if (installer.hasPendingSession()) installer.abandonPendingSessions()
+    }
 
     /**
      * Runs the manifest check. Safe to call repeatedly; a check while a download is
@@ -121,10 +130,13 @@ class UpdateViewModel(
      * Kicks off the PackageInstaller session. If the OS reports we don't yet have
      * REQUEST_INSTALL_PACKAGES granted, state transitions to [UpdateUiState.NeedsInstallPermission]
      * carrying the settings intent the sheet uses to launch the grant flow.
+     *
+     * m2509 B5: [activity] is the concrete Activity used for the install-confirm
+     * intent so Samsung / MIUI background-launch policies can't swallow it.
      */
-    fun install(context: Context) {
+    fun install(activity: Activity) {
         val ready = _state.value as? UpdateUiState.ReadyToInstall ?: return
-        ensureStatusReceiver(context)
+        ensureStatusReceiver(activity)
         _state.value = UpdateUiState.Installing(
             manifest = ready.manifest,
             blocking = ready.blocking,
@@ -146,9 +158,16 @@ class UpdateViewModel(
         }
     }
 
-    /** Called after the user grants REQUEST_INSTALL_PACKAGES to retry install. */
-    fun retryInstallAfterPermission() {
+    /**
+     * m2509 B2: called from [UpdateSheet]'s ON_RESUME lifecycle observer AFTER the
+     * user returns from the "Install unknown apps" settings screen. Only transitions
+     * to [UpdateUiState.ReadyToInstall] when [UpdateInstaller.canRequestInstalls]
+     * actually returns true — a denied permission leaves the user on the
+     * NeedsInstallPermission screen with the "Allow installs" button still primed.
+     */
+    fun onReturnedFromPermissionSettings() {
         val pending = _state.value as? UpdateUiState.NeedsInstallPermission ?: return
+        if (!installer.canRequestInstalls()) return
         _state.value = UpdateUiState.ReadyToInstall(
             manifest = pending.manifest,
             blocking = pending.blocking,
@@ -203,9 +222,9 @@ class UpdateViewModel(
         statusReceiver = null
     }
 
-    private fun ensureStatusReceiver(context: Context) {
+    private fun ensureStatusReceiver(activity: Activity?) {
         if (statusReceiver != null) return
-        statusReceiver = installer.registerStatusReceiver { status, message ->
+        statusReceiver = installer.registerStatusReceiver(activityForConfirm = activity) { status, message ->
             val current = _state.value
             val manifest = manifestOf(current) ?: return@registerStatusReceiver
             val blocking = blockingOf(current)
@@ -265,6 +284,7 @@ class UpdateViewModel(
 
     private fun reasonMessage(reason: UpdateDownloader.Reason): String = when (reason) {
         UpdateDownloader.Reason.NETWORK -> "Download failed. Check your connection and try again."
+        UpdateDownloader.Reason.STORAGE -> "Not enough storage on this device. Free up space and try again."
         UpdateDownloader.Reason.CHECKSUM -> "The downloaded file was corrupted. Try again."
         UpdateDownloader.Reason.CANCELLED -> "Download was cancelled."
     }
