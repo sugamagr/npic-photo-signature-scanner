@@ -215,6 +215,9 @@ fun SaveSheet(
     state.duplicate?.let { dupe ->
         DuplicateSheet(
             duplicate = dupe,
+            // m2505 P5: saving flag drives per-button loading rings + disables the other two
+            // actions so a rapid double-tap can't fire a second coroutine mid-persist.
+            saving = state.saving,
             onKeepExisting = viewModel::dismissDuplicateKeepingExisting,
             onReplace = viewModel::resolveDuplicateReplacingExisting,
             onKeepBoth = viewModel::resolveDuplicateKeepingBoth,
@@ -243,6 +246,7 @@ fun SaveSheet(
 @Composable
 private fun DuplicateSheet(
     duplicate: SaveResult.DuplicateFound,
+    saving: Boolean,
     onKeepExisting: () -> Unit,
     onReplace: (targetExistingId: String) -> Unit,
     onKeepBoth: () -> Unit,
@@ -251,6 +255,11 @@ private fun DuplicateSheet(
     val chrome = LocalNpicChrome.current
     // rememberSaveable survives rotation so the user's selection is not lost mid-decision.
     var selectedExistingId by rememberSaveable { mutableStateOf<String?>(null) }
+    // m2505 P5: tracks which button the user tapped so only that one shows a loading
+    // ring — showing both Replace and Keep-both rings simultaneously would mislead the
+    // user about which coroutine is in flight. Cleared when [saving] falls back to false.
+    var pendingAction by rememberSaveable { mutableStateOf<String?>(null) }
+    if (!saving && pendingAction != null) pendingAction = null
 
     NpicBottomSheet(onDismiss = onCancel) {
         Row(
@@ -303,17 +312,29 @@ private fun DuplicateSheet(
                 label = "Keep existing",
                 onClick = onKeepExisting,
                 style = NpicButtonStyle.Ghost,
+                enabled = !saving,
             )
             NpicButton(
                 label = "Replace",
-                onClick = { selectedExistingId?.let(onReplace) },
+                onClick = {
+                    selectedExistingId?.let {
+                        pendingAction = "replace"
+                        onReplace(it)
+                    }
+                },
                 style = NpicButtonStyle.Destructive,
-                enabled = selectedExistingId != null,
+                enabled = selectedExistingId != null && !saving,
+                loading = saving && pendingAction == "replace",
             )
             NpicButton(
                 label = "Keep both",
-                onClick = onKeepBoth,
+                onClick = {
+                    pendingAction = "keepBoth"
+                    onKeepBoth()
+                },
                 style = NpicButtonStyle.Primary,
+                enabled = !saving,
+                loading = saving && pendingAction == "keepBoth",
                 modifier = Modifier.weight(1f),
             )
         }
@@ -523,17 +544,22 @@ private fun DuplicatePreviewCard(
                 )
             }
         }
+        // m2505 P3: labels fill the card width so text stays left-aligned even though
+        // the Column horizontally centers the 96dp photo well. Adobe-Scan pattern:
+        // centered thumbnails, left-aligned labels.
         Text(
             text  = title,
             color = NpicColors.Ink,
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(700)),
             maxLines = 1,
+            modifier = Modifier.fillMaxWidth(),
         )
         Text(
             text  = subtitle,
             color = chrome.inkMuted,
             style = MaterialTheme.typography.bodySmall,
             maxLines = 2,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

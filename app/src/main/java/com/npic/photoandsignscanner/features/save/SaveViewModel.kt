@@ -85,10 +85,14 @@ class SaveViewModel(
     }
 
     fun save() {
-        if (_state.value.saving) return
         val input = _state.value.saveInput ?: return
+        // m2505 P4: atomic compare-and-set. Two rapid taps from the same UI event queue
+        // can only ever have one succeed; the loser sees saving=true and returns without
+        // firing repo.save(). Compose main-thread dispatch already prevents overlap, but
+        // this closes the theoretical read-then-write window formally.
         val current = _state.value
-        _state.value = current.copy(saving = true, errorMessage = null)
+        if (current.saving) return
+        if (!_state.compareAndSet(current, current.copy(saving = true, errorMessage = null))) return
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             when (val outcome = repo.save(current.draft, input)) {
@@ -118,17 +122,19 @@ class SaveViewModel(
      * (InMemory + Room replace() implementations both restore the target's index).
      */
     fun resolveDuplicateReplacingExisting(targetExistingId: String) {
-        if (_state.value.saving) return
-        val dupe = _state.value.duplicate ?: return
+        val current = _state.value
+        if (current.saving) return
+        val dupe = current.duplicate ?: return
         val target = dupe.existing.firstOrNull { it.id == targetExistingId }
         if (target == null) {
-            _state.value = _state.value.copy(
+            _state.value = current.copy(
                 duplicate = null,
                 errorMessage = "That record was deleted. Try saving again.",
             )
             return
         }
-        _state.value = _state.value.copy(saving = true, duplicate = null)
+        // Atomic transition (m2505 P4). If a parallel Keep-both won the CAS first, bail.
+        if (!_state.compareAndSet(current, current.copy(saving = true, duplicate = null))) return
         viewModelScope.launch {
             when (val outcome = repo.replace(target.id, dupe.incoming, dupe.input)) {
                 is SaveResult.Success ->
@@ -149,9 +155,11 @@ class SaveViewModel(
      * existing record(s) are untouched.
      */
     fun resolveDuplicateKeepingBoth() {
-        if (_state.value.saving) return
-        val dupe = _state.value.duplicate ?: return
-        _state.value = _state.value.copy(saving = true, duplicate = null)
+        val current = _state.value
+        if (current.saving) return
+        val dupe = current.duplicate ?: return
+        // Atomic transition (m2505 P4).
+        if (!_state.compareAndSet(current, current.copy(saving = true, duplicate = null))) return
         viewModelScope.launch {
             when (val outcome = repo.saveAsDuplicate(dupe.incoming, dupe.input)) {
                 is SaveResult.Success ->

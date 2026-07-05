@@ -105,11 +105,13 @@ class ExportViewModel(
      * Guarded against double-tap via [ExportUiState.exporting] (Oracle M-8b-M3).
      */
     fun beginExport(onReady: (ExportResult) -> Unit) {
-        if (_state.value.exporting) return
+        // m2505 P4: atomic compare-and-set. Two rapid taps race on the same read-then-
+        // write window otherwise; CAS makes only one of them win the guard.
         val snapshot = _state.value
+        if (snapshot.exporting) return
         val effective = snapshot.effective
         if (effective.isEmpty()) return
-        _state.value = snapshot.copy(exporting = true, underMinCount = 0)
+        if (!_state.compareAndSet(snapshot, snapshot.copy(exporting = true, underMinCount = 0))) return
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -136,11 +138,12 @@ class ExportViewModel(
      * either action can't fire the pipeline twice.
      */
     fun beginSaveToGallery(onReady: (ExportResult) -> Unit) {
-        if (_state.value.exporting) return
+        // Atomic guard (m2505 P4).
         val snapshot = _state.value
+        if (snapshot.exporting) return
         val effective = snapshot.effective
         if (effective.isEmpty()) return
-        _state.value = snapshot.copy(exporting = true, underMinCount = 0)
+        if (!_state.compareAndSet(snapshot, snapshot.copy(exporting = true, underMinCount = 0))) return
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -167,11 +170,12 @@ class ExportViewModel(
      * share sheet with the same bytes — compression runs exactly once.
      */
     fun beginSaveAndShare(onReady: (ExportResult) -> Unit) {
-        if (_state.value.exporting) return
+        // Atomic guard (m2505 P4).
         val snapshot = _state.value
+        if (snapshot.exporting) return
         val effective = snapshot.effective
         if (effective.isEmpty()) return
-        _state.value = snapshot.copy(exporting = true, underMinCount = 0)
+        if (!_state.compareAndSet(snapshot, snapshot.copy(exporting = true, underMinCount = 0))) return
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {

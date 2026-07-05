@@ -106,10 +106,11 @@ private fun filterRecords(records: List<StudentRecord>, query: String): List<Stu
     val q = query.lowercase()
     val digitsOnly = query.filter { it.isDigit() }
     val classHit = q.removePrefix("class ").trim()
-    // m2504 N7: strip a trailing ".jpeg" so a user pasting the exported filename still
-    // hits a match; downstream branches compare against displaySerialLabel which has
-    // no extension.
-    val labelHit = q.removeSuffix(".jpeg")
+    // m2504 N7 + m2505 P2: strip a trailing image extension so a user pasting an
+    // exported filename still hits a match. q is already lowercased, so both cases
+    // fold to .jpeg / .jpg here. displaySerialLabel comparison downstream has no
+    // extension of its own.
+    val labelHit = q.removeSuffix(".jpeg").removeSuffix(".jpg")
     val ranked = records.mapNotNull { record ->
         val name = record.displayName.lowercase()
         val classLabel = record.classNum.label.lowercase()
