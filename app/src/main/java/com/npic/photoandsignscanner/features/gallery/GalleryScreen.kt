@@ -3,6 +3,9 @@ package com.npic.photoandsignscanner.features.gallery
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import com.npic.photoandsignscanner.core.theme.NpicShapes
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -392,10 +395,16 @@ private fun GallerySelectionTopBar(
 // Filter row
 // ─────────────────────────────────────────────────────────────────────────────
 
-// m2354 Bug J: user reported the old ClassFilterTile (two-line count-dominant tile from
-// Bug#12/m1319) as "way too big". Reverted to compact NpicChip filter chips matching the
-// design system — same affordance as Edit's filter preset picker and Sort mode picker so
-// the class filter reads as "just another filter row" rather than a hero surface.
+// m2410: class filter chips get notification-badge counts (Saffron circle +
+// Ivory numerals) instead of the middle-dot text separator. Non-selected chips
+// use a solid Saffron badge; selected chips use SaffronDeep so the badge doesn't
+// blend into the SaffronSoft chip container. Zero counts render greyed (borderSoft
+// container + inkMuted numerals) — matches how WhatsApp / Slack / Gmail grey out
+// zero-unread badges.
+//
+// Prior history: m2354 Bug J reverted the two-line count-dominant tile
+// (Bug#12/m1319) back to a compact NpicChip with "Class 9 · 12" text. User m2450
+// then asked for the notification-badge treatment specifically.
 @Composable
 private fun ClassFilterRow(
     selected: ClassNum?,
@@ -413,19 +422,139 @@ private fun ClassFilterRow(
         horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        NpicChip(
-            label = "All · $totalCount",
+        ClassFilterChip(
+            label = "All",
+            count = totalCount,
             selected = selected == null,
             onClick = { onSelect(null) },
         )
         ClassNum.entries.forEach { c ->
             val n = countsByClass[c] ?: 0
-            NpicChip(
-                label = "Class ${c.label} · $n",
+            ClassFilterChip(
+                label = "Class ${c.label}",
+                count = n,
                 selected = selected == c,
                 onClick = { onSelect(c) },
             )
         }
+    }
+}
+
+/**
+ * Class filter chip with a notification-style count badge. Mirrors [NpicChip]'s
+ * shape, size, animation, and selection colors; adds an inline filled circle
+ * carrying the record count.
+ */
+@Composable
+private fun ClassFilterChip(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val chrome = LocalNpicChrome.current
+    val reduceMotion = LocalReduceMotion.current
+    val container by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) chrome.saffronSoft else NpicColors.Surface,
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
+        label = "class_chip_container",
+    )
+    val border by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) NpicColors.Saffron else chrome.borderStrong,
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
+        label = "class_chip_border",
+    )
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = NpicMotion.springSnappyOrSnap(reduceMotion),
+        label = "class_chip_press_scale",
+    )
+
+    Box(
+        modifier = Modifier
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                this.selected = selected
+                contentDescription =
+                    if (count == 1) "$label, 1 record"
+                    else "$label, $count records"
+            }
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .defaultMinSize(minHeight = 44.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.material3.ripple(
+                    bounded = true,
+                    color = NpicColors.Ink,
+                ),
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
+            modifier = Modifier
+                .height(34.dp)
+                .clip(NpicShapes.xs)
+                .background(container, NpicShapes.xs)
+                .border(width = 1.dp, color = border, shape = NpicShapes.xs)
+                .padding(start = 14.dp, end = 6.dp),
+        ) {
+            Text(
+                text  = label,
+                color = NpicColors.Ink,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = if (selected) FontWeight(600) else FontWeight(500),
+                ),
+            )
+            CountBadge(count = count, selected = selected)
+        }
+    }
+}
+
+/**
+ * Notification-style count badge. Filled circle with contrasting numerals — the
+ * pattern WhatsApp / Slack / Gmail / iOS all use for unread counts. Zero counts
+ * render greyed so an empty class reads as "no records" without hiding the count
+ * entirely.
+ *
+ * Sizing: 22 dp diameter for 1–2 digit counts, expands to a pill for ≥3 digits
+ * (matching the WhatsApp pattern — "99+" shows as a wider pill, not a squashed
+ * circle).
+ */
+@Composable
+private fun CountBadge(count: Int, selected: Boolean) {
+    val chrome = LocalNpicChrome.current
+    val displayText = when {
+        count > 99 -> "99+"
+        else       -> count.toString()
+    }
+    val isZero = count == 0
+    val containerColor = when {
+        isZero    -> chrome.borderSoft
+        selected  -> NpicColors.SaffronDeep
+        else      -> NpicColors.Saffron
+    }
+    val textColor = if (isZero) chrome.inkMuted else NpicColors.Ivory
+
+    Box(
+        modifier = Modifier
+            .defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
+            .clip(NpicShapes.full)
+            .background(containerColor, NpicShapes.full)
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text  = displayText,
+            color = textColor,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight(700),
+            ),
+        )
     }
 }
 
