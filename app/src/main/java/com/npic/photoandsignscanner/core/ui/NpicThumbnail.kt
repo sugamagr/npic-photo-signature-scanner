@@ -47,14 +47,14 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
  * Signature indicator (bottom-right, offset -8dp from edges) — m2056 Item 1:
  * ALWAYS shown so the state is universally legible (previously the badge only
  * appeared when a signature was present, so users had to remember "absence
- * means missing" — DESIGN §6.7's original signal). Two variants:
- *   • Present: 24dp Saffron circle + 14dp Ivory `Draw` glyph.
- *   • Missing: same 24dp Saffron circle + 14dp Ivory `Draw` glyph, plus a
- *     2.5dp Ivory diagonal strike-through line drawn across it (m2278 →
- *     m2334 revision). Shape stays consistent between states; only the
- *     strike-through communicates absence. Ivory-on-Saffron reads as a
- *     purely graphical "not yet" marker without alarming the user with
- *     Terracotta red.
+ * means missing" — DESIGN §6.7's original signal). Two variants using the
+ * industry-standard filled-vs-outlined ring pattern (m2410 rewrite; see the
+ * body comment for the full precedent list and rejected earlier attempts):
+ *   • Present: 24dp filled Saffron circle + 14dp Ivory `Draw` glyph.
+ *   • Missing: 24dp Ivory (Surface) circle with a 2dp Saffron ring around
+ *     it + 14dp Saffron `Draw` glyph inside.
+ * Present reads as "loud and saturated"; missing reads as "quiet outline".
+ * No strike-through, no error semantics.
  *
  * Selected state (multi-select): 3dp Saffron ring outside the thumb + white check on a
  * Saffron circle top-right. Whole cell scales to 96%.
@@ -152,15 +152,25 @@ fun NpicThumbnail(
         content()
 
         // Signature indicator (bottom-right) — m2056 Item 1: always present.
-        // Draw glyph is Icons.Outlined.Draw (Material 3's "hand drawing a signature").
-        // Was Icons.Outlined.Edit until m2354 Bug I — users mistook the pencil for an
-        // edit affordance and tapped by accident.
         //
-        // m2278: circle stays Saffron in BOTH states — the pre-m2278 inkMuted grey
-        // read as "faded / disabled" which looked bad on device. Shape consistency
-        // is intentional; the Terracotta strike-through below is the only signal for
-        // the missing state.
-        val badgeContainerColor = NpicColors.Saffron
+        // m2410 rewrite: industry-standard "filled vs outlined" two-state pattern
+        // (Instagram highlight ring, WhatsApp read receipts, iOS Contacts field
+        // presence). No strike-through, no color swap — just fill vs ring.
+        //
+        //   • Present: solid Saffron circle + Ivory Draw glyph inside
+        //   • Missing: 2 dp Saffron ring around a Surface (Ivory) fill + Saffron
+        //     Draw glyph inside
+        //
+        // Both variants use the same 24 dp size, same glyph, same anchor. The
+        // fill-vs-ring distinction is universally readable: present state is
+        // "loud and saturated", missing state is "quiet outline". Nothing about
+        // it reads as error or alarm.
+        //
+        // Historical note: the earlier Terracotta strike-through (m2278) and Ivory
+        // strike-through (m2334) both invented a novel indicator that no shipping
+        // app uses. Users read it as damaged or errored rather than "not yet".
+        // Draw glyph is Icons.Outlined.Draw (Material 3's "hand drawing a signature")
+        // — was Icons.Outlined.Edit until m2354 Bug I (users mistook pencil for edit).
         val badgeContentDescription =
             if (missingSignature) "No signature" else "Has signature"
         Box(
@@ -169,34 +179,22 @@ fun NpicThumbnail(
                 .offset(x = (-8).dp, y = (-8).dp)
                 .size(24.dp)
                 .clip(NpicShapes.full)
-                .background(badgeContainerColor, NpicShapes.full),
+                .background(
+                    color = if (missingSignature) NpicColors.Surface else NpicColors.Saffron,
+                    shape = NpicShapes.full,
+                )
+                .let { m ->
+                    if (missingSignature) m.border(2.dp, NpicColors.Saffron, NpicShapes.full)
+                    else m
+                },
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Draw,
                 contentDescription = badgeContentDescription,
-                tint = NpicColors.Ivory,
+                tint = if (missingSignature) NpicColors.Saffron else NpicColors.Ivory,
                 modifier = Modifier.size(14.dp),
             )
-            if (missingSignature) {
-                // Diagonal 2.5dp Ivory strike-through across the circle. Drawn on a
-                // full-sized Canvas so the line touches the circle rim on both ends,
-                // matching the "no-symbol" visual language used across the app.
-                //
-                // m2334: swapped from Terracotta red → Ivory. Red on Saffron read as an
-                // "error / alert" state; Ivory reads as a purely graphical "not yet"
-                // marker, which is what the missing-signature state actually is.
-                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                    val stroke = 2.5.dp.toPx()
-                    drawLine(
-                        color = NpicColors.Ivory,
-                        start = androidx.compose.ui.geometry.Offset(0f, size.height),
-                        end   = androidx.compose.ui.geometry.Offset(size.width, 0f),
-                        strokeWidth = stroke,
-                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                    )
-                }
-            }
         }
 
         // Selection check badge (top-end).

@@ -68,9 +68,20 @@ fun SearchScreen(
     onBack: () -> Unit,
     onRecordClick: (String) -> Unit,
 ) {
+    // m2410: `query` is read from the UNDEBOUNCED source (_query) so the text
+    // field reflects keystrokes instantly. `results` / `hasQuery` / `isEmpty`
+    // come from the debounced state so filtering doesn't thrash the list.
+    //
+    // The old code read query from state.query, which was fed by the 120 ms
+    // debounced flow — every keystroke immediately re-rendered the field with
+    // the stale pre-debounce query (empty on the first keystroke), overwriting
+    // the character the user just typed. Confirmed via adb logcat: each
+    // 'onQueryChange fired: "0"' was followed 29 ms later by
+    // 'onQueryChange fired: ""'. Reading the immediate value breaks the loop.
+    val query by viewModel.query.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     SearchContent(
-        query = state.query,
+        query = query,
         results = state.results,
         hasQuery = state.hasQuery,
         isEmpty = state.isEmpty,
@@ -165,10 +176,7 @@ private fun SearchTopBar(
         )
         OutlinedTextField(
             value = query,
-            onValueChange = { newValue ->
-                android.util.Log.d("SearchScreen", "onQueryChange fired: '$newValue'")
-                onQueryChange(newValue)
-            },
+            onValueChange = onQueryChange,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)

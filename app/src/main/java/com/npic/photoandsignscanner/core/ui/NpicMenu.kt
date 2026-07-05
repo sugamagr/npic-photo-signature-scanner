@@ -91,11 +91,14 @@ fun NpicMenu(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     offset: DpOffset = DpOffset(0.dp, NpicSpacing.xs),
+    // m2410: menu measures to widest item + horizontal padding, no fixed max.
+    // Was a fixed 240 dp cap in m2334; user reported menus with 2-3 short items
+    // still looked too wide because the container filled its max regardless of
+    // item length. Now Column.width(IntrinsicSize.Max) measures children and
+    // collapses the container to `widest_child + horizontal padding` exactly.
+    // The min = 200 dp floor prevents pathologically narrow menus with a single
+    // short item like "Ok" — that would look like a cropped tooltip.
     minWidth: androidx.compose.ui.unit.Dp = 200.dp,
-    // m2334: default max tightened 280 → 240. Menus with short labels (Sort mode,
-    // "Select all") were still too wide at 280. Longer labels like "Duplicate to
-    // another class" (24 chars) still fit at 240 with the horizontal md padding.
-    maxWidth: androidx.compose.ui.unit.Dp = 240.dp,
     content: NpicMenuScope.() -> Unit,
 ) {
     // MutableTransitionState so AnimatedVisibility runs the exit transition
@@ -145,7 +148,12 @@ fun NpicMenu(
                     .clip(NpicShapes.md)
                     .background(NpicColors.SurfaceRaised, NpicShapes.md)
                     .border(1.dp, chrome.borderSoft, NpicShapes.md)
-                    .widthIn(min = minWidth, max = maxWidth)
+                    // m2410: intrinsic width measures children (the item Rows) and
+                    // sizes the Column to the widest one. widthIn(min = minWidth)
+                    // just enforces the 200 dp floor. Result: menu is exactly as
+                    // wide as its widest label + horizontal padding.
+                    .width(androidx.compose.foundation.layout.IntrinsicSize.Max)
+                    .widthIn(min = minWidth)
                     .padding(vertical = NpicSpacing.xxs),
             ) {
                 val scope = NpicMenuScopeImpl(
@@ -226,6 +234,15 @@ private class NpicMenuScopeImpl(
 
         entries.forEach { entry ->
             when (entry.kind) {
+                // m2410: item Row uses fillMaxWidth() so its clickable area covers
+                // the whole container width, but the container itself (parent
+                // Column with IntrinsicSize.Max) measures to the widest item's
+                // INTRINSIC width — Compose's intrinsic-measurement pass ignores
+                // fillMaxWidth and uses the natural content width instead. Net
+                // result: menu is exactly as wide as the widest label + padding,
+                // but each item's tap target still spans the full container.
+                // The label Text also drops weight(1f) — inside an intrinsic-
+                // sized parent, weight() collapses to zero width.
                 NpicMenuEntry.Kind.Item -> Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -262,9 +279,9 @@ private class NpicMenuScopeImpl(
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = if (entry.selected) FontWeight(600) else FontWeight(500),
                         ),
-                        modifier = Modifier.weight(1f),
                     )
                     if (entry.selected) {
+                        Spacer(Modifier.weight(1f, fill = false))
                         Icon(
                             imageVector = Icons.Filled.Check,
                             contentDescription = "Selected",
