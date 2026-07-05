@@ -16,14 +16,25 @@ object NpicColors {
     // Brand — saffron family
     // ────────────────────────────────────────────────────────────────────────────
 
-    /** Primary brand accent. Buttons, active chips, crop handles, chart accents. */
-    val Saffron       = Color(0xFFF4A300)
+    /** Primary brand accent. Buttons, active chips, crop handles, chart accents.
+     *  True-saffron hue (~32°) — deliberately more orange than amber so it never
+     *  reads yellowish. Ink on Saffron: 7.75:1 AAA. */
+    val Saffron       = Color(0xFFF6921E)
 
-    /** Pressed / hover-analog / secondary saffron for depth. */
-    val SaffronDeep   = Color(0xFFD98A00)
+    /** Pressed / hover-analog / secondary saffron for depth. Ink on it: 5.69:1 AA. */
+    val SaffronDeep   = Color(0xFFD97812)
 
-    /** Soft saffron tint. Selection pills, gentle backgrounds behind active tabs. */
-    val SaffronSoft   = Color(0xFFFCE9C2)
+    /** Soft saffron tint. Selection pills, gentle backgrounds behind active tabs.
+     *  Warm peach — matches the true-saffron hue, not the old yellow cast. */
+    val SaffronSoft   = Color(0xFFFDEBD2)
+
+    /** Light end of the brand gradient (top of primary buttons / capture FAB).
+     *  Ink on it: 9.68:1 AAA, so gradient surfaces stay AA at every pixel. */
+    val SaffronBright = Color(0xFFFFAD42)
+
+    /** Saffron glow for colored shadows under floating brand elements (FAB).
+     *  Only ever used as ambient/spot shadow color, never as a fill. */
+    val SaffronGlow   = Color(0x66F6921E)
 
     // ────────────────────────────────────────────────────────────────────────────
     // Ink — text and iconography on light surfaces

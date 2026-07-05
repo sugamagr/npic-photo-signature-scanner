@@ -3,7 +3,7 @@
 **Style direction:** Warm Editorial with custom UI + custom font
 **Primary color:** Saffron (India-adjacent, warm, distinctive)
 **Type pair:** Fraunces (display / headings) + Inter (body / UI)
-**Version:** Locked v1.0
+**Version:** Locked v1.1 — true-saffron retheme (hue 41°→32°, away from amber/yellow), brand gradient + glow tokens, M3-Expressive spatial springs
 
 Every color, size, and radius in this document maps to a token in `core/theme/`. Nothing is hardcoded in screens. To retheme the app, edit `Color.kt` only.
 
@@ -26,10 +26,12 @@ Every color, size, and radius in this document maps to a token in `core/theme/`.
 
 ```kotlin
 object NpicColors {
-    // Brand
-    val Saffron         = Color(0xFFF4A300)   // primary
-    val SaffronDeep     = Color(0xFFD98A00)   // pressed/hover
-    val SaffronSoft     = Color(0xFFFCE9C2)   // tinted backgrounds, chips selected
+    // Brand — true saffron (hue ~32°, orange-leaning; the old #F4A300 read yellowish)
+    val Saffron         = Color(0xFFF6921E)   // primary
+    val SaffronDeep     = Color(0xFFD97812)   // pressed/hover
+    val SaffronSoft     = Color(0xFFFDEBD2)   // tinted backgrounds, chips selected (warm peach)
+    val SaffronBright   = Color(0xFFFFAD42)   // light end of brand gradient (button/FAB tops)
+    val SaffronGlow     = Color(0x66F6921E)   // colored shadow under floating brand elements ONLY
 
     // Ink (text)
     val Ink            = Color(0xFF1A1613)   // primary text
@@ -67,9 +69,10 @@ object NpicColors {
 |---|---|
 | App background | `Ivory` |
 | Card / sheet fill | `Surface` |
-| Primary button fill | `Saffron` |
-| Primary button pressed | `SaffronDeep` |
-| Primary button label | `Ink` (yes, dark text on saffron — passes AA at 4.7:1) |
+| Primary button fill | vertical gradient `SaffronBright → Saffron` (solid `Saffron` when a gradient is impractical) |
+| Primary button pressed | `SaffronDeep` (solid) |
+| Primary button label | `Ink` (dark text on saffron — AAA at 7.75:1, AA at every gradient pixel) |
+| Floating brand elements (Capture FAB) shadow | `SaffronGlow` ambient+spot color at existing elevation |
 | Secondary button (outlined) | fill `Surface`, border `BorderStrong`, label `Ink` |
 | Text primary | `Ink` |
 | Text secondary | `InkMuted` |
@@ -84,8 +87,9 @@ object NpicColors {
 
 All text/background pairs verified WCAG AA (≥ 4.5:1 for body, ≥ 3:1 for large). Actual measured ratios exceed AA and clear AAA for normal text (≥ 7:1) in every non-status pairing:
 - Ink on Ivory: 16.8:1 ✓ AAA
-- Ink on Saffron: 8.6:1 ✓ AAA
-- Ink on SaffronDeep: 6.5:1 ✓ AA (AAA for large text)
+- Ink on Saffron (#F6921E): 7.75:1 ✓ AAA
+- Ink on SaffronBright (#FFAD42): 9.68:1 ✓ AAA (gradient light end — the darker gradient stop is Saffron itself, so the full gradient stays ≥ 7.75:1)
+- Ink on SaffronDeep (#D97812): 5.69:1 ✓ AA (AAA for large text)
 - InkMuted on Ivory: 7.1:1 ✓ AAA
 - InkFaint on Ivory: 3.6:1 ✓ AA large only — use only for non-critical metadata
 - CameraInk on CameraBg (near-pure black): 18.7:1 ✓ AAA
@@ -171,11 +175,18 @@ object NpicMotion {
     val standard  = tween<Float>(220, easing = EaseOutCubic)  // screen transitions
     val slow      = tween<Float>(320, easing = EaseOutCubic)  // sheet open, dialog
     val emphasized= tween<Float>(400, easing = EaseInOutCubic)// hero moments (save success)
+
+    // Spatial springs (M3 Expressive) — for scale/offset/size/bounds ONLY.
+    // Color and alpha animations always use the tweens above; never bounce a color.
+    val springSnappy = spring<T>(dampingRatio = 0.7f,  stiffness = 400f) // press feedback, selections
+    val springSmooth = spring<T>(dampingRatio = 0.9f,  stiffness = 400f) // layout/size, tab pill slides
+    val springBouncy = spring<T>(dampingRatio = 0.5f,  stiffness = 300f) // hero moments only
 }
 ```
 
 **Rules:**
-- Buttons: 96% scale on press, 150ms release. No color flash — use the pressed color token.
+- Buttons: 96% scale on press with `springSnappy` (tiny physical overshoot on release). No color flash — use the pressed color token.
+- Every spring respects reduce-motion via the `...OrSnap(reduce)` builders in `Motion.kt`.
 - Screen transitions: horizontal slide + fade, 220ms. Camera → Edit uses a shared-element transition on the captured thumbnail.
 - Sheets: rise 320ms with a subtle overshoot (spring `dampingRatio = 0.85, stiffness = 320`).
 - Filter thumbnails on tap: pulse to 105% then settle to 100% over 220ms + saffron ring appears.
@@ -195,7 +206,7 @@ Three variants: `Primary`, `Secondary`, `Destructive`, `Ghost`.
 - Padding: horizontal 20dp
 - Corner: `NpicShapes.md` (14dp)
 - Text: `labelLarge` (Inter 14sp weight 600)
-- Primary: fill Saffron, ink Ink, pressed SaffronDeep, disabled 40% alpha
+- Primary: fill vertical gradient SaffronBright→Saffron, ink Ink, pressed solid SaffronDeep, disabled 40% alpha
 - Secondary: fill Surface, border BorderStrong 1dp, ink Ink
 - Destructive: fill Terracotta, ink white
 - Ghost: transparent, ink Ink, pressed BorderSoft
@@ -341,8 +352,8 @@ Wide rounded-square capture button pinned to the bottom of the Gallery. Full pix
 
 - Shape: `NpicShapes.lg` (20dp) rounded square
 - Size: 72dp tall × min(240dp, 60% screen width) wide, minimum 200dp
-- Fill: `Saffron`, pressed `SaffronDeep`
-- Elevation: Level 3 (3dp shadow, blur 24, alpha 0.10)
+- Fill: vertical gradient `SaffronBright → Saffron`, pressed solid `SaffronDeep`
+- Elevation: Level 3 (3dp shadow, blur 24) with `SaffronGlow` ambient+spot color — the one colored shadow in the app
 - Contents: 28dp camera icon + "Capture" label (Inter labelLarge), 8dp gap, both in `Ink`
 - Above-FAB gradient: 32dp Ivory→transparent to soften the boundary against the scrolling grid
 - Press animation: scale to 96% over 150ms EaseOutCubic
@@ -371,8 +382,8 @@ There is no dedicated Home screen. Gallery is the launch destination, and a pers
 - Shape: rounded square, corner `NpicShapes.lg` (20dp) — squircle-feeling, not a circle, not a pill
 - Size: 72dp tall × 200dp wide (min); on ≥ 400dp screen width, scales to `min(240dp, 60% of screen width)` for visual weight without dominating
 - Position: bottom-center, 24dp above safe-area inset
-- Fill: Saffron with Level 3 elevation (3dp shadow, blur 24, alpha 0.10)
-- Pressed: SaffronDeep fill, scale to 96%, 150ms EaseOutCubic
+- Fill: vertical gradient SaffronBright→Saffron with Level 3 elevation (3dp shadow, blur 24, SaffronGlow tinted)
+- Pressed: SaffronDeep fill, scale to 96% via springSnappy
 - Contents (centered horizontally, 8dp horizontal gap between icon and label):
   - 28dp camera icon in `Ink` (dark on saffron for AA contrast)
   - "Capture" label in `labelLarge` (Inter 14sp weight 600), `Ink`

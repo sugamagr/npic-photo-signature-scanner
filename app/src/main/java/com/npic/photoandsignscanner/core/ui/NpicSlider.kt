@@ -1,6 +1,9 @@
 package com.npic.photoandsignscanner.core.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -25,7 +29,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
+import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
 
@@ -84,6 +90,21 @@ fun NpicSlider(
                 )
             }
         }
+        val sliderColors = SliderDefaults.colors(
+            thumbColor              = thumbColor,
+            activeTrackColor        = trackActive,
+            inactiveTrackColor      = trackInactive,
+            disabledThumbColor      = chrome.inkFaint,
+            disabledActiveTrackColor = chrome.borderStrong,
+            disabledInactiveTrackColor = chrome.borderSoft,
+        )
+        val interactionSource = remember { MutableInteractionSource() }
+        val dragged by interactionSource.collectIsDraggedAsState()
+        val thumbScale by animateFloatAsState(
+            targetValue = if (dragged) 1.15f else 1f,
+            animationSpec = NpicMotion.springSnappyOrSnap(LocalReduceMotion.current),
+            label = "slider_thumbScale",
+        )
         Slider(
             value = value,
             onValueChange = onValueChange,
@@ -91,14 +112,16 @@ fun NpicSlider(
             valueRange = valueRange,
             steps = steps,
             enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor              = thumbColor,
-                activeTrackColor        = trackActive,
-                inactiveTrackColor      = trackInactive,
-                disabledThumbColor      = chrome.inkFaint,
-                disabledActiveTrackColor = chrome.borderStrong,
-                disabledInactiveTrackColor = chrome.borderSoft,
-            ),
+            colors = sliderColors,
+            interactionSource = interactionSource,
+            thumb = {
+                SliderDefaults.Thumb(
+                    interactionSource = interactionSource,
+                    colors = sliderColors,
+                    enabled = enabled,
+                    modifier = Modifier.graphicsLayer { scaleX = thumbScale; scaleY = thumbScale },
+                )
+            },
             modifier = Modifier.semantics {
                 contentDescription = label
                 stateDescription = valueLabel

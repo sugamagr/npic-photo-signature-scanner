@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -36,7 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
+import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
@@ -75,6 +78,7 @@ private data class ButtonColors(
     val container: Color,
     val label:     Color,
     val border:    Color?,
+    val gradient:  Brush? = null,
 )
 
 @Composable
@@ -85,6 +89,9 @@ private fun resolveColors(style: NpicButtonStyle, enabled: Boolean): ButtonColor
             container = if (enabled) NpicColors.Saffron else chrome.borderStrong,
             label     = if (enabled) NpicColors.Ink     else chrome.inkFaint,
             border    = null,
+            gradient  = if (enabled) {
+                Brush.verticalGradient(listOf(NpicColors.SaffronBright, NpicColors.Saffron))
+            } else null,
         )
         NpicButtonStyle.Secondary -> ButtonColors(
             container = Color.Transparent,
@@ -119,8 +126,10 @@ fun NpicButton(
     val colors = resolveColors(style, enabled && !loading)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val reduceMotion = LocalReduceMotion.current
     val scale by animateFloatAsState(
         targetValue = if (isPressed && enabled && !loading) 0.96f else 1f,
+        animationSpec = NpicMotion.springSnappyOrSnap(reduceMotion),
         label = "npicButton_pressScale",
     )
 
@@ -130,7 +139,11 @@ fun NpicButton(
         .height(size.heightDp.dp)
         .defaultMinSize(minWidth = 88.dp)
         .clip(shape)
-        .background(colors.container, shape)
+        .let { m ->
+            colors.gradient
+                ?.let { g -> m.background(g, shape) }
+                ?: m.background(colors.container, shape)
+        }
         .let { m ->
             colors.border?.let { m.border(width = 1.dp, color = it, shape = shape) } ?: m
         }

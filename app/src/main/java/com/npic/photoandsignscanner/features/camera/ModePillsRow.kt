@@ -1,6 +1,7 @@
 package com.npic.photoandsignscanner.features.camera
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -87,6 +89,11 @@ private fun ModePill(
         animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "mode_pill_ink",
     )
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.06f else 1f,
+        animationSpec = NpicMotion.springSnappyOrSnap(reduceMotion),
+        label = "mode_pill_scale",
+    )
     Text(
         text  = label,
         color = ink,
@@ -94,6 +101,7 @@ private fun ModePill(
             fontWeight = if (selected) FontWeight(700) else FontWeight(500),
         ),
         modifier = Modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .defaultMinSize(minHeight = 44.dp)
             .clickable(onClick = onClick)
             .semantics {

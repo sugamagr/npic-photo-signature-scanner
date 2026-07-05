@@ -278,7 +278,10 @@ private fun CameraGranted(
                         controller   = controller,
                         target       = target,
                         previewGuide = previewGuide,
-                        onDone       = onCaptureComplete,
+                        onDone       = { capture ->
+                            haptics.performConfirm()
+                            onCaptureComplete(capture)
+                        },
                     )
                 },
             )

@@ -56,7 +56,7 @@ fun ShutterButton(
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.92f else 1f,
-        animationSpec = NpicMotion.fastOrSnap(reduceMotion),
+        animationSpec = NpicMotion.springSnappyOrSnap(reduceMotion),
         label = "shutter_scale",
     )
     val arcSweep by animateFloatAsState(

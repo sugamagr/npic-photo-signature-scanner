@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -34,8 +35,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicElevation
+import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
@@ -58,8 +61,16 @@ fun NpicCaptureFab(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = NpicMotion.springSnappyOrSnap(LocalReduceMotion.current),
         label = "capturefab_scale",
     )
+    val fill = remember(isPressed) {
+        if (isPressed) {
+            Brush.verticalGradient(listOf(NpicColors.SaffronDeep, NpicColors.SaffronDeep))
+        } else {
+            Brush.verticalGradient(listOf(NpicColors.SaffronBright, NpicColors.Saffron))
+        }
+    }
 
     BoxWithConstraints(modifier = modifier) {
         val screenW = maxWidth
@@ -74,9 +85,15 @@ fun NpicCaptureFab(
                 .graphicsLayer { scaleX = scale; scaleY = scale }
                 .width(target)
                 .height(72.dp)
-                .shadow(NpicElevation.level3, NpicShapes.lg, clip = false)
+                .shadow(
+                    elevation = NpicElevation.level3,
+                    shape = NpicShapes.lg,
+                    clip = false,
+                    ambientColor = NpicColors.SaffronGlow,
+                    spotColor = NpicColors.SaffronGlow,
+                )
                 .clip(NpicShapes.lg)
-                .background(NpicColors.Saffron, NpicShapes.lg)
+                .background(fill, NpicShapes.lg)
                 .clickable(
                     interactionSource = interactionSource,
                     indication = ripple(bounded = true, color = NpicColors.Ink),

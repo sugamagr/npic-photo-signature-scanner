@@ -1,10 +1,14 @@
 package com.npic.photoandsignscanner.core.theme
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 
 /**
  * Thin wrapper over [LocalHapticFeedback] that respects the user's Settings-drawer
@@ -18,8 +22,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 @Composable
 fun rememberNpicHaptics(): NpicHaptics {
     val feedback = LocalHapticFeedback.current
+    val view = LocalView.current
     val enabled = LocalAppSettings.current.hapticsEnabled
-    return NpicHaptics(feedback, enabled)
+    return NpicHaptics(feedback, view, enabled)
 }
 
 /**
@@ -30,6 +35,7 @@ fun rememberNpicHaptics(): NpicHaptics {
 @Stable
 class NpicHaptics internal constructor(
     private val feedback: HapticFeedback,
+    private val view: View,
     private val enabled: Boolean,
 ) {
     /** Short click tick — Camera shutter, chip toggles, quick confirmations. */
@@ -40,5 +46,16 @@ class NpicHaptics internal constructor(
     /** Long-press pulse — destructive confirms, multi-select entry, Save completion. */
     fun performLongPress() {
         if (enabled) feedback.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    /** Crisp success pulse — capture confirmed, save succeeded. CONFIRM needs API 30;
+     *  older devices get the LongPress pulse (Compose 1.7 has no Confirm type yet). */
+    fun performConfirm() {
+        if (!enabled) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        } else {
+            feedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
     }
 }

@@ -1,10 +1,12 @@
 package com.npic.photoandsignscanner.core.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -32,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
@@ -79,6 +83,12 @@ fun NpicChip(
     )
     val label_ = if (enabled) NpicColors.Ink else chrome.inkFaint
     val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.94f else 1f,
+        animationSpec = NpicMotion.springSnappyOrSnap(LocalReduceMotion.current),
+        label = "chip_pressScale",
+    )
 
     Box(
         modifier = modifier
@@ -86,6 +96,7 @@ fun NpicChip(
                 role = Role.Button
                 this.selected = selected
             }
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .defaultMinSize(minHeight = 44.dp)
             .clickable(
                 interactionSource = interactionSource,

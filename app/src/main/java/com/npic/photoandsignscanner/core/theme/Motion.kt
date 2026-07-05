@@ -2,7 +2,10 @@ package com.npic.photoandsignscanner.core.theme
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.staticCompositionLocalOf
 
@@ -39,6 +42,31 @@ object NpicMotion {
     fun <T> standard(easing: Easing = EaseOutCubic)   = tween<T>(StandardMs,   easing = easing)
     fun <T> slow(easing: Easing = EaseOutCubic)       = tween<T>(SlowMs,       easing = easing)
     fun <T> emphasized(easing: Easing = EaseInOutCubic) = tween<T>(EmphasizedMs, easing = easing)
+
+    // ─── Spatial springs (M3 Expressive) ───────────────────────────────────
+    // Springs are for SPATIAL properties only (scale, offset, size, bounds).
+    // Color/alpha keep the tweens above — bouncing a color reads as a glitch.
+
+    /** Press feedback, chip toggles, small selections. Settles fast, tiny overshoot. */
+    fun <T> springSnappy(): FiniteAnimationSpec<T> =
+        spring(dampingRatio = 0.7f, stiffness = 400f)
+
+    /** Layout/size changes, viewport resizes, tab pill slides. No visible bounce. */
+    fun <T> springSmooth(): FiniteAnimationSpec<T> =
+        spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)
+
+    /** Hero moments only: capture confirmation, save celebration, badge bumps. */
+    fun <T> springBouncy(): FiniteAnimationSpec<T> =
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 300f)
+
+    fun <T> springSnappyOrSnap(reduce: Boolean): FiniteAnimationSpec<T> =
+        if (reduce) snap() else springSnappy()
+
+    fun <T> springSmoothOrSnap(reduce: Boolean): FiniteAnimationSpec<T> =
+        if (reduce) snap() else springSmooth()
+
+    fun <T> springBouncyOrSnap(reduce: Boolean): FiniteAnimationSpec<T> =
+        if (reduce) snap() else springBouncy()
 
     // ─── Reduce-motion aware spec builders ─────────────────────────────────
     // WCAG 2.3.3 / Android `AccessibilityManager.isRequestingReduceMotion` (API 33+).

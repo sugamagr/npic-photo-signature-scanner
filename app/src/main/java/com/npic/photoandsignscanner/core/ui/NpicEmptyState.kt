@@ -1,5 +1,10 @@
 package com.npic.photoandsignscanner.core.ui
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,14 +18,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
+import com.npic.photoandsignscanner.core.theme.LocalReduceMotion
 import com.npic.photoandsignscanner.core.theme.NpicColors
+import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
 import com.npic.photoandsignscanner.core.theme.NpicTheme
@@ -41,6 +52,20 @@ fun NpicEmptyState(
     action: (@Composable () -> Unit)? = null,
 ) {
     val chrome = LocalNpicChrome.current
+    val reduceMotion = LocalReduceMotion.current
+    val bobDp: State<Float> = if (reduceMotion) {
+        remember { mutableFloatStateOf(0f) }
+    } else {
+        rememberInfiniteTransition(label = "emptystate_bob").animateFloat(
+            initialValue = -4f,
+            targetValue = 4f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2000, easing = NpicMotion.EaseInOutCubic),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "emptystate_bob_offset",
+        )
+    }
     Box(
         modifier = modifier.fillMaxSize().padding(NpicSpacing.xl),
         contentAlignment = Alignment.Center,
@@ -51,6 +76,7 @@ fun NpicEmptyState(
         ) {
             Box(
                 modifier = Modifier
+                    .graphicsLayer { translationY = bobDp.value * density }
                     .size(96.dp)
                     .background(chrome.saffronSoft, shape = NpicShapes.full),
                 contentAlignment = Alignment.Center,

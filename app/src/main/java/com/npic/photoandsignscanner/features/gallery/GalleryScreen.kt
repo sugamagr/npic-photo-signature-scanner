@@ -2,6 +2,7 @@ package com.npic.photoandsignscanner.features.gallery
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -28,7 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -46,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -87,6 +90,7 @@ import com.npic.photoandsignscanner.core.ui.NpicIconButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicThumbnail
 import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.SortMode
+import kotlinx.coroutines.delay
 
 /**
  * Gallery — the app's Home (DESIGN §7.6 + PRD §4.8).
@@ -609,6 +613,9 @@ private fun ZeroStateHintTile(
 // Grid
 // ─────────────────────────────────────────────────────────────────────────────
 
+private const val STAGGER_ITEM_CAP = 12
+private const val STAGGER_STEP_MS  = 30L
+
 @Composable
 private fun GalleryGrid(
     state: GalleryUiState,
@@ -624,6 +631,10 @@ private fun GalleryGrid(
     val selectedIdsRef   = rememberUpdatedState(state.selectedIds)
     val clickRef         = rememberUpdatedState(onRecordClick)
     val longPressRef     = rememberUpdatedState(onRecordLongPress)
+    val reduceMotion     = LocalReduceMotion.current
+    // Staggered first-reveal (DESIGN §5): each id animates in once, ever. The set
+    // survives recomposition so recycled cells and filter swaps never re-run it.
+    val enteredIds = remember { mutableSetOf<String>() }
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         contentPadding = PaddingValues(
@@ -636,9 +647,27 @@ private fun GalleryGrid(
         horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
         verticalArrangement   = Arrangement.spacedBy(NpicSpacing.sm),
     ) {
-        items(items = state.records, key = { it.id }) { record ->
+        itemsIndexed(items = state.records, key = { _, r -> r.id }) { index, record ->
             val selected = record.id in selectedIdsRef.value
+            val revealFromScratch = remember(record.id) {
+                enteredIds.add(record.id) && index < STAGGER_ITEM_CAP && !reduceMotion
+            }
+            val reveal = remember(record.id) {
+                Animatable(if (revealFromScratch) 0f else 1f)
+            }
+            LaunchedEffect(record.id) {
+                if (reveal.value < 1f) {
+                    delay(index * STAGGER_STEP_MS)
+                    reveal.animateTo(1f, NpicMotion.springSmooth())
+                }
+            }
             NpicThumbnail(
+                modifier = Modifier.graphicsLayer {
+                    val progress = reveal.value
+                    alpha  = progress.coerceIn(0f, 1f)
+                    scaleX = 0.94f + 0.06f * progress
+                    scaleY = 0.94f + 0.06f * progress
+                },
                 classLabel = record.classNum.label,
                 selected = selected,
                 missingSignature = !record.hasSignature,
