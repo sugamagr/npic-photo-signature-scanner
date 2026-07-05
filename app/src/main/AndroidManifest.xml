@@ -9,6 +9,15 @@
     <!-- Runtime-requested permissions. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- m2508: self-hosted updater (features/update/*). INTERNET fetches version.json
+         from raw.githubusercontent.com and streams the release APK via DownloadManager.
+         REQUEST_INSTALL_PACKAGES is declared here but individually granted per-source
+         in Settings → Apps → Special access → Install unknown apps by the user (persists
+         across our own updates). See features/update/UpdateInstaller.kt for the
+         PackageInstaller Session flow. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- PRD §10: legacy write-external-storage for API ≤ 28 devices where the
          FileProvider-share flow needs an intermediate on-disk staging file that another
          app may read directly (some OEMs' share receivers ignore FileProvider Uris on

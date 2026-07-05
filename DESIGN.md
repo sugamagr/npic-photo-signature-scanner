@@ -730,6 +730,89 @@ Reached from Detail screen bottom bar or Gallery selection-mode Export action.
   - Thickness slider (flex, 2px-12px, live preview dot on left)
   - Clear (icon button, terracotta tint, tap opens confirm dialog)
 
+### 7.10 Update Sheet (Modal Bottom Sheet, m2508)
+
+**Purpose:** The app self-updates from a GitHub-hosted `version.json` manifest (see `docs/RELEASE.md`). This sheet is the only user-facing surface for the entire update flow — check-in, download progress, verify, permission grant, install, failure retry.
+
+**Trigger:** `MainActivity` fires `UpdateViewModel.checkForUpdates()` once per Activity composition via `LaunchedEffect(Unit)`. The sheet mounts whenever `UpdateUiState` is anything other than `Idle`, `Checking`, or `UpToDate`.
+
+**Placement:** Sits at the top of the composition tree, OUTSIDE the `NavHost`, so a pending update surfaces regardless of the active route. Never renders on top of Camera / Edit dark chrome — those flows own the screen while active; the check runs during Gallery time.
+
+**Chrome:** Standard `NpicBottomSheet` — `SurfaceRaised` fill, `NpicShapes.xl` top corners, 40×4dp `BorderStrong` handle, 60% black `Overlay` scrim. NO custom scrim override (unlike Export m2501).
+
+**Header row (56dp visual):**
+- 44dp `SaffronSoft` squircle (`NpicShapes.sm`) containing a 24dp `SaffronDeep` download-arrow icon
+- 12dp gap
+- Column:
+  - Title `headlineMedium` Fraunces, `Ink`:
+    - Normal state → `"Update available"`
+    - Failed state → `"Update failed"` (single copy swap; no Terracotta ink in the title itself — the reason line below carries the error color)
+  - Subtitle `bodyMedium` Inter, `InkMuted`: `"v{running} → v{remote}"` (e.g. `v0.1.0 → v0.2.0`)
+
+**"What's new" section** (visible only when `manifest.changelog` is non-blank AND state is not `Failed`):
+- 1dp `BorderSoft` hairline above
+- Section heading `titleSmall` Fraunces, `Ink`: `"What's new"`
+- 8dp gap
+- Changelog body `bodyMedium` Inter, `Ink`, raw text (server owns the bullet formatting via `\u2022 …\n\u2022 …` in `version.json`)
+
+**Status line** (always visible):
+- 1dp `BorderSoft` hairline above
+- 12dp gap
+- `labelMedium` Inter, `InkFaint`
+- Content by state:
+  - `Available` → `"{X.X} MB · Released YYYY-MM-DD"` (date omitted if manifest is missing it)
+  - `Downloading` → `"{downloaded MB} of {total MB}"`
+  - `Verifying` → `"{X.X} MB · Verifying"`
+  - `ReadyToInstall` → `"{X.X} MB · Ready to install"`
+  - `NeedsInstallPermission` → `"One-time permission required"`
+  - `Installing` → `"{X.X} MB · Installing"`
+  - `Failed` → `"{X.X} MB"` (reason line renders separately in Terracotta below)
+
+**Progress region** (visible only in `Downloading` / `Verifying` / `Installing`):
+- `Downloading`: full-width 6dp `LinearProgressIndicator`, `Saffron` fill on `BorderSoft` track, `NpicShapes.full` corner
+- `Verifying` / `Installing`: 18dp `Saffron` `CircularProgressIndicator` (2dp stroke) + `bodyMedium` `InkMuted` label ("Verifying download…" / "Installing…")
+
+**Failure reason line** (visible only in `Failed`):
+- `bodyMedium` Inter, `Terracotta`
+- Content mapped from `UpdateDownloader.Reason` + PackageInstaller status codes:
+  - `CHECKSUM` → `"The downloaded file was corrupted. Try again."`
+  - `NETWORK` → `"Download failed. Check your connection and try again."`
+  - `CANCELLED` → `"Download was cancelled."`
+  - Samsung `STATUS_FAILURE_BLOCKED` → `"Samsung Auto Blocker is preventing this update. Turn it off in Settings → Security and privacy → Auto Blocker, then try again."`
+  - Other install failures → `"Install failed. {system message}"`
+
+**Action row (bottom):**
+- Horizontal `Arrangement.spacedBy(NpicSpacing.sm)`
+- Left: `NpicButton` Ghost `"Later"` — hidden when `blocking = true` OR state is `Installing`; disabled during `Downloading` / `Verifying`
+- Right: single Primary button (`weight = 1f` — expands to fill), label + behavior by state:
+  - `Available` → `"Update now"` (SaffronBright→Saffron gradient, active)
+  - `Downloading` / `Verifying` → `"Downloading…"` with saffron progress ring (`loading = true`), disabled
+  - `ReadyToInstall` → `"Install"` (active)
+  - `NeedsInstallPermission` → `"Allow installs"` — tapping launches `Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES` for this package; viewModel transitions state back to `ReadyToInstall` optimistically so returning to the app auto-retries
+  - `Installing` → `"Installing…"` with progress ring, disabled
+  - `Failed` (recoverable) → `"Try again"` (retries download or resurfaces the install if APK is already staged)
+
+**Blocking mode (`forceUpdate = true` OR running versionCode < `minSupportedVersion`):**
+- "Later" ghost button is removed
+- `onDismiss` on the sheet is a no-op — swipe-down and back-gesture ignored
+- The user MUST update; only exit path is uninstall
+
+**Motion:**
+- Sheet enter/exit uses M3 `ModalBottomSheet` default spring
+- Progress bar updates in place — no cross-fade between button and bar (would flicker with fast connections)
+- Status-line text updates via natural Compose recomposition; no explicit animation
+
+**Accessibility:**
+- All state transitions announce via the natural `Text` recomposition (TalkBack picks up the new content automatically)
+- Progress bar is not marked with `Modifier.progressSemantics(fraction)` because the numeric status line above already voices the same info more accurately (`"5.2 MB of 43.6 MB"` beats `"12 percent"`)
+- Failure reason is a plain `Text` — no `LiveRegionMode` because the visible state change alone is enough context; `LiveRegionMode.Assertive` on transient error text was rejected as too shouty for the check-on-launch pattern
+
+**Anti-patterns explicitly rejected:**
+- No full-screen "Update required" takeover — the sheet is dismissable by default; only `blocking = true` locks it, and that's a rare server-side flag
+- No progress notification in the system tray — DownloadManager already shows one, adding a second is noise
+- No "Delta / incremental update" language — we always ship full APKs (delta patches would double the ship complexity for a ~45 MB app that updates monthly)
+- No "Restart to apply" step — the OS handles that; PackageInstaller kills the running process during install and the user opens the new APK themselves
+
 ---
 
 ## 8. Iconography

@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -6,6 +7,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+}
+
+// m2508: release keystore lives outside git in `keystore.properties` at the repo root.
+// The self-hosted updater (features/update/*) requires the release APK signature to
+// match the installed APK; if this file is missing the release build silently falls
+// back to the debug signing key, which will make every subsequent update install
+// FAIL with INSTALL_FAILED_UPDATE_INCOMPATIBLE. See docs/RELEASE.md for the
+// keystore-generation recipe. Debug builds are unaffected.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) load(keystorePropertiesFile.inputStream())
 }
 
 android {
@@ -40,8 +52,29 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = keystoreProperties.getProperty("storeFile") ?: ""
+            if (storeFilePath.isNotBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = keystoreProperties.getProperty("storePassword") ?: ""
+                keyAlias = keystoreProperties.getProperty("keyAlias") ?: ""
+                keyPassword = keystoreProperties.getProperty("keyPassword") ?: ""
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // m2508: only sign with the release key when keystore.properties actually
+            // resolved to a file — otherwise AGP would fail the config phase asking
+            // for a storeFile. Debug-signed release APKs are useless for the self-
+            // updater but at least let a fresh clone still `./gradlew assembleRelease`
+            // without error to inspect the build graph.
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile?.exists() == true) {
+                signingConfig = releaseSigning
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

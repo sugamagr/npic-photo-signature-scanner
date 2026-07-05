@@ -49,6 +49,9 @@ import com.npic.photoandsignscanner.data.imaging.OpenCvBridge
 import com.npic.photoandsignscanner.data.db.NpicDatabase
 import com.npic.photoandsignscanner.data.repo.RoomDraftRepository
 import com.npic.photoandsignscanner.data.repo.RoomStudentRepository
+import com.npic.photoandsignscanner.data.update.UpdateDownloader
+import com.npic.photoandsignscanner.data.update.UpdateInstaller
+import com.npic.photoandsignscanner.data.update.UpdateRepository
 import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import com.npic.photoandsignscanner.data.storage.SourceStore
 import com.npic.photoandsignscanner.domain.model.CameraMode
@@ -78,6 +81,9 @@ import com.npic.photoandsignscanner.features.settings.SettingsViewModel
 import com.npic.photoandsignscanner.features.signaturedraw.SignatureDrawResult
 import com.npic.photoandsignscanner.features.signaturedraw.SignatureDrawScreen
 import com.npic.photoandsignscanner.features.signaturedraw.SignatureRasterizer
+import com.npic.photoandsignscanner.features.update.UpdateSheet
+import com.npic.photoandsignscanner.features.update.UpdateUiState
+import com.npic.photoandsignscanner.features.update.UpdateViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -175,6 +181,16 @@ class MainActivity : ComponentActivity() {
     // repository dies with the Activity and Espresso tests can spin a fresh instance.
     private val appSettingsRepository by lazy { AppSettingsRepository(applicationContext) }
 
+    // m2508: self-hosted updater (features/update/*). UpdateRepository fetches
+    // version.json from raw.githubusercontent.com; UpdateDownloader wraps
+    // DownloadManager for the APK stream; UpdateInstaller drives PackageInstaller
+    // Session API. All three are stateless — one instance per Activity is enough
+    // and cheaper than rebuilding per composition. See DESIGN §7.10 for the sheet
+    // spec and docs/RELEASE.md for the ship recipe.
+    private val updateRepository by lazy { UpdateRepository() }
+    private val updateDownloader by lazy { UpdateDownloader(applicationContext) }
+    private val updateInstaller by lazy { UpdateInstaller(applicationContext) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -219,6 +235,20 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     val settingsVm: SettingsViewModel = viewModel(factory = settingsVmFactory)
+                    // m2508: UpdateViewModel is Activity-scoped so the state machine
+                    // survives Gallery↔Detail↔Camera navigation. checkForUpdates()
+                    // fires ONCE on first composition (LaunchedEffect(Unit)) — future
+                    // manual re-checks come from a Settings drawer row.
+                    val updateVmFactory = remember(updateRepository, updateDownloader, updateInstaller) {
+                        UpdateViewModel.Factory(
+                            repository = updateRepository,
+                            downloader = updateDownloader,
+                            installer = updateInstaller,
+                        )
+                    }
+                    val updateVm: UpdateViewModel = viewModel(factory = updateVmFactory)
+                    LaunchedEffect(Unit) { updateVm.checkForUpdates() }
+                    val updateState by updateVm.state.collectAsStateWithLifecycle()
                     val drawerState = rememberDrawerState(DrawerValue.Closed)
                     val drawerScope = rememberCoroutineScope()
                     val hostContext = LocalContext.current
@@ -260,6 +290,10 @@ class MainActivity : ComponentActivity() {
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 },
+                                onCheckForUpdates = {
+                                    updateVm.checkForUpdates()
+                                    Toast.makeText(hostContext, "Checking for updates…", Toast.LENGTH_SHORT).show()
+                                },
                             )
                         },
                     ) {
@@ -276,6 +310,15 @@ class MainActivity : ComponentActivity() {
                             guideBoxCropper = guideBoxCropper,
                             onOpenSettings = { drawerScope.launch { drawerState.open() } },
                         )
+                    }
+                    // m2508: UpdateSheet is hosted at the top of the composition tree
+                    // (outside NavHost) so a pending update surfaces regardless of the
+                    // active route — Gallery, Camera, Edit, Save all share it. The sheet
+                    // returns immediately when state is Idle/Checking/UpToDate.
+                    if (updateState !is UpdateUiState.Idle &&
+                        updateState !is UpdateUiState.Checking &&
+                        updateState !is UpdateUiState.UpToDate) {
+                        UpdateSheet(viewModel = updateVm)
                     }
                 }
             }

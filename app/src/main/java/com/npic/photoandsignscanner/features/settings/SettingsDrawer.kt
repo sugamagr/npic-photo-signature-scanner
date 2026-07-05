@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.SettingsSuggest
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -80,6 +81,7 @@ fun SettingsDrawer(
     appVersion: String,
     onDismiss: () -> Unit,
     onClearAllDone: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
@@ -95,6 +97,7 @@ fun SettingsDrawer(
             onSetMotion      = viewModel::setReduceMotion,
             onSetHaptics     = viewModel::setHaptics,
             onClearAll       = { viewModel.clearAllData(onClearAllDone) },
+            onCheckForUpdates = onCheckForUpdates,
             onDismiss        = onDismiss,
         )
     }
@@ -107,6 +110,7 @@ private fun SettingsDrawerContent(
     onSetMotion: (MotionPreference) -> Unit,
     onSetHaptics: (Boolean) -> Unit,
     onClearAll: () -> Unit,
+    onCheckForUpdates: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -143,6 +147,28 @@ private fun SettingsDrawerContent(
             HapticsRow(
                 enabled  = settings.hapticsEnabled,
                 onToggle = onSetHaptics,
+            )
+        }
+
+        Spacer(Modifier.height(NpicSpacing.xl))
+
+        SettingsSection(title = "App updates") {
+            Text(
+                text  = "Fetch the latest version from GitHub and install it.",
+                color = LocalNpicChrome.current.inkMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(NpicSpacing.sm))
+            NpicButton(
+                label     = "Check for updates",
+                onClick   = {
+                    onCheckForUpdates()
+                    onDismiss()
+                },
+                style     = NpicButtonStyle.Secondary,
+                size      = NpicButtonSize.Small,
+                startIcon = Icons.Outlined.Download,
+                modifier  = Modifier.fillMaxWidth(),
             )
         }
 
