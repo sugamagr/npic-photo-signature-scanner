@@ -331,6 +331,11 @@ class MainActivity : ComponentActivity() {
 }
 
 private object Route {
+    // m2513: branded Compose splash. Start destination so it's the FIRST composable
+    // the user sees; the system SplashScreen (themes.xml, 200ms) dismisses as soon
+    // as this mounts. The splash calls onDone after HOLD_MS (1.8s) which pops itself
+    // and navigates to Gallery — see MainActivity.NpicNavHost Route.Splash wiring.
+    const val Splash          = "splash"
     const val Gallery         = "gallery"
     // Layer 12: Camera now accepts an optional `?mode=Photo|Signature` query so
     // SignaturePromptSheet's Capture branch can land the user directly in Signature mode
@@ -375,7 +380,20 @@ private fun NpicNavHost(
     guideBoxCropper: GuideBoxCropper,
     onOpenSettings: () -> Unit,
 ) {
-    NavHost(navController = navController, startDestination = Route.Gallery) {
+    NavHost(navController = navController, startDestination = Route.Splash) {
+        composable(Route.Splash) {
+            // m2513: 1.8s branded splash → auto-nav to Gallery. popUpTo(Splash){inclusive=true}
+            // strips Splash off the back stack so a back-gesture from Gallery exits the app
+            // instead of returning to the splash (would look broken).
+            com.npic.photoandsignscanner.features.splash.SplashScreen(
+                onDone = {
+                    navController.navigate(Route.Gallery) {
+                        popUpTo(Route.Splash) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
         composable(Route.Gallery) {
             GalleryDestination(
                 studentRepository = studentRepository,

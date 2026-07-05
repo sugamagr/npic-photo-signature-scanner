@@ -1,11 +1,11 @@
 {
-  "versionCode": 3,
-  "versionName": "0.2.1",
-  "apkUrl": "https://github.com/sugamagr/npic-photo-signature-scanner/releases/download/v0.2.1/npic-0.2.1-release.apk",
-  "apkSha256": "278b4a620d81fea1a093a9d6c44e1fe235b220c01ca4bf58d73e94aebfc7980c",
-  "apkSizeBytes": 46098898,
-  "changelog": "Fix updater crash when downloading v0.2.0.\n\u2022 DownloadManager cannot write into the app-internal cache directory (throws SecurityException); moved APK staging to the app-external files directory instead\n\u2022 Update flow now completes: check \u2192 download \u2192 verify \u2192 install\n\u2022 New app icon from v0.2.0 (gold PS-in-photo-frame on dark navy) ships along with this fix",
+  "versionCode": 4,
+  "versionName": "0.2.2",
+  "apkUrl": "https://github.com/sugamagr/npic-photo-signature-scanner/releases/download/v0.2.2/npic-0.2.2-release.apk",
+  "apkSha256": "dd48ba3052e1feaa60e372ca9c1aeca701f253414d64266f1a9fa9bda44deb33",
+  "apkSizeBytes": 46541142,
+  "changelog": "Branded launch splash.\n\u2022 New 1.8s Compose splash screen shows the gold PS-in-photo-frame logo card with a saffron pulse ring and 'NPIC / Photo and signature scanner' wordmark on ivory\n\u2022 Replaces the plain saffron 'S' vector that flashed for 200ms before Gallery\n\u2022 Respects the system reduce-motion setting (pulse + scale collapse to static)",
   "minSupportedVersion": 1,
   "forceUpdate": false,
-  "releaseDate": "2025-07-05T20:11:00Z"
+  "releaseDate": "2025-07-05T20:20:00Z"
 }
