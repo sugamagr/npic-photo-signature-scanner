@@ -81,9 +81,9 @@ val LocalNpicChrome = staticCompositionLocalOf { WarmEditorialChrome }
 
 /**
  * Live [AppSettings] from the Settings drawer (user m1551 S3). Callers that need to read
- * `hapticsEnabled` or `exportMimePreference` at usage sites (e.g. the shutter button, the
- * share intent builder) pull from here so a single toggle in the drawer takes effect
- * everywhere without threading callbacks through every composable.
+ * `hapticsEnabled` at usage sites (e.g. the shutter button) pull from here so a single
+ * toggle in the drawer takes effect everywhere without threading callbacks through every
+ * composable.
  *
  * MUST be [compositionLocalOf], NOT [staticCompositionLocalOf]. The static variant tells
  * Compose to skip tracking readers for recomposition — used for values that never change

@@ -1057,13 +1057,12 @@ private fun ExportDestination(
         )
     }
     val viewModel: ExportViewModel = viewModel(key = "export-$idsKey", factory = factory)
-    val appSettings = com.npic.photoandsignscanner.core.theme.LocalAppSettings.current
 
     ExportSheet(
         viewModel = viewModel,
         onCancel = onCancel,
         onShare = { result, _ ->
-            handleExportResult(context, result, appSettings.exportMimePreference)
+            handleExportResult(context, result)
             onCancel()
         },
     )
@@ -1072,16 +1071,13 @@ private fun ExportDestination(
 private fun handleExportResult(
     context: android.content.Context,
     result: com.npic.photoandsignscanner.features.export.ExportResult,
-    mimePref: com.npic.photoandsignscanner.domain.model.ExportMime,
 ) {
-    // Export MIME preference (user m1551 S3): `Auto` lets each blob speak its true
-    // MIME (image/jpeg for photos, application/zip for bundles) so the system chooser
-    // shows every compatible receiver. `JpegOnly` forces image/jpeg for both, useful
-    // when the target app (some school-portal uploaders) only exposes an image intent
-    // filter and rejects application/zip.
+    // m2175: MIME picker is auto-per-blob. Single JPEGs get image/jpeg, ZIP bundles get
+    // application/zip. The old override (JpegOnly forces image/jpeg for ZIPs) was removed
+    // with the Settings drawer's Export MIME section — realistic users share single-record
+    // JPEGs to the portal, not ZIP bundles.
     val jpegMime = FileShareLauncher.MIME_JPEG
-    val zipMime = if (mimePref == com.npic.photoandsignscanner.domain.model.ExportMime.JpegOnly)
-        jpegMime else FileShareLauncher.MIME_ZIP
+    val zipMime = FileShareLauncher.MIME_ZIP
     // Oracle #5 A9 (qc-round-10): assign the when to Unit so the compiler enforces
     // exhaustiveness. Adding a new ExportResult variant will now fail to compile until
     // this handler learns about it, catching silent drops of new export outcomes.

@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.npic.photoandsignscanner.domain.model.AppSettings
-import com.npic.photoandsignscanner.domain.model.ExportMime
 import com.npic.photoandsignscanner.domain.model.MotionPreference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -38,7 +37,9 @@ class AppSettingsRepository(private val context: Context) {
     private object Keys {
         val ReduceMotion = stringPreferencesKey("reduce_motion_override")
         val Haptics = booleanPreferencesKey("haptics_enabled")
-        val ExportMime = stringPreferencesKey("export_mime")
+        // m2175: Export MIME override removed from the drawer. Any pre-existing
+        // "export_mime" key in DataStore is silently ignored on read (the value
+        // was written by an older build; nothing looks it up anymore).
     }
 
     val settings: Flow<AppSettings> = context.appSettingsDataStore.data.map { prefs ->
@@ -54,12 +55,6 @@ class AppSettingsRepository(private val context: Context) {
     suspend fun setHaptics(enabled: Boolean) {
         context.appSettingsDataStore.edit { prefs ->
             prefs[Keys.Haptics] = enabled
-        }
-    }
-
-    suspend fun setExportMime(preference: ExportMime) {
-        context.appSettingsDataStore.edit { prefs ->
-            prefs[Keys.ExportMime] = preference.name
         }
     }
 
@@ -80,13 +75,9 @@ class AppSettingsRepository(private val context: Context) {
             runCatching { MotionPreference.valueOf(name) }.getOrNull()
         } ?: MotionPreference.System
         val haptics = this[Keys.Haptics] ?: true
-        val mime = this[Keys.ExportMime]?.let { name ->
-            runCatching { ExportMime.valueOf(name) }.getOrNull()
-        } ?: ExportMime.Auto
         return AppSettings(
             reduceMotionOverride = motion,
             hapticsEnabled = haptics,
-            exportMimePreference = mime,
         )
     }
 }

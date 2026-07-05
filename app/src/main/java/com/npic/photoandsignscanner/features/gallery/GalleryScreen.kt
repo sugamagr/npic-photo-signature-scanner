@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -41,15 +42,17 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.PlaylistAddCheck
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAddCheck
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -58,6 +61,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -325,7 +331,7 @@ private fun GalleryTopBar(
                 ) {
                     item(
                         label = "Select all",
-                        icon = Icons.Outlined.PlaylistAddCheck,
+                        icon = Icons.AutoMirrored.Outlined.PlaylistAddCheck,
                         onClick = onSelectAll,
                     )
                     divider()
@@ -634,63 +640,142 @@ private fun GalleryGrid(
     // Staggered first-reveal (DESIGN §5): each id animates in once, ever. The set
     // survives recomposition so recycled cells and filter swaps never re-run it.
     val enteredIds = remember { mutableSetOf<String>() }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        contentPadding = PaddingValues(
-            start  = NpicSpacing.sm,
-            end    = NpicSpacing.sm,
-            top    = NpicSpacing.xs,
-            // DESIGN §7.1 fixes grid bottom padding at 120dp so the last row clears the FAB.
-            bottom = 120.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
-        verticalArrangement   = Arrangement.spacedBy(NpicSpacing.sm),
-    ) {
-        itemsIndexed(items = state.records, key = { _, r -> r.id }) { index, record ->
-            val selected = record.id in selectedIdsRef.value
-            val revealFromScratch = remember(record.id) {
-                enteredIds.add(record.id) && index < STAGGER_ITEM_CAP && !reduceMotion
-            }
-            val reveal = remember(record.id) {
-                Animatable(if (revealFromScratch) 0f else 1f)
-            }
-            LaunchedEffect(record.id) {
-                if (reveal.value < 1f) {
-                    delay(index * STAGGER_STEP_MS)
-                    reveal.animateTo(1f, NpicMotion.springSmooth())
-                }
-            }
-            NpicThumbnail(
-                modifier = Modifier.graphicsLayer {
-                    val progress = reveal.value
-                    alpha  = progress.coerceIn(0f, 1f)
-                    scaleX = 0.94f + 0.06f * progress
-                    scaleY = 0.94f + 0.06f * progress
-                },
-                classLabel = record.classNum.label,
-                selected = selected,
-                missingSignature = !record.hasSignature,
-                onClick = {
-                    if (selectionModeRef.value) longPressRef.value(record.id)
-                    else clickRef.value(record.id)
-                },
-                onLongPress = { longPressRef.value(record.id) },
-                content = {
-                    // Bug#1+#2: render the saved photo from SourceStore (`filesDir/sources/`).
-                    // Coil handles missing-file / decode failure by leaving the slot blank,
-                    // which falls back to the NpicThumbnail card chrome.
-                    if (record.photoPath.isNotBlank()) {
-                        coil.compose.AsyncImage(
-                            model = java.io.File(record.photoPath),
-                            contentDescription = null,
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
+
+    // m2056 Item 2 — drag-to-select. Each visible thumbnail registers its grid-
+    // local Rect here on layout; a grid-level pointerInput runs a long-press-then-
+    // drag detector that hit-tests the finger position against these rects and
+    // toggles selection on cells the finger enters. Semantics match Samsung
+    // Gallery / Google Photos: long-press one thumb, then slide across adjacent
+    // thumbs without lifting.
+    val cellBounds = remember { mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
+    val visitedThisDrag = remember { mutableSetOf<String>() }
+    val haptics = com.npic.photoandsignscanner.core.theme.rememberNpicHaptics()
+
+    Box(
+        modifier = Modifier.pointerInput(Unit) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = { start: androidx.compose.ui.geometry.Offset ->
+                    visitedThisDrag.clear()
+                    // Toggle the anchor cell (matches the long-press semantics the
+                    // per-item onLongPress already provided — this makes the drag
+                    // start work whether or not selection mode was already on).
+                    hitTestCell(cellBounds, start)?.let { id ->
+                        haptics.performLongPress()
+                        longPressRef.value(id)
+                        visitedThisDrag += id
                     }
                 },
+                onDrag = { change, _ ->
+                    change.consume()
+                    hitTestCell(cellBounds, change.position)?.let { id ->
+                        if (id !in visitedThisDrag) {
+                            haptics.performClick()
+                            longPressRef.value(id)
+                            visitedThisDrag += id
+                        }
+                    }
+                },
+                onDragEnd = { visitedThisDrag.clear() },
+                onDragCancel = { visitedThisDrag.clear() },
             )
+        },
+    ) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            contentPadding = PaddingValues(
+                start  = NpicSpacing.sm,
+                end    = NpicSpacing.sm,
+                top    = NpicSpacing.xs,
+                // DESIGN §7.1 fixes grid bottom padding at 120dp so the last row clears the FAB.
+                bottom = 120.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+            verticalArrangement   = Arrangement.spacedBy(NpicSpacing.sm),
+        ) {
+            itemsIndexed(items = state.records, key = { _, r -> r.id }) { index, record ->
+                val selected = record.id in selectedIdsRef.value
+                val revealFromScratch = remember(record.id) {
+                    enteredIds.add(record.id) && index < STAGGER_ITEM_CAP && !reduceMotion
+                }
+                val reveal = remember(record.id) {
+                    Animatable(if (revealFromScratch) 0f else 1f)
+                }
+                LaunchedEffect(record.id) {
+                    if (reveal.value < 1f) {
+                        delay(index * STAGGER_STEP_MS)
+                        reveal.animateTo(1f, NpicMotion.springSmooth())
+                    }
+                }
+                // Cell auto-unregisters when the LazyGrid recycles this slot — the
+                // key(record.id) block below re-runs on recycle, clearing the old
+                // entry before the new one takes its place.
+                DisposableEffect(record.id) {
+                    onDispose { cellBounds.remove(record.id) }
+                }
+                NpicThumbnail(
+                    modifier = Modifier
+                        .graphicsLayer {
+                            val progress = reveal.value
+                            alpha  = progress.coerceIn(0f, 1f)
+                            scaleX = 0.94f + 0.06f * progress
+                            scaleY = 0.94f + 0.06f * progress
+                        }
+                        .onGloballyPositioned { coords ->
+                            // positionInParent gives coords in the LazyGrid's local
+                            // space, which matches the pointerInput's coordinate
+                            // system since both live under the same outer Box.
+                            val pos = coords.positionInParent()
+                            cellBounds[record.id] = androidx.compose.ui.geometry.Rect(
+                                offset = pos,
+                                size = androidx.compose.ui.geometry.Size(
+                                    coords.size.width.toFloat(),
+                                    coords.size.height.toFloat(),
+                                ),
+                            )
+                        },
+                    classLabel = record.classNum.label,
+                    selected = selected,
+                    missingSignature = !record.hasSignature,
+                    onClick = {
+                        if (selectionModeRef.value) longPressRef.value(record.id)
+                        else clickRef.value(record.id)
+                    },
+                    onLongPress = { longPressRef.value(record.id) },
+                    content = {
+                        // Bug#1+#2: render the saved photo from SourceStore (`filesDir/sources/`).
+                        // Coil handles missing-file / decode failure by leaving the slot blank,
+                        // which falls back to the NpicThumbnail card chrome.
+                        if (record.photoPath.isNotBlank()) {
+                            coil.compose.AsyncImage(
+                                model = java.io.File(record.photoPath),
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    },
+                )
+            }
         }
     }
+}
+
+/**
+ * Hit-test a pointer position against the cached cell bounds, returning the recordId
+ * of the cell under the pointer or `null` if the pointer is between cells.
+ *
+ * Called on every drag event during a drag-to-select gesture — needs to stay cheap.
+ * The map is small (only visible cells register bounds; LazyGrid recycles the rest),
+ * so a linear scan is fine; a spatial index would be overkill.
+ */
+private fun hitTestCell(
+    bounds: Map<String, androidx.compose.ui.geometry.Rect>,
+    position: androidx.compose.ui.geometry.Offset,
+): String? {
+    for ((id, rect) in bounds) {
+        if (rect.contains(position)) return id
+    }
+    return null
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

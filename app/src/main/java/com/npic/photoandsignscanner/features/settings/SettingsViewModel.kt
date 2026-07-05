@@ -7,7 +7,6 @@ import com.npic.photoandsignscanner.data.db.NpicDatabase
 import com.npic.photoandsignscanner.data.settings.AppSettingsRepository
 import com.npic.photoandsignscanner.data.storage.SourceStore
 import com.npic.photoandsignscanner.domain.model.AppSettings
-import com.npic.photoandsignscanner.domain.model.ExportMime
 import com.npic.photoandsignscanner.domain.model.MotionPreference
 import com.npic.photoandsignscanner.domain.repo.DraftRepository
 import kotlinx.coroutines.Dispatchers
@@ -52,10 +51,6 @@ class SettingsViewModel(
 
     fun setHaptics(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setHaptics(enabled) }
-    }
-
-    fun setExportMime(preference: ExportMime) {
-        viewModelScope.launch { settingsRepository.setExportMime(preference) }
     }
 
     fun clearAllData(onDone: (Boolean) -> Unit) {

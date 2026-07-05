@@ -300,6 +300,11 @@ private fun DetailBody(
 
 @Composable
 private fun MetadataCard(record: StudentRecord) {
+    // Cache the relative-time label. `record.createdAtLabel` calls Clock.System.now()
+    // on every access; without remember, every recomposition of MetadataCard fires
+    // the wall-clock read + Duration bucket lookup — cheap individually but noisy at
+    // scale (Detail recomposes on any state change under it).
+    val createdAtLabel = remember(record.createdAt) { record.createdAtLabel }
     NpicCard(
         padding = PaddingValues(NpicSpacing.md),
     ) {
@@ -309,7 +314,7 @@ private fun MetadataCard(record: StudentRecord) {
                 MetadataCell("Serial", record.serialLabel, Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(NpicSpacing.lg)) {
-                MetadataCell("Captured", record.createdAtLabel, Modifier.weight(1f))
+                MetadataCell("Captured", createdAtLabel, Modifier.weight(1f))
                 MetadataCell(
                     key   = "Media",
                     value = record.mediaSummary,
@@ -722,9 +727,11 @@ private fun TargetClassPickerDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = NpicColors.Saffron)
-            }
+            NpicButton(
+                label   = "Cancel",
+                onClick = onDismiss,
+                style   = NpicButtonStyle.Ghost,
+            )
         },
     )
 }

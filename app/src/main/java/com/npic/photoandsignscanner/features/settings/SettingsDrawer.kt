@@ -56,7 +56,6 @@ import com.npic.photoandsignscanner.core.ui.NpicButtonSize
 import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicSegmentedControl
 import com.npic.photoandsignscanner.domain.model.AppSettings
-import com.npic.photoandsignscanner.domain.model.ExportMime
 import com.npic.photoandsignscanner.domain.model.MotionPreference
 
 /**
@@ -95,7 +94,6 @@ fun SettingsDrawer(
             appVersion       = appVersion,
             onSetMotion      = viewModel::setReduceMotion,
             onSetHaptics     = viewModel::setHaptics,
-            onSetExportMime  = viewModel::setExportMime,
             onClearAll       = { viewModel.clearAllData(onClearAllDone) },
             onDismiss        = onDismiss,
         )
@@ -108,7 +106,6 @@ private fun SettingsDrawerContent(
     appVersion: String,
     onSetMotion: (MotionPreference) -> Unit,
     onSetHaptics: (Boolean) -> Unit,
-    onSetExportMime: (ExportMime) -> Unit,
     onClearAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -146,23 +143,6 @@ private fun SettingsDrawerContent(
             HapticsRow(
                 enabled  = settings.hapticsEnabled,
                 onToggle = onSetHaptics,
-            )
-        }
-
-        Spacer(Modifier.height(NpicSpacing.xl))
-
-        SettingsSection(title = "Export MIME") {
-            Text(
-                text  = "Auto lets receiver apps pick. JPEG only forces image/jpeg for single-photo shares — helps with picky share targets.",
-                color = LocalNpicChrome.current.inkMuted,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Spacer(Modifier.height(NpicSpacing.sm))
-            NpicSegmentedControl(
-                options  = listOf(ExportMime.Auto, ExportMime.JpegOnly),
-                selected = settings.exportMimePreference,
-                onSelect = onSetExportMime,
-                labelOf  = ::mimeLabel,
             )
         }
 
@@ -376,9 +356,4 @@ private fun motionLabel(preference: MotionPreference): String = when (preference
     MotionPreference.System -> "System"
     MotionPreference.Off    -> "Full"
     MotionPreference.On     -> "Reduce"
-}
-
-private fun mimeLabel(preference: ExportMime): String = when (preference) {
-    ExportMime.Auto     -> "Auto"
-    ExportMime.JpegOnly -> "JPEG only"
 }
