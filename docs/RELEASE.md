@@ -4,6 +4,15 @@ The app checks `https://raw.githubusercontent.com/sugamagr/npic-photo-signature-
 on every launch. When `versionCode` there is higher than the running APK, the update
 sheet surfaces to the user. This document is the ship recipe for that flow.
 
+## Standing operational rule (m2510+)
+
+**Ship a release, then STOP.** After every code change destined for users, cut a
+new release (bump versionCode + versionName, `assembleRelease`, update
+`version.json`, `gh release create`, `git push`). Do **NOT** `adb install` the
+new APK to any device — the user runs the in-app updater themselves to exercise
+the real flow. This rule was set by the user after m2509; older releases (v0.1.0
+bootstrap) predated it and were installed manually to seed devices.
+
 ## Prerequisites
 
 1. Keystore lives at `/Users/apple/Documents/RdQrScanner-KEYSTORE-BACKUP/keystore.jks`
