@@ -87,8 +87,10 @@ fun NpicIconButton(
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val reduceMotion = com.npic.photoandsignscanner.core.theme.LocalReduceMotion.current
     val scale by animateFloatAsState(
         targetValue = if (isPressed && enabled) 0.96f else 1f,
+        animationSpec = com.npic.photoandsignscanner.core.theme.NpicMotion.springSnappyOrSnap(reduceMotion),
         label = "npicIconButton_pressScale",
     )
 

@@ -70,7 +70,7 @@ fun NpicDialog(
                 Text(
                     text  = title,
                     color = NpicColors.Ink,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                 )
                 if (body != null) {
                     Text(

@@ -91,7 +91,7 @@ fun NpicEmptyState(
             Text(
                 text  = title,
                 color = NpicColors.Ink,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.displayMedium,
                 textAlign = TextAlign.Center,
             )
             Text(

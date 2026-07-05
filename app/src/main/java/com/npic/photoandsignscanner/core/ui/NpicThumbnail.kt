@@ -61,9 +61,10 @@ fun NpicThumbnail(
     },
 ) {
     val chrome = LocalNpicChrome.current
+    val reduceMotion = com.npic.photoandsignscanner.core.theme.LocalReduceMotion.current
     val scale by animateFloatAsState(
         targetValue = if (selected) 0.96f else 1f,
-        animationSpec = NpicMotion.standard(),
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "thumb_scale",
     )
 

@@ -467,13 +467,13 @@ private fun GalleryZeroState(onCapture: () -> Unit) {
             Spacer(Modifier.height(NpicSpacing.xxs))
 
             Text(
-                text  = "Start scanning.",
+                text  = "Nothing captured yet",
                 color = NpicColors.Ink,
                 style = MaterialTheme.typography.displaySmall,
                 textAlign = TextAlign.Center,
             )
             Text(
-                text  = "Point, capture, sign — every passport photo lands here, portal-ready.",
+                text  = "Tap Start Capturing to add your first student.",
                 color = chrome.inkMuted,
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
@@ -502,7 +502,7 @@ private fun GalleryZeroState(onCapture: () -> Unit) {
             Spacer(Modifier.height(NpicSpacing.xs))
 
             NpicButton(
-                label   = "Capture your first photo",
+                label   = "Start Capturing",
                 onClick = onCapture,
                 modifier = Modifier.fillMaxWidth(),
                 startIcon = Icons.Outlined.CameraAlt,

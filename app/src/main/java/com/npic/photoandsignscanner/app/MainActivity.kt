@@ -950,7 +950,15 @@ private fun UpdateConfirmDestination(
             repo = studentRepository,
             draft = draft,
             target = target,
-            onDiscardDraftAssets = { draftId -> sourceStore.deleteFor(draftId) },
+            // qc-round-13 BLOCKER #1: UpdateConfirm flows through beginUpdate, which
+            // mints draft.id = target.id so Edit's SourceStore.writePhoto/writeSignature
+            // overwrites the record's assets in place. Calling deleteFor(draft.id) here
+            // would nuke the EXISTING record's photo/signature files. Skip the delete
+            // when the draft is beginUpdate-shaped; there are no orphan files to clean
+            // because Edit wrote directly onto the record's canonical asset paths.
+            onDiscardDraftAssets = { draftId ->
+                if (draftId != target.id) sourceStore.deleteFor(draftId)
+            },
         )
     }
     val vmKey = "update-${draft.id}-${target.id}"

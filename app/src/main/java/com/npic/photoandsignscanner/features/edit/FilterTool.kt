@@ -72,6 +72,7 @@ fun FilterTool(
     modifier: Modifier = Modifier,
 ) {
     val scroll = rememberScrollState()
+    val haptics = com.npic.photoandsignscanner.core.theme.rememberNpicHaptics()
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -85,7 +86,10 @@ fun FilterTool(
             FilterCell(
                 preset = preset,
                 isSelected = preset == selected,
-                onClick = { onSelect(preset) },
+                onClick = {
+                    haptics.performClick()
+                    onSelect(preset)
+                },
                 thumbnail = thumbnails[preset],
             )
         }

@@ -201,9 +201,11 @@ private fun SearchTopBar(
                 )
             }
             if (query.isNotEmpty()) {
+                // WCAG 2.5.5 / DESIGN §1.6: 44dp tap target. Icon glyph stays 18dp for the
+                // visual weight the search bar wants — the outer Box handles the hit region.
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(44.dp)
                         .clip(NpicShapes.full)
                         .clickable(onClick = onClearQuery)
                         .semantics { role = Role.Button },

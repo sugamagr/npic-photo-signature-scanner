@@ -213,13 +213,14 @@ Appears after signature step (or skip). **Blocking**: cannot dismiss without Sav
 ### 4.7 Duplicate Dialog
 Triggered when saving with same class+serial or class+name as an existing entry.
 
-**Layout:**
-- Title: "Duplicate found"
+**Layout (updated per qc-round-13 blind Oracle sweep):**
+- Title: "Duplicate found" with Terracotta warning icon
 - Body: "A student with this {serial | name} already exists in Class {X}. Which one should be kept?"
-- Two large preview cards side by side:
-  - **New (current)** — radio selected by default, "Just captured" label, capture time
-  - **Existing** — radio, "Saved {relative time ago}" label
-- Buttons: Cancel (returns to save dialog), Keep selected (destructive if replacing)
+- Two summary cards side by side, each showing class + label of the candidate. These are read-only comparison cards, not radio inputs — the user picks by tapping a button, not by selecting a radio.
+- Actions row:
+  - **Keep existing** — Ghost button, dismisses the sheet, keeps the existing record, discards the just-committed draft (SourceStore assets cleaned up)
+  - **Keep new** — Destructive primary button (Terracotta), overwrites the existing row via `repo.replace`, adopts the new draft's photo + signature
+- The two-button shape ships instead of the earlier "radio + single confirm" pattern because (a) the destructive action is unambiguous when it's a dedicated Terracotta button, (b) two taps→one tap is a real speed win in the common workflow, (c) the button labels state the outcome directly. No hidden state between selection and confirmation.
 
 ### 4.8 Gallery Screen (= Home)
 Samsung-Gallery-inspired but flat (per your decision). This is the app's launch screen.

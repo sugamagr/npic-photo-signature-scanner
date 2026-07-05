@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Edit presenter. Non-destructive: every knob mutates [EditState] in-memory only. The final
@@ -61,13 +62,13 @@ class EditViewModel(
     private var commitJob: Job? = null
     private var livePreviewJob: Job? = null
 
-    // m2332 Bug N: busy-flag + pending-value coalescing. Rapid slider drags used to
-    // cancel-and-restart the render coroutine, so no frame ever made it past the debounce
-    // delay — the viewport only updated on finger-lift. Now: if a render is in flight,
-    // mark `pendingRender = true` and let the running coroutine re-launch once with the
-    // latest state. Latest-value semantics without cancel storms. Adobe Lightroom Mobile
-    // pattern.
-    @Volatile private var pendingRender: Boolean = false
+    // Busy-flag + latest-value coalescing for scheduleLivePreview (m2332 Bug N).
+    // AtomicBoolean is required — a plain @Volatile Boolean has a check-then-clear
+    // race where a scheduleLivePreview() call between the loop's `if (pendingRender)`
+    // read and the manual `pendingRender = false` clear sets the flag, then gets
+    // wiped by the clear (qc-round-13 MAJOR #1). Use getAndSet(false) at the loop
+    // tail to consume the intent atomically.
+    private val pendingRender: AtomicBoolean = AtomicBoolean(false)
 
     /**
      * Seed from a fresh capture. No-op if the same capture is already loaded. Cancels any
@@ -162,8 +163,22 @@ class EditViewModel(
 
     private suspend fun decodeSource(path: String): Bitmap? = withContext(Dispatchers.IO) {
         try {
+            // qc-round-13 hostile-input hardening: peek bounds first, compute inSampleSize
+            // so the decoded bitmap's longest side is ≤ MAX_DECODE_LONG_SIDE. A malicious
+            // 10K×10K Photo Picker import would otherwise allocate ~400 MB ARGB and OOM.
+            // inSampleSize=2 halves each axis (quartering memory); Android rounds to the
+            // nearest power of 2. 4096-longest-side ARGB ≈ 64 MB, safe on the A35-class
+            // 6 GB target.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+            val longSide = maxOf(bounds.outWidth, bounds.outHeight)
+            var sample = 1
+            while (longSide / sample > MAX_DECODE_LONG_SIDE) sample *= 2
+
             val raw = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
+                inSampleSize = sample
             }) ?: return@withContext null
             // CameraX (via LifecycleCameraController) writes the JPEG with an EXIF
             // orientation tag; the pixel buffer stays in raw-sensor orientation. Coil
@@ -309,13 +324,11 @@ class EditViewModel(
      * user-visible render lag per drag stroke, but sliders no longer feel frozen.
      */
     private fun scheduleLivePreview() {
-        // If a render is already running, mark that we want another one and let the
-        // running coroutine pick up the latest state when it finishes.
         if (livePreviewJob?.isActive == true) {
-            pendingRender = true
+            pendingRender.set(true)
             return
         }
-        pendingRender = false
+        pendingRender.set(false)
         livePreviewJob = viewModelScope.launch {
             renderLoop()
         }
@@ -342,8 +355,7 @@ class EditViewModel(
                     .getOrNull()
             }
             if (rendered == null) {
-                if (!pendingRender) return
-                pendingRender = false
+                if (!pendingRender.getAndSet(false)) return
                 continue
             }
             // Oracle #1 C2 (qc-round-10): capture the stale bitmap OUTSIDE update{}'s
@@ -360,9 +372,7 @@ class EditViewModel(
             }
             stale?.recycle()
 
-            // If new state arrived while we were rendering, loop again with the latest.
-            if (!pendingRender) return
-            pendingRender = false
+            if (!pendingRender.getAndSet(false)) return
         }
     }
 
@@ -481,5 +491,11 @@ class EditViewModel(
         const val PREVIEW_LONG_SIDE = 1920
 
         const val THUMBNAIL_LONG_SIDE = 192
+
+        // qc-round-13 hostile-input hardening cap. Bounds a decoded bitmap to
+        // ~4096×4096 ARGB (~64 MB), safe on the A35-class 6 GB device target. Photo
+        // Picker imports of ultra-large JPEGs (10K+ longest side) get down-sampled
+        // via inSampleSize before hitting the pixel buffer — see decodeSource.
+        const val MAX_DECODE_LONG_SIDE = 4096
     }
 }

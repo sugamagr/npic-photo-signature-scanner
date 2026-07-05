@@ -73,6 +73,7 @@ fun NpicTextField(
     val chrome = LocalNpicChrome.current
     val hasError = errorText != null
     var focused by remember { mutableStateOf(false) }
+    val reduceMotion = com.npic.photoandsignscanner.core.theme.LocalReduceMotion.current
 
     val border by animateColorAsState(
         targetValue = when {
@@ -81,7 +82,7 @@ fun NpicTextField(
             !enabled -> chrome.borderSoft
             else     -> chrome.borderStrong
         },
-        animationSpec = NpicMotion.fast(),
+        animationSpec = NpicMotion.fastOrSnap(reduceMotion),
         label = "field_border",
     )
 

@@ -58,9 +58,10 @@ fun NpicFilterPreview(
     },
 ) {
     val chrome = LocalNpicChrome.current
+    val reduceMotion = com.npic.photoandsignscanner.core.theme.LocalReduceMotion.current
     val ringColor by animateColorAsState(
         targetValue = if (selected) NpicColors.Saffron else Color.Transparent,
-        animationSpec = NpicMotion.standard(),
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "filter_ring",
     )
     val labelColor by animateColorAsState(
@@ -70,7 +71,7 @@ fun NpicFilterPreview(
             selected            -> NpicColors.Ink
             else                -> chrome.inkMuted
         },
-        animationSpec = NpicMotion.standard(),
+        animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "filter_label",
     )
 

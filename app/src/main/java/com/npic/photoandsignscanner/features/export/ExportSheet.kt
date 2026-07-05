@@ -90,6 +90,7 @@ fun ExportSheet(
             Spacer(Modifier.height(NpicSpacing.md))
             MissingMediaWarning(
                 skippedCount = state.skipped.size,
+                format = state.format,
                 expanded = state.warningExpanded,
                 onToggle = viewModel::toggleWarningExpanded,
                 skippedNames = state.skipped.map { it.displayName.ifBlank { "Serial ${it.serial}" } },
@@ -275,6 +276,7 @@ private fun iconFor(format: ExportFormat): ImageVector = when (format) {
 @Composable
 private fun MissingMediaWarning(
     skippedCount: Int,
+    format: com.npic.photoandsignscanner.domain.model.ExportFormat,
     expanded: Boolean,
     onToggle: () -> Unit,
     skippedNames: List<String>,
@@ -302,15 +304,10 @@ private fun MissingMediaWarning(
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                // DESIGN §7.8 copy locked. Singular vs plural handled explicitly so the
-                // string never reads "1 items don't have" (grammar mismatch caught by
-                // Oracle O4-2 blind sweep). "It'll" / "They'll" tense agreement follows
-                // subject count.
-                text  = if (skippedCount == 1) {
-                    "1 item doesn't have a signature. It'll be skipped."
-                } else {
-                    "$skippedCount items don't have a signature. They'll be skipped."
-                },
+                // qc-round-13 MINOR: message noun switches on format so PhotoOnly reads
+                // "photo" not "signature". Combined + SignatureOnly still say signature.
+                // Singular vs plural + "It'll" / "They'll" tense agreement follows count.
+                text  = missingMediaMessage(skippedCount, format),
                 color = NpicColors.Ink,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
@@ -433,5 +430,21 @@ private fun ExportActionRow(
             style = NpicButtonStyle.Ghost,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+private fun missingMediaMessage(
+    count: Int,
+    format: com.npic.photoandsignscanner.domain.model.ExportFormat,
+): String {
+    val missing = when (format) {
+        com.npic.photoandsignscanner.domain.model.ExportFormat.PhotoOnly -> "photo"
+        com.npic.photoandsignscanner.domain.model.ExportFormat.SignatureOnly,
+        com.npic.photoandsignscanner.domain.model.ExportFormat.Combined -> "signature"
+    }
+    return if (count == 1) {
+        "1 item doesn't have a $missing. It'll be skipped."
+    } else {
+        "$count items don't have a $missing. They'll be skipped."
     }
 }

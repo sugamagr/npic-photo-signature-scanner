@@ -71,11 +71,12 @@ fun <T> NpicSegmentedControl(
             .padding(NpicSpacing.xxs)
             .selectableGroup(),
     ) {
+        val reduceMotion = com.npic.photoandsignscanner.core.theme.LocalReduceMotion.current
         options.forEach { option ->
             val isSelected = option == selected
             val container by animateColorAsState(
                 targetValue = if (isSelected) NpicColors.Surface else Color.Transparent,
-                animationSpec = NpicMotion.standard(),
+                animationSpec = NpicMotion.standardOrSnap(reduceMotion),
                 label = "segment_container",
             )
             val label by animateColorAsState(
@@ -84,7 +85,7 @@ fun <T> NpicSegmentedControl(
                     isSelected -> NpicColors.Ink
                     else       -> chrome.inkMuted
                 },
-                animationSpec = NpicMotion.standard(),
+                animationSpec = NpicMotion.standardOrSnap(reduceMotion),
                 label = "segment_label",
             )
             val segmentModifier = Modifier
