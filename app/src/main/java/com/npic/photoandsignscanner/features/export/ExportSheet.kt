@@ -468,9 +468,14 @@ private fun missingMediaMessage(
 /**
  * Filename naming-mode picker. Visible in the sheet only when at least one selected
  * record was originally saved under Name mode (see [ExportUiState.showNamingToggle]).
- * User picks whether to export Name-mode records under their typed name or their
- * class + serial. Serial-mode records ignore the toggle — their filename is always
- * `{portalCode}{serial:04d}.jpeg`.
+ *
+ * m2498: two side-by-side chip pills — "By name" and "By serial" — one selected, the
+ * other outlined. Replaces the m2497 single morphing chip (which gave no affordance
+ * for what tapping would do) and the pre-m2497 two-tab NpicSegmentedControl (which
+ * pushed the sheet's intrinsic height past the half-expanded state).
+ *
+ * Default is Name (per user directive). Serial-mode records always ignore the
+ * override — their filename is deterministically `{portalCode}{serial:04d}.jpeg`.
  */
 @Composable
 private fun NamingToggleSection(
@@ -478,8 +483,6 @@ private fun NamingToggleSection(
     onSelect: (NamingMode.Kind) -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
-    // Toggle defaults to Name when no override is set — matches how a Name-mode
-    // record would export without the toggle at all.
     val selected = override ?: NamingMode.Kind.Name
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -494,16 +497,17 @@ private fun NamingToggleSection(
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(NpicSpacing.sm))
-        com.npic.photoandsignscanner.core.ui.NpicSegmentedControl(
-            options  = listOf(NamingMode.Kind.Name, NamingMode.Kind.Serial),
-            selected = selected,
-            onSelect = onSelect,
-            labelOf  = ::namingKindLabel,
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs)) {
+            com.npic.photoandsignscanner.core.ui.NpicChip(
+                label    = "By name",
+                selected = selected == NamingMode.Kind.Name,
+                onClick  = { onSelect(NamingMode.Kind.Name) },
+            )
+            com.npic.photoandsignscanner.core.ui.NpicChip(
+                label    = "By serial",
+                selected = selected == NamingMode.Kind.Serial,
+                onClick  = { onSelect(NamingMode.Kind.Serial) },
+            )
+        }
     }
-}
-
-private fun namingKindLabel(kind: NamingMode.Kind): String = when (kind) {
-    NamingMode.Kind.Name   -> "By name"
-    NamingMode.Kind.Serial -> "By serial"
 }
