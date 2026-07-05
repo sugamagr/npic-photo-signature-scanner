@@ -26,10 +26,15 @@ import kotlinx.datetime.Instant
 @Entity(
     tableName = "students",
     indices = [
-        Index(value = ["classNum", "serial"], unique = true),
+        // m2502: composite UNIQUE now includes duplicateIndex so "Keep both" can persist
+        // two rows with the same (classNum, serial). Default index 0 keeps existing rows
+        // singleton-shaped; each subsequent Keep-both allocates the next available index
+        // atomically (see StudentDao.peekNextDuplicateIndex + repo.saveAsDuplicate).
+        Index(value = ["classNum", "serial", "duplicateIndex"], unique = true),
         // Oracle O5-B4: PRD §8.1 specifies (classNum, nameKey) composite index.
         // findByClassName joins on nameKey so this replaces the full-table LOWER/TRIM scan.
-        Index(value = ["classNum", "nameKey"]),
+        // m2502: extended with duplicateIndex for the same Keep-both invariant on Name mode.
+        Index(value = ["classNum", "nameKey", "duplicateIndex"], unique = true),
     ],
 )
 data class StudentEntity(
@@ -62,6 +67,13 @@ data class StudentEntity(
 
     @ColumnInfo(name = "namingKind")
     val namingKind: String,
+
+    /**
+     * m2502: 0 = original / singleton; 1 = first Keep-both duplicate; 2 = second; etc.
+     * See [StudentRecord.duplicateIndex] KDoc for full semantics.
+     */
+    @ColumnInfo(name = "duplicateIndex", defaultValue = "0")
+    val duplicateIndex: Int = 0,
 
     @ColumnInfo(name = "createdAt")
     val createdAt: Long,
@@ -97,6 +109,7 @@ internal fun StudentEntity.toRecord(): StudentRecord = StudentRecord(
     // backfills the column with an empty default for legacy rows, and the m2232 fix
     // depends on this round-trip so add-signature update flows can reconstruct SaveInput.
     namingKind = runCatching { NamingMode.Kind.valueOf(namingKind) }.getOrDefault(NamingMode.Kind.Serial),
+    duplicateIndex = duplicateIndex,
     createdAt = Instant.fromEpochMilliseconds(createdAt),
     updatedAt = Instant.fromEpochMilliseconds(updatedAt),
 )
@@ -111,6 +124,7 @@ internal fun StudentRecord.toEntity(namingKind: String): StudentEntity = Student
     photoPath = photoPath,
     signaturePath = signaturePath,
     namingKind = namingKind,
+    duplicateIndex = duplicateIndex,
     createdAt = createdAt.toEpochMilliseconds(),
     updatedAt = updatedAt.toEpochMilliseconds(),
 )

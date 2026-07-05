@@ -359,12 +359,12 @@ private fun SearchResultRow(
         }
         Column(Modifier.weight(1f)) {
             Text(
-                text  = record.displayName.ifBlank { "Serial ${record.serial}" },
+                text  = record.displayName.ifBlank { "Serial ${record.displaySerialLabel}" },
                 color = NpicColors.Ink,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight(600)),
             )
             Text(
-                text  = "Class ${record.classNum.label} \u00b7 Serial ${record.serial}",
+                text  = "Class ${record.classNum.label} \u00b7 Serial ${record.displaySerialLabel}",
                 color = chrome.inkMuted,
                 style = MaterialTheme.typography.labelMedium,
             )

@@ -31,6 +31,12 @@ data class StudentRecord(
     // instead of the pre-fix behaviour that dropped the record identity and forced the
     // user to re-pick Serial vs Name (creating a phantom second record).
     val namingKind: NamingMode.Kind,
+    // m2502: ordinal position when the user chose "Keep both" on a duplicate. 0 = original
+    // (or singleton); 1 = first duplicate; 2 = second; etc. Two records with the same
+    // (classNum, serial) are DB-legal only when their duplicateIndex differs — enforced
+    // by the composite UNIQUE index on StudentEntity. UI shows "090001 (2)" for index 1,
+    // export batches suffix collisions when >1 same filename lands in one batch.
+    val duplicateIndex: Int = 0,
     val createdAt: Instant,
     val updatedAt: Instant,
 ) {
@@ -39,4 +45,17 @@ data class StudentRecord(
     /** Filename this record would export as under the Serial naming mode. */
     val serialFilename: String
         get() = "${classNum.portalCode}${serial.toString().padStart(4, '0')}.jpeg"
+
+    /**
+     * m2502: user-facing serial label. First occurrence renders as clean "090001"; any
+     * subsequent duplicate the user kept renders as "090001 (2)", "090001 (3)", …
+     * Used by Detail metadata + Search subtitle + ExportSheet skipped-list. NOT used by
+     * export filenames — those are recomputed per-batch in ExportViewModel so a solo
+     * export of the "(2)" record still lands as clean "090001.jpeg".
+     */
+    val displaySerialLabel: String
+        get() {
+            val base = "${classNum.portalCode}${serial.toString().padStart(4, '0')}"
+            return if (duplicateIndex == 0) base else "$base (${duplicateIndex + 1})"
+        }
 }

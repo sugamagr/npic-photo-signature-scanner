@@ -636,7 +636,7 @@ private val StudentRecord.headerTitle: String
     get() = if (displayName.isNotBlank()) displayName else serialLabel
 
 private val StudentRecord.serialLabel: String
-    get() = "${classNum.portalCode}${serial.toString().padStart(4, '0')}"
+    get() = displaySerialLabel
 
 private val StudentRecord.mediaSummary: String
     get() = when {

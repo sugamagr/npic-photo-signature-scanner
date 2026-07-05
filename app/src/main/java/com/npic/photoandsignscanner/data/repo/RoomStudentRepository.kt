@@ -49,21 +49,21 @@ class RoomStudentRepository(
     override suspend fun nextSerial(classNum: ClassNum): Int =
         dao.peekNextSerial(classNum.label)
 
-    override suspend fun findByClassSerial(classNum: ClassNum, serial: Int): StudentRecord? =
-        dao.findByClassSerial(classNum.label, serial)?.toRecord()
+    override suspend fun findAllByClassSerial(classNum: ClassNum, serial: Int): List<StudentRecord> =
+        dao.findAllByClassSerial(classNum.label, serial).map { it.toRecord() }
 
-    override suspend fun findByClassName(classNum: ClassNum, name: String): StudentRecord? =
-        dao.findByClassNameKey(classNum.label, normalizeNameKey(name))?.toRecord()
+    override suspend fun findAllByClassName(classNum: ClassNum, name: String): List<StudentRecord> =
+        dao.findAllByClassNameKey(classNum.label, normalizeNameKey(name)).map { it.toRecord() }
 
     override suspend fun save(draft: StudentDraft, input: SaveInput): SaveResult {
         if (!draft.hasAnyMedia) return SaveResult.MissingBothMedia
 
-        val duplicate = when (input.naming) {
-            is NamingMode.Serial -> findByClassSerial(input.classNum, input.naming.number)
-            is NamingMode.Name   -> findByClassName(input.classNum, input.naming.text)
+        val duplicates = when (input.naming) {
+            is NamingMode.Serial -> findAllByClassSerial(input.classNum, input.naming.number)
+            is NamingMode.Name   -> findAllByClassName(input.classNum, input.naming.text)
         }
-        if (duplicate != null) {
-            return SaveResult.DuplicateFound(existing = duplicate, incoming = draft, input = input)
+        if (duplicates.isNotEmpty()) {
+            return SaveResult.DuplicateFound(existing = duplicates, incoming = draft, input = input)
         }
 
         val serial = when (val n = input.naming) {
@@ -98,18 +98,54 @@ class RoomStudentRepository(
             SaveResult.Success(record)
         } catch (constraint: SQLiteConstraintException) {
             // Race backstop: another Save inserted the same (class, serial) between our
-            // duplicate check and this insert. Re-read the existing row and route to the
-            // duplicate-resolve UI.
+            // duplicate check and this insert. Re-read the existing rows and route to the
+            // duplicate-resolve UI. m2502: now list-shaped so N-way dialog can render.
             val existing = when (input.naming) {
-                is NamingMode.Serial -> findByClassSerial(input.classNum, input.naming.number)
-                is NamingMode.Name   -> findByClassName(input.classNum, input.naming.text)
+                is NamingMode.Serial -> findAllByClassSerial(input.classNum, input.naming.number)
+                is NamingMode.Name   -> findAllByClassName(input.classNum, input.naming.text)
             }
-            if (existing != null) {
+            if (existing.isNotEmpty()) {
                 SaveResult.DuplicateFound(existing = existing, incoming = draft, input = input)
             } else {
                 throw constraint
             }
         }
+    }
+
+    /**
+     * m2502 "Keep both" write. Skips the duplicate check because the caller
+     * (SaveViewModel.resolveDuplicateKeepingBoth) has already surfaced the dialog and
+     * the user has consciously chosen to allow the collision. Delegates to
+     * [StudentDao.insertAsDuplicateBySerial] / [StudentDao.insertAsDuplicateByName]
+     * which atomically read MAX(duplicateIndex)+1 and insert in one transaction.
+     * The class counter is NOT touched — Keep-both reuses an existing serial, so
+     * moving the monotonic counter would strand a future auto-serial.
+     */
+    override suspend fun saveAsDuplicate(draft: StudentDraft, input: SaveInput): SaveResult {
+        if (!draft.hasAnyMedia) return SaveResult.MissingBothMedia
+
+        val serial = when (val n = input.naming) {
+            is NamingMode.Serial -> n.number
+            is NamingMode.Name   -> dao.nextSerialAndBump(input.classNum.label)
+        }
+        val now = Clock.System.now()
+        val record = StudentRecord(
+            id            = draft.id,
+            classNum      = input.classNum,
+            serial        = serial,
+            displayName   = input.displayName,
+            photoPath     = draft.photoPath.orEmpty(),
+            signaturePath = draft.signaturePath,
+            namingKind    = input.naming.kind,
+            createdAt     = draft.createdAt,
+            updatedAt     = now,
+        )
+        val entity = record.toEntity(namingKind = input.naming.kind.name)
+        val assignedIndex = when (input.naming) {
+            is NamingMode.Serial -> dao.insertAsDuplicateBySerial(entity)
+            is NamingMode.Name   -> dao.insertAsDuplicateByName(entity)
+        }
+        return SaveResult.Success(record.copy(duplicateIndex = assignedIndex))
     }
 
     override suspend fun replace(existingId: String, draft: StudentDraft, input: SaveInput): SaveResult {

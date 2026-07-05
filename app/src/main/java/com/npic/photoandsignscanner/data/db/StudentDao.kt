@@ -31,10 +31,16 @@ interface StudentDao {
     @Query("SELECT * FROM students WHERE id = :id LIMIT 1")
     fun observeById(id: String): Flow<StudentEntity?>
 
+    /**
+     * m2502: N-way lookup for the Save-flow duplicate check and the DuplicateSheet UI.
+     * Returns every row sharing (classNum, serial) ordered by duplicateIndex ascending —
+     * existing[0] is the original, existing[1..N] are prior Keep-both entries.
+     */
     @Query(
-        "SELECT * FROM students WHERE classNum = :classNum AND serial = :serial LIMIT 1",
+        "SELECT * FROM students WHERE classNum = :classNum AND serial = :serial " +
+            "ORDER BY duplicateIndex ASC",
     )
-    suspend fun findByClassSerial(classNum: String, serial: Int): StudentEntity?
+    suspend fun findAllByClassSerial(classNum: String, serial: Int): List<StudentEntity>
 
     /**
      * Case-insensitive + whitespace-tolerant lookup for the Save dialog's Name-mode
@@ -42,11 +48,32 @@ interface StudentDao {
      * single (classNum, nameKey) B-tree lookup rather than a full-table LOWER/TRIM scan.
      * Callers must normalize the query string via [normalizeNameKey] before invoking —
      * [RoomStudentRepository.findByClassName] handles that. Oracle O5-B4 / PRD §8.1.
+     * m2502: returns list ordered by duplicateIndex for N-way Keep-both support.
      */
     @Query(
-        "SELECT * FROM students WHERE classNum = :classNum AND nameKey = :nameKey LIMIT 1",
+        "SELECT * FROM students WHERE classNum = :classNum AND nameKey = :nameKey " +
+            "ORDER BY duplicateIndex ASC",
     )
-    suspend fun findByClassNameKey(classNum: String, nameKey: String): StudentEntity?
+    suspend fun findAllByClassNameKey(classNum: String, nameKey: String): List<StudentEntity>
+
+    /**
+     * m2502: next-available duplicateIndex for a (classNum, serial) group. Called inside
+     * [insertDuplicate] under one transaction so two concurrent Keep-both saves can't
+     * race to the same index (the composite UNIQUE constraint would then reject one).
+     * Returns 1 for the first Keep-both (existing has index 0); N+1 for subsequent.
+     */
+    @Query(
+        "SELECT COALESCE(MAX(duplicateIndex), -1) + 1 FROM students " +
+            "WHERE classNum = :classNum AND serial = :serial",
+    )
+    suspend fun peekNextDuplicateIndexForSerial(classNum: String, serial: Int): Int
+
+    /** m2502: Name-mode counterpart to [peekNextDuplicateIndexForSerial]. */
+    @Query(
+        "SELECT COALESCE(MAX(duplicateIndex), -1) + 1 FROM students " +
+            "WHERE classNum = :classNum AND nameKey = :nameKey",
+    )
+    suspend fun peekNextDuplicateIndexForName(classNum: String, nameKey: String): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entity: StudentEntity)
@@ -136,6 +163,31 @@ interface StudentDao {
                 )
             }
         }
+    }
+
+    /**
+     * m2502: atomic "Keep both" insert. Reads MAX(duplicateIndex) for the target
+     * (classNum, serial) group and writes [entity] with duplicateIndex = max + 1 in
+     * one transaction so two concurrent Keep-both writes can't hand out the same
+     * index (the composite UNIQUE constraint would then reject one). Returns the
+     * assigned duplicateIndex so the caller can echo it into the domain-side record.
+     *
+     * Does NOT touch class_counters — Keep-both reuses an existing serial and must
+     * never move the monotonic counter (which would strand future auto-serials).
+     */
+    @Transaction
+    suspend fun insertAsDuplicateBySerial(entity: StudentEntity): Int {
+        val nextIndex = peekNextDuplicateIndexForSerial(entity.classNum, entity.serial)
+        insert(entity.copy(duplicateIndex = nextIndex))
+        return nextIndex
+    }
+
+    /** m2502: Name-mode counterpart. See [insertAsDuplicateBySerial]. */
+    @Transaction
+    suspend fun insertAsDuplicateByName(entity: StudentEntity): Int {
+        val nextIndex = peekNextDuplicateIndexForName(entity.classNum, entity.nameKey)
+        insert(entity.copy(duplicateIndex = nextIndex))
+        return nextIndex
     }
 
     // ─── class_counters ─────────────────────────────────────────────────────

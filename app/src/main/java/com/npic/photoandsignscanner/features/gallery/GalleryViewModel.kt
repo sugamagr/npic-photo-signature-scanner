@@ -111,10 +111,14 @@ class GalleryViewModel(
             SortMode.NameDescending ->
                 filtered.sortedByDescending { it.displayName.lowercase() }
             SortMode.ClassAscending ->
-                filtered.sortedWith(compareBy({ it.classNum.ordinal }, { it.serial }))
+                filtered.sortedWith(
+                    compareBy({ it.classNum.ordinal }, { it.serial }, { it.duplicateIndex }),
+                )
             SortMode.ClassDescending ->
                 filtered.sortedWith(
-                    compareByDescending<StudentRecord> { it.classNum.ordinal }.thenBy { it.serial },
+                    compareByDescending<StudentRecord> { it.classNum.ordinal }
+                        .thenBy { it.serial }
+                        .thenBy { it.duplicateIndex },
                 )
         }
         val counts = all.groupingBy { it.classNum }.eachCount()

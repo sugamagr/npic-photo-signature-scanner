@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ClassCounterEntity::class,
         DraftEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class NpicDatabase : RoomDatabase() {
@@ -123,6 +123,11 @@ abstract class NpicDatabase : RoomDatabase() {
             name = DB_NAME,
         )
             .addMigrations(MIGRATION_1_2)
+            // m2502 pre-ship: v3 adds StudentEntity.duplicateIndex + swaps unique
+            // indices. App has not shipped to production yet (user directive: no legacy
+            // data to preserve), so a destructive fallback is safe. Post-launch, replace
+            // with an explicit MIGRATION_2_3 that ALTERs the column + rebuilds indices.
+            .fallbackToDestructiveMigration()
             .build()
     }
 }

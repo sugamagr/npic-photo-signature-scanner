@@ -19,7 +19,11 @@ sealed interface SaveResult {
     @Immutable data class Success(val record: StudentRecord) : SaveResult
 
     @Immutable data class DuplicateFound(
-        val existing: StudentRecord,
+        // m2502: N-way. Ordered by duplicateIndex asc so existing[0] is the original.
+        // Dialog shows every existing entry beside the incoming draft; user picks
+        // Keep existing (drop new), Replace (which existing?), or Keep both (allocate
+        // next duplicateIndex atomically).
+        val existing: List<StudentRecord>,
         val incoming: StudentDraft,
         val input: SaveInput,
     ) : SaveResult

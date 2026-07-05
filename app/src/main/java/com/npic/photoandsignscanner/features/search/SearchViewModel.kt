@@ -122,6 +122,11 @@ private fun filterRecords(records: List<StudentRecord>, query: String): List<Stu
         if (rank < 0) null else rank to record
     }
     return ranked.sortedWith(
-        compareBy({ it.first }, { it.second.classNum.ordinal }, { it.second.serial }),
+        compareBy(
+            { it.first },
+            { it.second.classNum.ordinal },
+            { it.second.serial },
+            { it.second.duplicateIndex },
+        ),
     ).map { it.second }
 }

@@ -127,7 +127,7 @@ fun ExportSheet(
                     format = state.format,
                     expanded = state.warningExpanded,
                     onToggle = viewModel::toggleWarningExpanded,
-                    skippedNames = state.skipped.map { it.displayName.ifBlank { "Serial ${it.serial}" } },
+                    skippedNames = state.skipped.map { it.displayName.ifBlank { "Serial ${it.displaySerialLabel}" } },
                 )
             }
 

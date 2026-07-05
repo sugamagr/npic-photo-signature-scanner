@@ -56,26 +56,42 @@ class InMemoryStudentRepository(
         if (existing.isEmpty()) 1 else existing.maxOf { it.serial } + 1
     }
 
-    override suspend fun findByClassSerial(classNum: ClassNum, serial: Int): StudentRecord? =
-        _records.value.firstOrNull { it.classNum == classNum && it.serial == serial }
+    override suspend fun findAllByClassSerial(classNum: ClassNum, serial: Int): List<StudentRecord> =
+        _records.value
+            .filter { it.classNum == classNum && it.serial == serial }
+            .sortedBy { it.duplicateIndex }
 
-    override suspend fun findByClassName(classNum: ClassNum, name: String): StudentRecord? {
+    override suspend fun findAllByClassName(classNum: ClassNum, name: String): List<StudentRecord> {
         val key = nameKey(name)
-        return _records.value.firstOrNull { it.classNum == classNum && nameKey(it.displayName) == key }
+        return _records.value
+            .filter { it.classNum == classNum && nameKey(it.displayName) == key }
+            .sortedBy { it.duplicateIndex }
     }
 
     override suspend fun save(draft: StudentDraft, input: SaveInput): SaveResult = mutex.withLock {
         if (!draft.hasAnyMedia) return@withLock SaveResult.MissingBothMedia
 
-        val duplicate = when (input.naming) {
-            is NamingMode.Serial -> findByClassSerial(input.classNum, input.naming.number)
-            is NamingMode.Name   -> findByClassName(input.classNum, input.naming.text)
+        val duplicates = when (input.naming) {
+            is NamingMode.Serial -> findAllByClassSerial(input.classNum, input.naming.number)
+            is NamingMode.Name   -> findAllByClassName(input.classNum, input.naming.text)
         }
-        if (duplicate != null) {
-            return@withLock SaveResult.DuplicateFound(existing = duplicate, incoming = draft, input = input)
+        if (duplicates.isNotEmpty()) {
+            return@withLock SaveResult.DuplicateFound(existing = duplicates, incoming = draft, input = input)
         }
 
-        val record = draft.toRecord(input)
+        val record = draft.toRecord(input, duplicateIndex = 0)
+        _records.value = _records.value + record
+        SaveResult.Success(record)
+    }
+
+    override suspend fun saveAsDuplicate(draft: StudentDraft, input: SaveInput): SaveResult = mutex.withLock {
+        if (!draft.hasAnyMedia) return@withLock SaveResult.MissingBothMedia
+        val siblings = when (input.naming) {
+            is NamingMode.Serial -> findAllByClassSerial(input.classNum, input.naming.number)
+            is NamingMode.Name   -> findAllByClassName(input.classNum, input.naming.text)
+        }
+        val nextIndex = (siblings.maxOfOrNull { it.duplicateIndex } ?: -1) + 1
+        val record = draft.toRecord(input, duplicateIndex = nextIndex)
         _records.value = _records.value + record
         SaveResult.Success(record)
     }
@@ -83,13 +99,16 @@ class InMemoryStudentRepository(
     override suspend fun replace(existingId: String, draft: StudentDraft, input: SaveInput): SaveResult =
         mutex.withLock {
             if (!draft.hasAnyMedia) return@withLock SaveResult.MissingBothMedia
+            // Preserve the existing record's duplicateIndex so a Replace inside a
+            // duplicate-cluster keeps that slot's position stable (index 1 stays index 1).
+            val targetIndex = _records.value.firstOrNull { it.id == existingId }?.duplicateIndex ?: 0
             val filtered = _records.value.filterNot { it.id == existingId }
-            val record = draft.toRecord(input)
+            val record = draft.toRecord(input, duplicateIndex = targetIndex)
             _records.value = filtered + record
             SaveResult.Success(record)
         }
 
-    private fun StudentDraft.toRecord(input: SaveInput): StudentRecord {
+    private fun StudentDraft.toRecord(input: SaveInput, duplicateIndex: Int = 0): StudentRecord {
         val now = Clock.System.now()
         val serial = when (val n = input.naming) {
             is NamingMode.Serial -> n.number
@@ -109,6 +128,7 @@ class InMemoryStudentRepository(
             photoPath     = photoPath ?: "",
             signaturePath = signaturePath,
             namingKind    = input.naming.kind,
+            duplicateIndex = duplicateIndex,
             createdAt     = createdAt,
             updatedAt     = now,
         )

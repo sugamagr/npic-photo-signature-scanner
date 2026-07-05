@@ -42,11 +42,16 @@ interface StudentRepository {
      */
     suspend fun nextSerial(classNum: ClassNum): Int
 
-    /** Class-scoped serial lookup for duplicate detection. */
-    suspend fun findByClassSerial(classNum: ClassNum, serial: Int): StudentRecord?
+    /**
+     * Class-scoped serial lookup for duplicate detection. m2502: returns all rows
+     * sharing (classNum, serial) — list ordered by duplicateIndex ascending. Empty
+     * when nothing matches. Callers that only need existence take `.isNotEmpty()`;
+     * the Save flow forwards the whole list to [SaveResult.DuplicateFound].
+     */
+    suspend fun findAllByClassSerial(classNum: ClassNum, serial: Int): List<StudentRecord>
 
-    /** Class-scoped normalised-name lookup for duplicate detection. */
-    suspend fun findByClassName(classNum: ClassNum, name: String): StudentRecord?
+    /** m2502: Name-mode counterpart to [findAllByClassSerial]. */
+    suspend fun findAllByClassName(classNum: ClassNum, name: String): List<StudentRecord>
 
     /**
      * Persist [draft] under [input]. Returns [SaveResult.Success] on the happy path,
@@ -54,6 +59,16 @@ interface StudentRepository {
      * exists, or [SaveResult.MissingBothMedia] when the invariant is broken.
      */
     suspend fun save(draft: StudentDraft, input: SaveInput): SaveResult
+
+    /**
+     * m2502 "Keep both": persist [draft] under [input] alongside any existing record(s)
+     * sharing the same (classNum, serial) or (classNum, name) group. Bypasses the
+     * duplicate check and allocates the next duplicateIndex atomically. Returns
+     * [SaveResult.Success] with the new record whose `duplicateIndex` is >= 1 (0 is
+     * reserved for the original). Returns [SaveResult.MissingBothMedia] on the empty
+     * draft invariant.
+     */
+    suspend fun saveAsDuplicate(draft: StudentDraft, input: SaveInput): SaveResult
 
     /**
      * Replace [existingId] with the new [draft]/[input] pair (PRD §4.7 "Keep new"). The

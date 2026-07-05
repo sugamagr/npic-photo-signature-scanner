@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.Instant
 import java.io.File
 import java.io.FileOutputStream
 
@@ -208,8 +209,14 @@ class ExportViewModel(
         records: List<StudentRecord>,
         format: ExportFormat,
         namingOverride: NamingMode.Kind?,
-    ): List<Payload> =
-        records.mapNotNull { record ->
+    ): List<Payload> {
+        // Priority 3 (necessary): m2502 duplicate-index feature — solo exports of any
+        // record must land as clean `090001.jpeg`, but when two records with the SAME
+        // filename appear in ONE batch (e.g. two records sharing class+serial via
+        // duplicateIndex), the later-created one gets ` (2)` / ` (3)` appended before
+        // the extension. Earlier-created keeps the clean name. See DESIGN duplicate
+        // Q4/Q6 answers in the m2502 change history.
+        val rendered = records.mapNotNull { record ->
             renderRecord(record, format)?.let { (bytes, underMin) ->
                 Payload(
                     filename = GenerateFileName.forExport(
@@ -219,9 +226,54 @@ class ExportViewModel(
                     ),
                     bytes = bytes,
                     underMin = underMin,
+                    createdAt = record.createdAt,
+                    recordId = record.id,
                 )
             }
         }
+        return resolveBatchCollisions(rendered)
+    }
+
+    /**
+     * m2502: append ` (2)` / ` (3)` / … before the file extension for any group of
+     * payloads that would otherwise collide on filename inside a single export batch.
+     * Deterministic ordering: earliest `createdAt` (then `recordId` as tie-breaker)
+     * keeps the clean name; successive duplicates get the suffix. Groups of size 1
+     * pass through untouched, so a solo export of a duplicate record still lands as
+     * clean `090001.jpeg`.
+     */
+    private fun resolveBatchCollisions(payloads: List<Payload>): List<Payload> {
+        val groups = payloads.groupBy { it.filename }
+        if (groups.values.all { it.size == 1 }) return payloads
+        val remapped = HashMap<String, String>(payloads.size)
+        for ((filename, group) in groups) {
+            if (group.size == 1) {
+                remapped[group.single().recordId] = filename
+                continue
+            }
+            val ordered = group.sortedWith(
+                compareBy({ it.createdAt }, { it.recordId }),
+            )
+            ordered.forEachIndexed { index, payload ->
+                remapped[payload.recordId] = if (index == 0) filename else suffixed(filename, index + 1)
+            }
+        }
+        // Preserve original payload order (which mirrors the caller's record order —
+        // Gallery selection order or explicit list) so the share sheet / ZIP entries
+        // appear in the sequence the user picked, not sorted by createdAt.
+        return payloads.map { it.copy(filename = remapped.getValue(it.recordId)) }
+    }
+
+    /**
+     * Insert ` (N)` before the last `.` in [filename]. Falls back to appending when the
+     * filename has no extension (never happens for our JPEG pipeline, but keeps the
+     * helper total).
+     */
+    private fun suffixed(filename: String, index: Int): String {
+        val dot = filename.lastIndexOf('.')
+        return if (dot <= 0) "$filename ($index)"
+        else filename.substring(0, dot) + " ($index)" + filename.substring(dot)
+    }
 
     /**
      * m2496: resolve the filename naming mode for a single record given the batch-wide
@@ -382,7 +434,13 @@ class ExportViewModel(
         }
     }
 
-    private data class Payload(val filename: String, val bytes: ByteArray, val underMin: Boolean) {
+    private data class Payload(
+        val filename: String,
+        val bytes: ByteArray,
+        val underMin: Boolean,
+        val createdAt: Instant,
+        val recordId: String,
+    ) {
         override fun equals(other: Any?): Boolean = this === other
         override fun hashCode(): Int = System.identityHashCode(this)
     }

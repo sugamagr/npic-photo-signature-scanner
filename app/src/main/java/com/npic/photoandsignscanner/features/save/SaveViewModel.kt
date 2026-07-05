@@ -111,15 +111,43 @@ class SaveViewModel(
         _state.update { it.copy(completedRecordId = null) }
     }
 
-    fun resolveDuplicateReplacingExisting() {
+    /**
+     * m2502: user picked "Replace" and chose which of the existing rows to overwrite.
+     * [targetExistingId] is the id of the specific existing record the user radio-selected
+     * in the DuplicateSheet. Replaces THAT record, preserving its duplicateIndex slot
+     * (InMemory + Room replace() implementations both restore the target's index).
+     */
+    fun resolveDuplicateReplacingExisting(targetExistingId: String) {
         val dupe = _state.value.duplicate ?: return
+        val target = dupe.existing.firstOrNull { it.id == targetExistingId } ?: return
         _state.value = _state.value.copy(saving = true, duplicate = null)
         viewModelScope.launch {
-            when (val outcome = repo.replace(dupe.existing.id, dupe.incoming, dupe.input)) {
+            when (val outcome = repo.replace(target.id, dupe.incoming, dupe.input)) {
                 is SaveResult.Success ->
                     _state.value = _state.value.copy(saving = false, completedRecordId = outcome.record.id)
                 is SaveResult.DuplicateFound ->
                     // Shouldn't happen after replace, but re-surface if the repo does.
+                    _state.value = _state.value.copy(saving = false, duplicate = outcome)
+                SaveResult.MissingBothMedia ->
+                    _state.value = _state.value.copy(saving = false, errorMessage = "Add a photo or signature to save.")
+            }
+        }
+    }
+
+    /**
+     * m2502: user picked "Keep both". Persists the incoming draft alongside the existing
+     * rows via [StudentRepository.saveAsDuplicate], which allocates the next duplicateIndex
+     * atomically (see DAO.insertAsDuplicateBySerial / insertAsDuplicateByName). The
+     * existing record(s) are untouched.
+     */
+    fun resolveDuplicateKeepingBoth() {
+        val dupe = _state.value.duplicate ?: return
+        _state.value = _state.value.copy(saving = true, duplicate = null)
+        viewModelScope.launch {
+            when (val outcome = repo.saveAsDuplicate(dupe.incoming, dupe.input)) {
+                is SaveResult.Success ->
+                    _state.value = _state.value.copy(saving = false, completedRecordId = outcome.record.id)
+                is SaveResult.DuplicateFound ->
                     _state.value = _state.value.copy(saving = false, duplicate = outcome)
                 SaveResult.MissingBothMedia ->
                     _state.value = _state.value.copy(saving = false, errorMessage = "Add a photo or signature to save.")
@@ -134,8 +162,9 @@ class SaveViewModel(
         // explicitly delete them here (Oracle O1-11). The existing record's assets are
         // keyed by a different id and untouched.
         onDiscardDraftAssets(draft.id)
-        // Treat the existing record as the completion — caller navigates away from Save.
-        _state.value = _state.value.copy(duplicate = null, completedRecordId = dupe.existing.id)
+        // Treat the first existing record as the completion — caller navigates away from
+        // Save. m2502: existing is now a list, so we route to existing[0] (the original).
+        _state.value = _state.value.copy(duplicate = null, completedRecordId = dupe.existing.first().id)
     }
 
     fun dismissDuplicate() {

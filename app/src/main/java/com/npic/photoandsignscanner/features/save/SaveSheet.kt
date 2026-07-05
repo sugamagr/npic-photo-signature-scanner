@@ -2,14 +2,18 @@ package com.npic.photoandsignscanner.features.save
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
@@ -25,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -34,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicShapes
@@ -47,6 +53,8 @@ import com.npic.photoandsignscanner.core.ui.NpicTextField
 import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.NamingMode
 import com.npic.photoandsignscanner.domain.model.SaveResult
+import com.npic.photoandsignscanner.domain.model.StudentRecord
+import java.io.File
 
 /**
  * The Save bottom sheet (PRD §4.6, DESIGN §7.4).
@@ -199,31 +207,43 @@ fun SaveSheet(
         DuplicateSheet(
             duplicate = dupe,
             onKeepExisting = viewModel::dismissDuplicateKeepingExisting,
-            onKeepNew = viewModel::resolveDuplicateReplacingExisting,
+            onReplace = viewModel::resolveDuplicateReplacingExisting,
+            onKeepBoth = viewModel::resolveDuplicateKeepingBoth,
             onCancel = viewModel::dismissDuplicate,
         )
     }
 }
 
 /**
- * Duplicate Dialog (PRD §4.7, DESIGN §7.5). Modal bottom sheet because it needs preview
- * space for two side-by-side cards; the shell of the sheet is [NpicBottomSheet].
+ * m2502: N-way Duplicate Sheet (PRD §4.7, DESIGN §7.5).
  *
- * Layer 8b shows text-only cards summarising each option; real photo/signature previews
- * land when Save persists actual media (which requires the Room + storage layer).
+ * Renders one preview card per existing record + one for the incoming draft, horizontally
+ * scrollable so 3+ duplicates coexist without overflowing. Each card shows a 96dp photo
+ * thumbnail + 32dp signature underneath so the user can visually distinguish which record
+ * they're keeping. Three actions:
+ *   - **Keep existing** (Ghost): drop the new capture, keep every existing record as-is
+ *   - **Replace**       (Destructive): overwrite the radio-selected existing record with
+ *     the new capture. DISABLED until the user picks a card so accidental data loss is
+ *     impossible; matches the "conscious destructive action" rule from PRD §4.7.
+ *   - **Keep both**     (Primary, Saffron): persist the new capture alongside the
+ *     existing rows via [StudentRepository.saveAsDuplicate] with the next duplicateIndex.
+ *
+ * The dialog is presentation-only — collision resolution + duplicateIndex allocation
+ * happen in [SaveViewModel.resolveDuplicateKeepingBoth] → [StudentRepository.saveAsDuplicate].
  */
 @Composable
 private fun DuplicateSheet(
     duplicate: SaveResult.DuplicateFound,
     onKeepExisting: () -> Unit,
-    onKeepNew: () -> Unit,
+    onReplace: (targetExistingId: String) -> Unit,
+    onKeepBoth: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
-    // Selection defaults to "new" — matches the visual saffron highlight the layer 8b
-    // impl shipped and keeps the destructive Keep-new button as the primary CTA per
-    // PRD §4.7 "radio-select-then-confirm" flow.
-    var selection by remember { mutableStateOf(DuplicateSide.New) }
+    // Radio starts null so "Replace" is disabled by default (Q3-B answer + user-confirmed
+    // "option b"): forces a conscious pick before destructive replace fires. Keep both and
+    // Keep existing work without a selection.
+    var selectedExistingId by remember { mutableStateOf<String?>(null) }
 
     NpicBottomSheet(onDismiss = onCancel) {
         Row(
@@ -237,7 +257,7 @@ private fun DuplicateSheet(
                 modifier = Modifier.size(24.dp),
             )
             Text(
-                text  = "Duplicate found",
+                text  = if (duplicate.existing.size == 1) "Duplicate found" else "${duplicate.existing.size} duplicates found",
                 color = NpicColors.Ink,
                 style = MaterialTheme.typography.titleLarge,
             )
@@ -251,32 +271,22 @@ private fun DuplicateSheet(
         }
         Text(
             text  = "A student with $subjectDescription already exists in Class ${duplicate.input.classNum.label}. " +
-                    "Which one should be kept?",
+                    "Keep both, replace one, or drop the new capture?",
             color = chrome.inkMuted,
             style = MaterialTheme.typography.bodyMedium,
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
-        ) {
-            DuplicateCard(
-                title = "New (just captured)",
-                subtitle = "Class ${duplicate.input.classNum.label} · ${duplicate.input.displayName}",
-                selected = selection == DuplicateSide.New,
-                onSelect = { selection = DuplicateSide.New },
-                modifier = Modifier.weight(1f),
-            )
-            DuplicateCard(
-                title = "Existing",
-                subtitle = "Class ${duplicate.existing.classNum.label} · ${duplicate.existing.displayName}",
-                selected = selection == DuplicateSide.Existing,
-                onSelect = { selection = DuplicateSide.Existing },
-                modifier = Modifier.weight(1f),
-            )
-        }
+        DuplicateCardRow(
+            duplicate = duplicate,
+            selectedExistingId = selectedExistingId,
+            onSelectExisting = { id ->
+                // Toggle-off when the user taps the currently-selected card so they can
+                // deselect back to the null-safe default. Matches the RadioGroup UX
+                // convention used elsewhere in the app (SegmentedControl doesn't support
+                // this but a radio "grid" typically does).
+                selectedExistingId = if (selectedExistingId == id) null else id
+            },
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -288,53 +298,188 @@ private fun DuplicateSheet(
                 style = NpicButtonStyle.Ghost,
             )
             NpicButton(
-                label = "Keep new",
-                onClick = onKeepNew,
+                label = "Replace",
+                onClick = { selectedExistingId?.let(onReplace) },
                 style = NpicButtonStyle.Destructive,
+                enabled = selectedExistingId != null,
+            )
+            NpicButton(
+                label = "Keep both",
+                onClick = onKeepBoth,
+                style = NpicButtonStyle.Primary,
                 modifier = Modifier.weight(1f),
             )
         }
     }
 }
 
-private enum class DuplicateSide { New, Existing }
+/**
+ * Horizontally scrollable row of preview cards. Existing records first (ordered by
+ * duplicateIndex ASC from the repo), then the incoming "new" card at the end.
+ * The new card is visually distinct (Saffron border always, never radio-selectable)
+ * so users can never accidentally pick it as a Replace target.
+ */
+@Composable
+private fun DuplicateCardRow(
+    duplicate: SaveResult.DuplicateFound,
+    selectedExistingId: String?,
+    onSelectExisting: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .selectableGroup()
+            .semantics { contentDescription = "Duplicate records to compare" },
+        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+    ) {
+        duplicate.existing.forEach { record ->
+            ExistingDuplicateCard(
+                record = record,
+                selected = selectedExistingId == record.id,
+                onSelect = { onSelectExisting(record.id) },
+            )
+        }
+        IncomingDuplicateCard(
+            classNum = duplicate.input.classNum,
+            displayName = duplicate.input.displayName,
+            photoPath = duplicate.incoming.photoPath,
+            signaturePath = duplicate.incoming.signaturePath,
+        )
+    }
+}
 
 @Composable
-private fun DuplicateCard(
-    title: String,
-    subtitle: String,
+private fun ExistingDuplicateCard(
+    record: StudentRecord,
     selected: Boolean,
     onSelect: () -> Unit,
-    modifier: Modifier = Modifier,
+) {
+    DuplicatePreviewCard(
+        title = if (record.duplicateIndex == 0) "Existing" else "Existing (${record.duplicateIndex + 1})",
+        subtitle = "Class ${record.classNum.label} · ${record.displayName}",
+        photoPath = record.photoPath.takeIf { it.isNotBlank() },
+        signaturePath = record.signaturePath,
+        selected = selected,
+        role = Role.RadioButton,
+        onClick = onSelect,
+    )
+}
+
+@Composable
+private fun IncomingDuplicateCard(
+    classNum: ClassNum,
+    displayName: String,
+    photoPath: String?,
+    signaturePath: String?,
+) {
+    DuplicatePreviewCard(
+        title = "New (just captured)",
+        subtitle = "Class ${classNum.label} · $displayName",
+        photoPath = photoPath,
+        signaturePath = signaturePath,
+        // The incoming card is always visually highlighted so it's obvious which one is
+        // new — but it's NOT a Replace target (Replace overwrites an EXISTING row).
+        selected = true,
+        role = null,
+        onClick = null,
+    )
+}
+
+/**
+ * Shared preview-card shell. 140dp wide × 200dp tall: 96dp photo thumbnail on top,
+ * 32dp signature strip below, title + subtitle at the bottom. Selected state shows the
+ * 3dp Saffron border used elsewhere in the app (matches (b3) taste tokens).
+ */
+@Composable
+private fun DuplicatePreviewCard(
+    title: String,
+    subtitle: String,
+    photoPath: String?,
+    signaturePath: String?,
+    selected: Boolean,
+    role: Role?,
+    onClick: (() -> Unit)?,
 ) {
     val chrome = LocalNpicChrome.current
+    val base = Modifier
+        .width(140.dp)
+        .clip(NpicShapes.md)
+        .background(NpicColors.Surface, NpicShapes.md)
+        .border(
+            width = if (selected) 3.dp else 1.dp,
+            color = if (selected) NpicColors.Saffron else chrome.borderSoft,
+            shape = NpicShapes.md,
+        )
+    val interactive = if (onClick != null && role != null) {
+        base.selectable(selected = selected, onClick = onClick, role = role)
+    } else base
     Column(
-        modifier = modifier
-            .clip(NpicShapes.md)
-            .background(NpicColors.Surface, NpicShapes.md)
-            .border(
-                width = if (selected) 3.dp else 1.dp,
-                color = if (selected) NpicColors.Saffron else chrome.borderSoft,
-                shape = NpicShapes.md,
-            )
-            .selectable(
-                selected = selected,
-                onClick = onSelect,
-                role = Role.RadioButton,
-            )
-            .padding(NpicSpacing.md)
+        modifier = interactive
+            .padding(NpicSpacing.sm)
             .semantics(mergeDescendants = true) { contentDescription = "$title. $subtitle" },
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
     ) {
+        // Photo thumb — crops to fit, missing-photo placeholder matches the PreviewStrip
+        // visual language so both surfaces feel like one design system.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .clip(NpicShapes.sm)
+                .background(chrome.saffronSoft.copy(alpha = 0.35f), NpicShapes.sm),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (photoPath != null) {
+                AsyncImage(
+                    model = File(photoPath),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(96.dp).clip(NpicShapes.sm),
+                )
+            } else {
+                Text(
+                    text  = "No photo",
+                    color = chrome.inkMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+        // Signature strip (32dp tall) — 3:1 aspect matching Signature camera guide.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .clip(NpicShapes.xs)
+                .background(chrome.saffronSoft.copy(alpha = 0.20f), NpicShapes.xs),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (signaturePath != null) {
+                AsyncImage(
+                    model = File(signaturePath),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().height(32.dp),
+                )
+            } else {
+                Text(
+                    text  = "No signature",
+                    color = chrome.inkFaint,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
         Text(
             text  = title,
             color = NpicColors.Ink,
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
+            maxLines = 1,
         )
         Text(
             text  = subtitle,
             color = chrome.inkMuted,
             style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
         )
     }
 }
