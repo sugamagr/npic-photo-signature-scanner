@@ -106,17 +106,24 @@ private fun filterRecords(records: List<StudentRecord>, query: String): List<Stu
     val q = query.lowercase()
     val digitsOnly = query.filter { it.isDigit() }
     val classHit = q.removePrefix("class ").trim()
+    // m2504 N7: strip a trailing ".jpeg" so a user pasting the exported filename still
+    // hits a match; downstream branches compare against displaySerialLabel which has
+    // no extension.
+    val labelHit = q.removeSuffix(".jpeg")
     val ranked = records.mapNotNull { record ->
         val name = record.displayName.lowercase()
         val classLabel = record.classNum.label.lowercase()
         val serialText = record.serial.toString()
+        val serialLabel = record.displaySerialLabel.lowercase()
         val rank: Int = when {
             name.startsWith(q) -> 0
             name.contains(q) -> 1
             classLabel == classHit -> 2
             classHit.isNotEmpty() && classLabel.contains(classHit) -> 3
-            digitsOnly.isNotEmpty() && serialText == digitsOnly -> 4
-            digitsOnly.isNotEmpty() && serialText.startsWith(digitsOnly) -> 5
+            serialLabel == labelHit -> 4
+            labelHit.isNotEmpty() && serialLabel.startsWith(labelHit) -> 5
+            digitsOnly.isNotEmpty() && serialText == digitsOnly -> 6
+            digitsOnly.isNotEmpty() && serialText.startsWith(digitsOnly) -> 7
             else -> -1
         }
         if (rank < 0) null else rank to record

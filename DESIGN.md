@@ -636,7 +636,7 @@ When the Edit screen is opened from Gallery (Detail screen → tap photo or sign
 - **DuplicateCardRow** — horizontal `Row` inside `LazyRow`-style scroll (`horizontalScroll(rememberScrollState())` with 12dp inter-card gap and 20dp start/end padding). Contents in order:
   1. All existing records (in `duplicateIndex` ascending order — index 0, then (2), (3), …), each rendered as an **ExistingDuplicateCard**
   2. Exactly one **IncomingDuplicateCard** at the end
-- **Right-edge fade:** When `scrollState.canScrollForward`, draw a 24dp horizontal gradient (Surface → Transparent, right-to-left) over the row via `drawWithContent`. Fade disappears once the last card is fully on-screen. This is the Adobe Scan filter-strip affordance — signals "more to the right" without stealing a full arrow icon.
+- **Right-edge fade:** When `scrollState.canScrollForward`, draw a 24dp horizontal gradient (Transparent → Surface, left-to-right across the rightmost 24dp band) over the row via `drawWithContent`. Fade disappears once the last card is fully on-screen. This is the Adobe Scan filter-strip affordance — signals "more to the right" without stealing a full arrow icon.
 
 **DuplicatePreviewCard** (shared shell for both variants):
 - Fixed width **140dp**, height wraps content

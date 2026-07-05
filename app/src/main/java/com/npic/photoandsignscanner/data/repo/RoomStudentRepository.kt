@@ -151,8 +151,11 @@ class RoomStudentRepository(
      * loser's insert then hits SQLiteConstraintException. One retry re-peeks under the
      * loser's transaction — the winner's row is now visible so MAX(duplicateIndex)+1
      * lands on a fresh slot. Bounded to one retry: three concurrent taps on the same
-     * cluster are vanishingly unlikely on a single-user phone; a second failure surfaces
-     * to the caller as before.
+     * cluster are vanishingly unlikely on a single-user phone, so on a second
+     * SQLiteConstraintException we let the exception propagate — the calling coroutine
+     * fails, saving=true is stuck until the ViewModel is reconstructed. Not graceful,
+     * but the m2504 saving-guard in SaveViewModel makes the 3-tap race unreachable
+     * from UI in practice.
      */
     private suspend fun insertAsDuplicateWithRetry(
         entity: com.npic.photoandsignscanner.data.db.StudentEntity,

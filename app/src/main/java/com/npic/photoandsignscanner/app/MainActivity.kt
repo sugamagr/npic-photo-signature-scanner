@@ -135,20 +135,35 @@ class MainActivity : ComponentActivity() {
     // internally serialises writes on its executor and shares a single connection pool,
     // so a lazy singleton here is the composition root for both repositories.
     //
-    // m2503: fallbackToDestructiveMigration wipes the SQLite tables but leaves
-    // `filesDir/sources/*.jpg` behind (~200-400 KB per record). Hook onDestructiveMigration
-    // so the JPEG store is swept in the same beat as the DB wipe. Callback runs on Room's
-    // executor; runBlocking is safe because deleteAll's internal withContext handoff is
-    // brief and this fires exactly once per lifetime (only on version-mismatch open).
+    // m2504: fallbackToDestructiveMigration invokes onCreate after wiping, NOT
+    // onDestructiveMigration (Room 2.6 behaviour — the destructive-migration hook only
+    // fires for explicit Migration objects that drop tables). The existence guard on
+    // sourcesDir separates a real wipe (dir present, has files, DB just got rebuilt from
+    // scratch) from a first install (dir empty). Runs on Room's executor, off the main
+    // thread, so runBlocking here does not ANR; the withContext hop inside deleteAll
+    // moves file IO to Dispatchers.IO before Room resumes.
     private val roomDb by lazy {
         NpicDatabase.create(
             context = this,
             callback = object : androidx.room.RoomDatabase.Callback() {
-                override fun onDestructiveMigration(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                    kotlinx.coroutines.runBlocking { sourceStore.deleteAll() }
+                override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    if (!sourceStore.sourcesDir.exists()) return
+                    val hasFiles = sourceStore.sourcesDir.listFiles()?.isNotEmpty() == true
+                    if (!hasFiles) return
+                    kotlinx.coroutines.runBlocking {
+                        sourceStore.deleteAll()
+                        wipeCacheSubdir("drafts")
+                        wipeCacheSubdir("exports")
+                    }
                 }
             },
         )
+    }
+
+    private fun wipeCacheSubdir(name: String) {
+        val dir = File(cacheDir, name)
+        if (!dir.exists()) return
+        dir.listFiles()?.forEach { runCatching { it.delete() } }
     }
     private val studentRepository: StudentRepository by lazy {
         RoomStudentRepository(dao = roomDb.studentDao(), sourceStore = sourceStore)

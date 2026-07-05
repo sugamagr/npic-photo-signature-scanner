@@ -118,10 +118,10 @@ class SaveViewModel(
      * (InMemory + Room replace() implementations both restore the target's index).
      */
     fun resolveDuplicateReplacingExisting(targetExistingId: String) {
+        if (_state.value.saving) return
         val dupe = _state.value.duplicate ?: return
         val target = dupe.existing.firstOrNull { it.id == targetExistingId }
         if (target == null) {
-            // m2503: target was deleted between dialog open and Replace tap.
             _state.value = _state.value.copy(
                 duplicate = null,
                 errorMessage = "That record was deleted. Try saving again.",
@@ -149,6 +149,7 @@ class SaveViewModel(
      * existing record(s) are untouched.
      */
     fun resolveDuplicateKeepingBoth() {
+        if (_state.value.saving) return
         val dupe = _state.value.duplicate ?: return
         _state.value = _state.value.copy(saving = true, duplicate = null)
         viewModelScope.launch {
@@ -173,10 +174,6 @@ class SaveViewModel(
         // Treat the first existing record as the completion — caller navigates away from
         // Save. m2502: existing is now a list, so we route to existing[0] (the original).
         _state.value = _state.value.copy(duplicate = null, completedRecordId = dupe.existing.first().id)
-    }
-
-    fun dismissDuplicate() {
-        _state.value = _state.value.copy(duplicate = null)
     }
 
     // Zero-pad to the 4-digit format the Serial input requires (user m1537 B6c). Auto-serial

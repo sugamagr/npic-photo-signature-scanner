@@ -1,5 +1,6 @@
 package com.npic.photoandsignscanner.features.save
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -40,6 +41,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -330,7 +332,9 @@ private fun DuplicateCardRow(
     selectedExistingId: String?,
     onSelectExisting: (String) -> Unit,
 ) {
-    val scrollState = rememberScrollState()
+    // m2504 N5: rememberSaveable + ScrollState.Saver so the horizontal viewport survives
+    // configuration change, matching selectedExistingId's rotation persistence.
+    val scrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     // Right-edge fade appears only while more cards remain off-screen so users see the
     // row is scrollable (matches Adobe Scan's filter strip affordance).
     Box(
@@ -357,6 +361,7 @@ private fun DuplicateCardRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(scrollState)
+                .padding(horizontal = NpicSpacing.lg)
                 .selectableGroup()
                 .semantics { contentDescription = "Duplicate records to compare" },
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
@@ -402,18 +407,28 @@ private fun IncomingDuplicateCard(
     photoPath: String?,
     signaturePath: String?,
 ) {
+    // Always visually highlighted so users see which card is new. Not a Replace
+    // target (Replace overwrites an EXISTING row). Focusable so TalkBack / D-pad
+    // users can still land on it and hear that it's the new capture.
+    val name = displayName.trim()
+    val description = buildString {
+        append("New capture. Class ")
+        append(classNum.label)
+        if (name.isNotEmpty()) {
+            append(". ")
+            append(name)
+        }
+    }
     DuplicatePreviewCard(
         title = "New (just captured)",
-        subtitle = displayName.ifBlank { "Class ${classNum.label}" },
+        subtitle = name.ifEmpty { "Class ${classNum.label}" },
         photoPath = photoPath,
         signaturePath = signaturePath,
-        // Always visually highlighted so users see which card is new. Not a Replace
-        // target (Replace overwrites an EXISTING row). Focusable so TalkBack / D-pad
-        // users can still land on it and hear that it's the new capture.
         selected = true,
         role = null,
         onClick = null,
-        semanticsOverride = "New capture. Class ${classNum.label}. ${displayName.ifBlank { "" }}. Not selectable.",
+        semanticsOverride = description,
+        stateOverride = "Not selectable",
     )
 }
 
@@ -432,6 +447,7 @@ private fun DuplicatePreviewCard(
     role: Role?,
     onClick: (() -> Unit)?,
     semanticsOverride: String? = null,
+    stateOverride: String? = null,
 ) {
     val chrome = LocalNpicChrome.current
     val base = Modifier
@@ -452,15 +468,18 @@ private fun DuplicatePreviewCard(
     Column(
         modifier = interactive
             .padding(NpicSpacing.sm)
-            .semantics(mergeDescendants = true) { contentDescription = description },
-        verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
+            .semantics(mergeDescendants = true) {
+                contentDescription = description
+                if (stateOverride != null) stateDescription = stateOverride
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
     ) {
         // Photo thumb — crops to fit, missing-photo placeholder matches the PreviewStrip
         // visual language so both surfaces feel like one design system.
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(96.dp)
+                .size(96.dp)
                 .clip(NpicShapes.sm)
                 .background(chrome.saffronSoft.copy(alpha = 0.35f), NpicShapes.sm),
             contentAlignment = Alignment.Center,
@@ -470,7 +489,7 @@ private fun DuplicatePreviewCard(
                     model = File(photoPath),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().height(96.dp).clip(NpicShapes.sm),
+                    modifier = Modifier.size(96.dp).clip(NpicShapes.sm),
                 )
             } else {
                 Text(
@@ -485,8 +504,8 @@ private fun DuplicatePreviewCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(32.dp)
-                .clip(NpicShapes.xs)
-                .background(chrome.saffronSoft.copy(alpha = 0.20f), NpicShapes.xs),
+                .clip(NpicShapes.sm)
+                .background(chrome.saffronSoft.copy(alpha = 0.20f), NpicShapes.sm),
             contentAlignment = Alignment.Center,
         ) {
             if (signaturePath != null) {
@@ -507,7 +526,7 @@ private fun DuplicatePreviewCard(
         Text(
             text  = title,
             color = NpicColors.Ink,
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(700)),
             maxLines = 1,
         )
         Text(
