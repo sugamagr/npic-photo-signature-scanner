@@ -631,7 +631,7 @@ When the Edit screen is opened from Gallery (Detail screen → tap photo or sign
 
 - Handle
 - Title `titleLarge` Fraunces: `"Duplicate found"` when one existing record, `"N duplicates found"` when more than one. No warning icon in the header — the sheet's presence IS the warning; a Terracotta icon here would misfire in the neutral "Keep both is legitimate" flow.
-- Body `bodyMedium` `InkMuted`: `"Keep both, replace one, or drop the new capture?"`
+- Body `bodyMedium` `InkMuted`: `"Keep all, replace one, or drop the new capture?"`
 - 20dp gap
 - **DuplicateCardRow** — horizontal `Row` inside `LazyRow`-style scroll (`horizontalScroll(rememberScrollState())` with 12dp inter-card gap and 20dp start/end padding). Contents in order:
   1. All existing records (in `duplicateIndex` ascending order — index 0, then (2), (3), …), each rendered as an **ExistingDuplicateCard**
@@ -669,7 +669,7 @@ When the Edit screen is opened from Gallery (Detail screen → tap photo or sign
 - **Buttons row** (12dp horizontal gap between siblings):
   - **Ghost** `"Keep existing"` (left) — dismisses the sheet without saving the new capture. Routes through `dismissDuplicateKeepingExisting` so draft assets are cleaned and `completedRecordId` is set to `existing.first().id`; swipe-down uses the same handler.
   - **Destructive** `"Replace"` (middle) — enabled only when `selectedExistingId != null`; deletes the selected existing record and inserts the incoming capture at that record's `duplicateIndex` slot.
-  - **Primary Saffron** `"Keep both"` (right, `weight = 1f` — takes remaining width to earn visual priority) — inserts the incoming capture as a NEW row with the next-available `duplicateIndex` for this (classNum, serial) or (classNum, nameKey) group. Does not move the monotonic class counter.
+  - **Primary Saffron** `"Keep all"` (right, `weight = 1f` — takes remaining width to earn visual priority) — inserts the incoming capture as a NEW row with the next-available `duplicateIndex` for this (classNum, serial) or (classNum, nameKey) group. Does not move the monotonic class counter. Label is "Keep all" rather than "Keep both" because the sheet supports N-way duplicates (existing[0..k] + incoming); "both" would be a lie when there are 3+ cards.
 
 **Filename semantics (see DAO invariant + m2503 H5):** Existing sibling filenames stay clean (`090001.jpeg`) when re-exported solo; only WITHIN a single batch export do collisions get an `_N` suffix (`090001.jpeg`, `090001_2.jpeg`, `090001_3.jpeg`, …). Underscore matches the Name-mode pattern (`Rahul_Kumar_09.jpeg`) and passes UPMSP's filename parser — parentheses and spaces would risk rejection.
 

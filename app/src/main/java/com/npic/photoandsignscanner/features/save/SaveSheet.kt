@@ -287,7 +287,7 @@ private fun DuplicateSheet(
         }
         Text(
             text  = "A student with $subjectDescription already exists in Class ${duplicate.input.classNum.label}. " +
-                    "Keep both, replace one, or drop the new capture?",
+                    "Keep all, replace one, or drop the new capture?",
             color = chrome.inkMuted,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -327,7 +327,7 @@ private fun DuplicateSheet(
                 loading = saving && pendingAction == "replace",
             )
             NpicButton(
-                label = "Keep both",
+                label = "Keep all",
                 onClick = {
                     pendingAction = "keepBoth"
                     onKeepBoth()
