@@ -682,14 +682,18 @@ private fun DeleteConfirmDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onDelete) {
-                Text("Delete", color = NpicColors.Terracotta)
-            }
+            NpicButton(
+                label   = "Delete",
+                onClick = onDelete,
+                style   = NpicButtonStyle.Destructive,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onKeep) {
-                Text("Keep", color = NpicColors.Saffron)
-            }
+            NpicButton(
+                label   = "Keep",
+                onClick = onKeep,
+                style   = NpicButtonStyle.Ghost,
+            )
         },
     )
 }

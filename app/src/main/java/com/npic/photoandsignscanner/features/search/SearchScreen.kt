@@ -3,6 +3,7 @@ package com.npic.photoandsignscanner.features.search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -105,7 +106,9 @@ private fun SearchContent(
                 !hasQuery -> SearchHint()
                 isEmpty   -> SearchEmpty(query = query)
                 else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .selectableGroup(),
                     contentPadding = PaddingValues(
                         horizontal = NpicSpacing.md,
                         vertical = NpicSpacing.sm,

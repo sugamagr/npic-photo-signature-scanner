@@ -52,6 +52,8 @@ import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicMotion
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
+import com.npic.photoandsignscanner.core.ui.NpicButton
+import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicCropOverlay
 import com.npic.photoandsignscanner.core.ui.NpicIconButton
 import com.npic.photoandsignscanner.core.ui.NpicIconButtonStyle
@@ -444,14 +446,18 @@ private fun DiscardConfirmDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onDiscard) {
-                Text("Discard", color = NpicColors.Terracotta)
-            }
+            NpicButton(
+                label   = "Discard",
+                onClick = onDiscard,
+                style   = NpicButtonStyle.Destructive,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onKeepEditing) {
-                Text("Keep editing", color = NpicColors.Saffron)
-            }
+            NpicButton(
+                label   = "Keep editing",
+                onClick = onKeepEditing,
+                style   = NpicButtonStyle.Ghost,
+            )
         },
     )
 }

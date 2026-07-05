@@ -9,34 +9,33 @@ import android.graphics.RectF
 import kotlin.math.min
 
 /**
- * PRD §6.2 combined-format renderer. Composes a photo (top) + signature (bottom) onto a
- * fixed 800×1000 white canvas that matches the UPMSP portal template.
+ * Combined-format renderer. Composes a photo (top) + signature (bottom) onto a
+ * content-hugging white canvas per m1966 user directive.
  *
- * ### Layout (updated per m1814)
- * - Canvas: 800×1000, white background, 4:5 aspect
- * - Photo box:     540×720 at (130, 24)         — aspect 3:4, matches Camera Photo guide
- * - 24 px gap between photo and signature
- * - Signature strip: 540×180 at (130, 768)      — aspect 3:1, matches Camera Signature
- *   guide (which m1817 narrowed to width-match the photo box)
- * - 130 px side margin (matched left/right) — uniform border replaces the ragged inside
- *   letterbox that the old 752-wide near-square photo slot produced
+ * ### Layout
+ * - Photo box:     540 × 720 (aspect 3:4, matches Camera Photo guide)
+ * - Gap: 24 px between photo bottom border and signature top border
+ * - Signature box: 540 × 180 (aspect 3:1, matches Camera Signature guide + SignatureDraw
+ *   1500×500 canvas)
+ * - Outer padding: 16 px on all sides
+ * - Total canvas: (540 + 32) × (720 + 24 + 180 + 32) = 572 × 956, white background
  * - 2 px Ink (#1A1613) border stroked INSIDE each box's outer rect
  *
- * ### m1814 fix rationale
- * The old 752×584 photo box (aspect 1.29) forced huge horizontal white bars on every 3:4
- * capture, and the old 752×344 signature strip (aspect 2.19) forced vertical dead space
- * above/below every 3:1 signature. Matching each slot to its capture aspect kills the
- * whitespace bug at the source without any auto-tightening heuristics that could fail on
- * captured-signature edge cases (off-white paper, warm light, stray ink dots). The tighter
- * photo slot (540 vs 752 wide) trades absolute pixel size for consistent uniform margins —
- * a portal-quality look.
+ * ### m1966 rationale — content-hugging canvas
+ * m1814 fixed the whitespace INSIDE each slot by aspect-matching the boxes to the capture
+ * guides. That left ~130 px side margins around the content stack because the canvas
+ * was locked at 800×1000 for the UPMSP portal template. User m1966 verified the portal
+ * accepts non-standard canvas dimensions and asked for a content-only export with a
+ * small uniform padding. This shrinks the payload ~30% by pixel count (572×956 vs
+ * 800×1000) and gives compressors more room to preserve detail at the 28 KB Combined
+ * ceiling.
  *
  * ### Scaling
  * Both source bitmaps are drawn `fit-inside` their box preserving aspect ratio, then
  * centered inside the box. When source aspect matches slot aspect (the common case now),
- * `drawFitted` produces zero letterbox — the bitmap fills the slot edge-to-edge. Off-aspect
- * imports still get letterboxing but inside the correctly-shaped slot, so the bars are
- * small and centered rather than the old huge asymmetric ones.
+ * `drawFitted` produces zero letterbox — the bitmap fills the slot edge-to-edge.
+ * Off-aspect imports still letterbox inside the correctly-shaped slot, so the bars are
+ * small and centered rather than the ragged asymmetric ones from the pre-m1814 layout.
  *
  * ### Bitmap ownership
  * Neither source bitmap is recycled here — the caller (usually ExportViewModel) owns them.
@@ -45,7 +44,7 @@ import kotlin.math.min
 class CombinedRenderer {
 
     /**
-     * Compose [photo] on top and [signature] on bottom onto a fresh 800×1000 white canvas
+     * Compose [photo] on top and [signature] on bottom onto a fresh 572×956 white canvas
      * with 2 px Ink borders. Returns the composed bitmap.
      */
     fun render(photo: Bitmap, signature: Bitmap): Bitmap {
@@ -60,9 +59,9 @@ class CombinedRenderer {
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = BORDER_PX.toFloat()
-            // PRD §6.2 / DESIGN §2 Ink brand color. Hardcoded here rather than pulling
-            // from NpicColors because the renderer produces an image asset (not a UI
-            // surface) so it never sees the Compose color pipeline. Value MUST match
+            // DESIGN §2 Ink brand color. Hardcoded here rather than pulling from
+            // NpicColors because the renderer produces an image asset (not a UI surface)
+            // so it never sees the Compose color pipeline. Value MUST match
             // NpicColors.Ink so exports look identical to on-device chrome.
             color = INK_ARGB
         }
@@ -113,30 +112,43 @@ class CombinedRenderer {
     }
 
     private companion object {
-        // PRD §6.2 canvas stays 800×1000 to preserve the UPMSP portal contract.
-        const val CANVAS_W = 800
-        const val CANVAS_H = 1000
+        // Content-hugging layout — see class KDoc for the m1966 rewrite rationale.
+        //
+        // Photo box: 540 × 720 = aspect 3:4 EXACTLY. Matches Camera Photo mode guideAspect
+        // (3:4). SourceStore-scaled photo (long-side 1600, aspect 3:4) draws with zero
+        // letterbox inside this slot.
+        //
+        // Signature box: 540 × 180 = aspect 3:1 EXACTLY. Matches Camera Signature mode
+        // guideAspect (3:1) AND the SignatureDraw canvas (1500×500). Same zero-letterbox
+        // story.
+        //
+        // Canvas = content stack + uniform 16 px outer padding. Total 572 × 956.
+        //
+        // DO NOT restore the pre-m1966 800×1000 canvas or the pre-m1814 near-square slots
+        // — the KDoc names the exact whitespace bugs each rewrite fixed.
+        const val OUTER_PAD_PX = 16
+        const val GAP_PX = 24
+        const val PHOTO_W = 540
+        const val PHOTO_H = 720
+        const val SIG_W = 540
+        const val SIG_H = 180
         const val BORDER_PX = 2
 
-        // m1814 layout — matched-aspect slots centered horizontally on the canvas.
-        //
-        // Photo box: 540 wide × 720 tall = aspect 3:4 EXACTLY. Matches Camera Photo mode
-        // guideAspect (3:4). When the SourceStore-scaled photo (long-side 1600, aspect 3:4)
-        // is drawn fit-inside this box, drawFitted produces zero letterbox — the bitmap
-        // fills the slot edge-to-edge. That is the whole point of this rewrite.
-        //
-        // Signature box: 540 wide × 180 tall = aspect 3:1 EXACTLY. Matches Camera Signature
-        // mode guideAspect (3:1) AND the SignatureDraw canvas (1500×500, aspect 3:1). Same
-        // zero-letterbox story.
-        //
-        // Both slots have width 540, giving 130 px left/right margin — matched, intentional,
-        // portal-friendly. Vertical margins: 24 top, 24 gap, 76 bottom. The slightly larger
-        // bottom margin reads visually balanced because the eye reads top-heavy layouts.
-        //
-        // DO NOT restore the old 752-wide slots without matching the aspects first — see
-        // the class KDoc for why the old geometry produced huge whitespace bars.
-        val PHOTO_BOX: Rect = Rect(130, 24, 130 + 540, 24 + 720)   // (130, 24) → (670, 744)
-        val SIG_BOX:   Rect = Rect(130, 768, 130 + 540, 768 + 180) // (130, 768) → (670, 948)
+        const val CANVAS_W = PHOTO_W + 2 * OUTER_PAD_PX                    // 572
+        const val CANVAS_H = PHOTO_H + GAP_PX + SIG_H + 2 * OUTER_PAD_PX   // 956
+
+        val PHOTO_BOX: Rect = Rect(
+            OUTER_PAD_PX,
+            OUTER_PAD_PX,
+            OUTER_PAD_PX + PHOTO_W,
+            OUTER_PAD_PX + PHOTO_H,
+        )
+        val SIG_BOX: Rect = Rect(
+            OUTER_PAD_PX,
+            OUTER_PAD_PX + PHOTO_H + GAP_PX,
+            OUTER_PAD_PX + SIG_W,
+            OUTER_PAD_PX + PHOTO_H + GAP_PX + SIG_H,
+        )
 
         /** NpicColors.Ink packed ARGB. Must stay in sync with core/theme/NpicColors. */
         const val INK_ARGB: Int = 0xFF1A1613.toInt()

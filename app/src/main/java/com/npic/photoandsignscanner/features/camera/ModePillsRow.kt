@@ -69,6 +69,7 @@ fun ModePillsRow(
                 modifier = Modifier
                     .padding(top = NpicSpacing.sm)
                     .defaultMinSize(minHeight = 44.dp)
+                    .semantics { role = Role.Button }
                     .clickable(onClick = onDrawInsteadClick)
                     .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.xs),
             )

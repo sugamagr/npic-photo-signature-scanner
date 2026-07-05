@@ -42,6 +42,8 @@ import com.npic.photoandsignscanner.core.theme.LocalNpicChrome
 import com.npic.photoandsignscanner.core.theme.NpicColors
 import com.npic.photoandsignscanner.core.theme.NpicShapes
 import com.npic.photoandsignscanner.core.theme.NpicSpacing
+import com.npic.photoandsignscanner.core.ui.NpicButton
+import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicIconButton
 import com.npic.photoandsignscanner.core.ui.NpicIconButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicSlider
@@ -285,14 +287,18 @@ private fun ClearConfirmDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onClear) {
-                Text("Clear", color = NpicColors.Terracotta)
-            }
+            NpicButton(
+                label   = "Clear",
+                onClick = onClear,
+                style   = NpicButtonStyle.Destructive,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onKeep) {
-                Text("Keep drawing", color = NpicColors.Saffron)
-            }
+            NpicButton(
+                label   = "Keep drawing",
+                onClick = onKeep,
+                style   = NpicButtonStyle.Ghost,
+            )
         },
     )
 }
@@ -314,14 +320,18 @@ private fun DiscardConfirmDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onDiscard) {
-                Text("Discard", color = NpicColors.Terracotta)
-            }
+            NpicButton(
+                label   = "Discard",
+                onClick = onDiscard,
+                style   = NpicButtonStyle.Destructive,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onKeep) {
-                Text("Keep drawing", color = NpicColors.Saffron)
-            }
+            NpicButton(
+                label   = "Keep drawing",
+                onClick = onKeep,
+                style   = NpicButtonStyle.Ghost,
+            )
         },
     )
 }

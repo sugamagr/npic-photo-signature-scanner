@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,7 +54,8 @@ fun EditToolTabs(
             .fillMaxWidth()
             .background(chrome.cameraSurface)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .height(56.dp),
+            .height(56.dp)
+            .selectableGroup(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         EditTool.entries.forEach { tool ->

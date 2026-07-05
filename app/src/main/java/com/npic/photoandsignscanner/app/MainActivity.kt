@@ -500,6 +500,13 @@ private fun NpicNavHost(
                     navController.popBackStack(Route.Gallery, inclusive = false)
                     navController.navigate(Route.Camera)
                 },
+                // PRD §4.6 add-media links surface next to a missing photo / signature
+                // slot in PreviewStrip. Nav to the appropriate capture screen without
+                // dismissing the draft — the draft's UUID stays live in SharedCaptureHolder
+                // so downstream Edit → onNext writes onto the same sources/{draftId} files
+                // and returning to Save re-collects the updated draft.
+                onAddPhoto = { navController.navigate(Route.camera(CameraMode.Photo)) },
+                onAddSignature = { navController.navigate(Route.camera(CameraMode.Signature)) },
             )
         }
     }
@@ -980,6 +987,8 @@ private fun SaveDestination(
     preselectedClass: ClassNum?,
     onCancel: () -> Unit,
     onSaved: () -> Unit,
+    onAddPhoto: () -> Unit,
+    onAddSignature: () -> Unit,
 ) {
     val context = LocalContext.current
     val draftState by captureHolder.draft.collectAsStateWithLifecycle()
@@ -1017,6 +1026,8 @@ private fun SaveDestination(
             Toast.makeText(context, "Saved student #$recordId", Toast.LENGTH_SHORT).show()
             onSaved()
         },
+        onAddPhoto = onAddPhoto,
+        onAddSignature = onAddSignature,
     )
 }
 
