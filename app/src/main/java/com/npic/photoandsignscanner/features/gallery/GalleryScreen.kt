@@ -418,7 +418,11 @@ private fun ClassFilterRow(
             .fillMaxWidth()
             .horizontalScroll(scroll)
             .selectableGroup()
-            .padding(horizontal = NpicSpacing.md, vertical = NpicSpacing.sm),
+            // m2501: dropped vertical = sm (was 8dp top + 8dp bottom = 16dp of dead
+            // space between the 96dp Gallery top bar and the first grid row). The
+            // 96dp title bar already gives the chip row enough breathing space
+            // above; the grid's own top content-padding handles the space below.
+            .padding(horizontal = NpicSpacing.md),
         horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {

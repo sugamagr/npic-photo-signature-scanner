@@ -48,6 +48,10 @@ fun NpicBottomSheet(
     modifier: Modifier = Modifier,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     title: String? = null,
+    // m2501: optional scrim override. Default keeps the standard 60%-black backdrop
+    // shared across dialogs. Individual sheets (Export) can pass a lighter value
+    // when the intent is "peek at the sheet without hiding the screen behind it."
+    scrimColor: androidx.compose.ui.graphics.Color? = null,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
@@ -57,7 +61,7 @@ fun NpicBottomSheet(
         shape            = NpicShapes.sheetTop,
         containerColor   = NpicColors.SurfaceRaised,
         contentColor     = NpicColors.Ink,
-        scrimColor       = chrome.overlay,
+        scrimColor       = scrimColor ?: chrome.overlay,
         dragHandle       = {
             Box(
                 Modifier

@@ -88,7 +88,14 @@ fun ExportSheet(
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
     val maxSheetBodyHeight = screenHeightDp * 0.65f
 
-    NpicBottomSheet(onDismiss = onCancel, title = "Export") {
+    // m2501: Export uses a lighter scrim (~28% black) instead of the standard 60%.
+    // The sheet is small and doesn't need to fully hide the Gallery behind it —
+    // seeing the grid through the scrim reinforces "this action targets those items."
+    NpicBottomSheet(
+        onDismiss = onCancel,
+        title = "Export",
+        scrimColor = androidx.compose.ui.graphics.Color(0x47000000),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -496,7 +503,7 @@ private fun NamingToggleSection(
     val selected = override ?: NamingMode.Kind.Name
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text  = "Filename — prefer name or serial",
+            text  = "Choose whether files are named by student name or serial number.",
             color = chrome.inkMuted,
             style = MaterialTheme.typography.bodySmall,
         )
