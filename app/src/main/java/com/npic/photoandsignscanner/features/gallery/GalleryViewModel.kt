@@ -104,12 +104,23 @@ class GalleryViewModel(
     ): GalleryUiState {
         val filtered = if (filter == null) all else all.filter { it.classNum == filter }
         val sorted = when (sort) {
-            SortMode.Newest -> filtered.sortedByDescending { it.createdAt }
-            SortMode.Oldest -> filtered.sortedBy { it.createdAt }
+            SortMode.Newest ->
+                filtered.sortedWith(
+                    compareByDescending<StudentRecord> { it.createdAt }.thenBy { it.duplicateIndex },
+                )
+            SortMode.Oldest ->
+                filtered.sortedWith(
+                    compareBy({ it.createdAt }, { it.duplicateIndex }),
+                )
             SortMode.NameAscending ->
-                filtered.sortedBy { it.displayName.lowercase() }
+                filtered.sortedWith(
+                    compareBy({ it.displayName.lowercase() }, { it.duplicateIndex }),
+                )
             SortMode.NameDescending ->
-                filtered.sortedByDescending { it.displayName.lowercase() }
+                filtered.sortedWith(
+                    compareByDescending<StudentRecord> { it.displayName.lowercase() }
+                        .thenBy { it.duplicateIndex },
+                )
             SortMode.ClassAscending ->
                 filtered.sortedWith(
                     compareBy({ it.classNum.ordinal }, { it.serial }, { it.duplicateIndex }),

@@ -117,7 +117,10 @@ abstract class NpicDatabase : RoomDatabase() {
             }
         }
 
-        fun create(context: Context): NpicDatabase = Room.databaseBuilder(
+        fun create(
+            context: Context,
+            callback: RoomDatabase.Callback? = null,
+        ): NpicDatabase = Room.databaseBuilder(
             context = context.applicationContext,
             klass = NpicDatabase::class.java,
             name = DB_NAME,
@@ -128,6 +131,7 @@ abstract class NpicDatabase : RoomDatabase() {
             // data to preserve), so a destructive fallback is safe. Post-launch, replace
             // with an explicit MIGRATION_2_3 that ALTERs the column + rebuilds indices.
             .fallbackToDestructiveMigration()
+            .apply { if (callback != null) addCallback(callback) }
             .build()
     }
 }

@@ -56,6 +56,6 @@ data class StudentRecord(
     val displaySerialLabel: String
         get() {
             val base = "${classNum.portalCode}${serial.toString().padStart(4, '0')}"
-            return if (duplicateIndex == 0) base else "$base (${duplicateIndex + 1})"
+            return if (duplicateIndex == 0) base else "${base}_${duplicateIndex + 1}"
         }
 }

@@ -141,15 +141,43 @@ class RoomStudentRepository(
             updatedAt     = now,
         )
         val entity = record.toEntity(namingKind = input.naming.kind.name)
-        val assignedIndex = when (input.naming) {
-            is NamingMode.Serial -> dao.insertAsDuplicateBySerial(entity)
-            is NamingMode.Name   -> dao.insertAsDuplicateByName(entity)
-        }
+        val assignedIndex = insertAsDuplicateWithRetry(entity, input.naming)
         return SaveResult.Success(record.copy(duplicateIndex = assignedIndex))
+    }
+
+    /**
+     * m2503: two Keep-both taps racing on the same (classNum, serial) can both peek
+     * duplicateIndex=N inside their DEFERRED transactions before either commits; the
+     * loser's insert then hits SQLiteConstraintException. One retry re-peeks under the
+     * loser's transaction — the winner's row is now visible so MAX(duplicateIndex)+1
+     * lands on a fresh slot. Bounded to one retry: three concurrent taps on the same
+     * cluster are vanishingly unlikely on a single-user phone; a second failure surfaces
+     * to the caller as before.
+     */
+    private suspend fun insertAsDuplicateWithRetry(
+        entity: com.npic.photoandsignscanner.data.db.StudentEntity,
+        naming: NamingMode,
+    ): Int {
+        val doInsert: suspend () -> Int = {
+            when (naming) {
+                is NamingMode.Serial -> dao.insertAsDuplicateBySerial(entity)
+                is NamingMode.Name   -> dao.insertAsDuplicateByName(entity)
+            }
+        }
+        return try {
+            doInsert()
+        } catch (_: SQLiteConstraintException) {
+            doInsert()
+        }
     }
 
     override suspend fun replace(existingId: String, draft: StudentDraft, input: SaveInput): SaveResult {
         if (!draft.hasAnyMedia) return SaveResult.MissingBothMedia
+
+        // m2503: replace must preserve the target's duplicateIndex — the UNIQUE
+        // (classNum, serial, duplicateIndex) constraint would otherwise reject the
+        // delete+insert when a sibling holds index=0.
+        val targetDuplicateIndex = dao.getById(existingId)?.duplicateIndex ?: 0
 
         val serial = when (val n = input.naming) {
             is NamingMode.Serial -> n.number
@@ -164,6 +192,7 @@ class RoomStudentRepository(
             photoPath     = draft.photoPath.orEmpty(),
             signaturePath = draft.signaturePath,
             namingKind    = input.naming.kind,
+            duplicateIndex = targetDuplicateIndex,
             createdAt     = draft.createdAt,
             updatedAt     = now,
         )

@@ -119,7 +119,15 @@ class SaveViewModel(
      */
     fun resolveDuplicateReplacingExisting(targetExistingId: String) {
         val dupe = _state.value.duplicate ?: return
-        val target = dupe.existing.firstOrNull { it.id == targetExistingId } ?: return
+        val target = dupe.existing.firstOrNull { it.id == targetExistingId }
+        if (target == null) {
+            // m2503: target was deleted between dialog open and Replace tap.
+            _state.value = _state.value.copy(
+                duplicate = null,
+                errorMessage = "That record was deleted. Try saving again.",
+            )
+            return
+        }
         _state.value = _state.value.copy(saving = true, duplicate = null)
         viewModelScope.launch {
             when (val outcome = repo.replace(target.id, dupe.incoming, dupe.input)) {

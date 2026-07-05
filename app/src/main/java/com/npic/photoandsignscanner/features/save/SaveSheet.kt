@@ -2,6 +2,7 @@ package com.npic.photoandsignscanner.features.save
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,10 +26,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -202,14 +207,16 @@ fun SaveSheet(
         }
     }
 
-    // Duplicate dialog overlays the sheet when populated.
+    // Duplicate dialog overlays the sheet when populated. Swipe-down routes through
+    // dismissDuplicateKeepingExisting so the draft assets are cleaned up rather than
+    // leaving the app in an ambiguous half-saved state.
     state.duplicate?.let { dupe ->
         DuplicateSheet(
             duplicate = dupe,
             onKeepExisting = viewModel::dismissDuplicateKeepingExisting,
             onReplace = viewModel::resolveDuplicateReplacingExisting,
             onKeepBoth = viewModel::resolveDuplicateKeepingBoth,
-            onCancel = viewModel::dismissDuplicate,
+            onCancel = viewModel::dismissDuplicateKeepingExisting,
         )
     }
 }
@@ -240,10 +247,8 @@ private fun DuplicateSheet(
     onCancel: () -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
-    // Radio starts null so "Replace" is disabled by default (Q3-B answer + user-confirmed
-    // "option b"): forces a conscious pick before destructive replace fires. Keep both and
-    // Keep existing work without a selection.
-    var selectedExistingId by remember { mutableStateOf<String?>(null) }
+    // rememberSaveable survives rotation so the user's selection is not lost mid-decision.
+    var selectedExistingId by rememberSaveable { mutableStateOf<String?>(null) }
 
     NpicBottomSheet(onDismiss = onCancel) {
         Row(
@@ -325,27 +330,51 @@ private fun DuplicateCardRow(
     selectedExistingId: String?,
     onSelectExisting: (String) -> Unit,
 ) {
-    Row(
+    val scrollState = rememberScrollState()
+    // Right-edge fade appears only while more cards remain off-screen so users see the
+    // row is scrollable (matches Adobe Scan's filter strip affordance).
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .selectableGroup()
-            .semantics { contentDescription = "Duplicate records to compare" },
-        horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+            .drawWithContent {
+                drawContent()
+                if (scrollState.canScrollForward) {
+                    val fadeWidth = 24.dp.toPx()
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            1f to NpicColors.Surface,
+                            startX = size.width - fadeWidth,
+                            endX = size.width,
+                        ),
+                        topLeft = androidx.compose.ui.geometry.Offset(size.width - fadeWidth, 0f),
+                        size = androidx.compose.ui.geometry.Size(fadeWidth, size.height),
+                    )
+                }
+            },
     ) {
-        duplicate.existing.forEach { record ->
-            ExistingDuplicateCard(
-                record = record,
-                selected = selectedExistingId == record.id,
-                onSelect = { onSelectExisting(record.id) },
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .selectableGroup()
+                .semantics { contentDescription = "Duplicate records to compare" },
+            horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+        ) {
+            duplicate.existing.forEach { record ->
+                ExistingDuplicateCard(
+                    record = record,
+                    selected = selectedExistingId == record.id,
+                    onSelect = { onSelectExisting(record.id) },
+                )
+            }
+            IncomingDuplicateCard(
+                classNum = duplicate.input.classNum,
+                displayName = duplicate.input.displayName,
+                photoPath = duplicate.incoming.photoPath,
+                signaturePath = duplicate.incoming.signaturePath,
             )
         }
-        IncomingDuplicateCard(
-            classNum = duplicate.input.classNum,
-            displayName = duplicate.input.displayName,
-            photoPath = duplicate.incoming.photoPath,
-            signaturePath = duplicate.incoming.signaturePath,
-        )
     }
 }
 
@@ -356,8 +385,8 @@ private fun ExistingDuplicateCard(
     onSelect: () -> Unit,
 ) {
     DuplicatePreviewCard(
-        title = if (record.duplicateIndex == 0) "Existing" else "Existing (${record.duplicateIndex + 1})",
-        subtitle = "Class ${record.classNum.label} · ${record.displayName}",
+        title = record.displaySerialLabel,
+        subtitle = record.displayName.ifBlank { "Class ${record.classNum.label}" },
         photoPath = record.photoPath.takeIf { it.isNotBlank() },
         signaturePath = record.signaturePath,
         selected = selected,
@@ -375,14 +404,16 @@ private fun IncomingDuplicateCard(
 ) {
     DuplicatePreviewCard(
         title = "New (just captured)",
-        subtitle = "Class ${classNum.label} · $displayName",
+        subtitle = displayName.ifBlank { "Class ${classNum.label}" },
         photoPath = photoPath,
         signaturePath = signaturePath,
-        // The incoming card is always visually highlighted so it's obvious which one is
-        // new — but it's NOT a Replace target (Replace overwrites an EXISTING row).
+        // Always visually highlighted so users see which card is new. Not a Replace
+        // target (Replace overwrites an EXISTING row). Focusable so TalkBack / D-pad
+        // users can still land on it and hear that it's the new capture.
         selected = true,
         role = null,
         onClick = null,
+        semanticsOverride = "New capture. Class ${classNum.label}. ${displayName.ifBlank { "" }}. Not selectable.",
     )
 }
 
@@ -400,6 +431,7 @@ private fun DuplicatePreviewCard(
     selected: Boolean,
     role: Role?,
     onClick: (() -> Unit)?,
+    semanticsOverride: String? = null,
 ) {
     val chrome = LocalNpicChrome.current
     val base = Modifier
@@ -413,11 +445,14 @@ private fun DuplicatePreviewCard(
         )
     val interactive = if (onClick != null && role != null) {
         base.selectable(selected = selected, onClick = onClick, role = role)
-    } else base
+    } else {
+        base.focusable()
+    }
+    val description = semanticsOverride ?: "$title. $subtitle"
     Column(
         modifier = interactive
             .padding(NpicSpacing.sm)
-            .semantics(mergeDescendants = true) { contentDescription = "$title. $subtitle" },
+            .semantics(mergeDescendants = true) { contentDescription = description },
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
     ) {
         // Photo thumb — crops to fit, missing-photo placeholder matches the PreviewStrip

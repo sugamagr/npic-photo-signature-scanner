@@ -265,14 +265,15 @@ class ExportViewModel(
     }
 
     /**
-     * Insert ` (N)` before the last `.` in [filename]. Falls back to appending when the
-     * filename has no extension (never happens for our JPEG pipeline, but keeps the
-     * helper total).
+     * Insert `_N` before the last `.` in [filename]. Underscore matches the Name-mode
+     * filename convention (`Rahul_Kumar_09.jpeg`) and stays portal-safe: the UPMSP
+     * bulk-upload page parses filenames with letters/digits/underscores, but a space
+     * plus parentheses would risk rejection or misparse.
      */
     private fun suffixed(filename: String, index: Int): String {
         val dot = filename.lastIndexOf('.')
-        return if (dot <= 0) "$filename ($index)"
-        else filename.substring(0, dot) + " ($index)" + filename.substring(dot)
+        return if (dot <= 0) "${filename}_$index"
+        else filename.substring(0, dot) + "_$index" + filename.substring(dot)
     }
 
     /**

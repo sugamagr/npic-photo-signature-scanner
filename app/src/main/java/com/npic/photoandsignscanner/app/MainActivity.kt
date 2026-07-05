@@ -134,7 +134,22 @@ class MainActivity : ComponentActivity() {
     // Room-backed persistence (PRD §8.1 + §8.3). One NpicDatabase per Activity — Room
     // internally serialises writes on its executor and shares a single connection pool,
     // so a lazy singleton here is the composition root for both repositories.
-    private val roomDb by lazy { NpicDatabase.create(this) }
+    //
+    // m2503: fallbackToDestructiveMigration wipes the SQLite tables but leaves
+    // `filesDir/sources/*.jpg` behind (~200-400 KB per record). Hook onDestructiveMigration
+    // so the JPEG store is swept in the same beat as the DB wipe. Callback runs on Room's
+    // executor; runBlocking is safe because deleteAll's internal withContext handoff is
+    // brief and this fires exactly once per lifetime (only on version-mismatch open).
+    private val roomDb by lazy {
+        NpicDatabase.create(
+            context = this,
+            callback = object : androidx.room.RoomDatabase.Callback() {
+                override fun onDestructiveMigration(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    kotlinx.coroutines.runBlocking { sourceStore.deleteAll() }
+                }
+            },
+        )
+    }
     private val studentRepository: StudentRepository by lazy {
         RoomStudentRepository(dao = roomDb.studentDao(), sourceStore = sourceStore)
     }
