@@ -220,7 +220,7 @@ fun SaveSheet(
             saving = state.saving,
             onKeepExisting = viewModel::dismissDuplicateKeepingExisting,
             onReplace = viewModel::resolveDuplicateReplacingExisting,
-            onKeepBoth = viewModel::resolveDuplicateKeepingBoth,
+            onKeepAll = viewModel::resolveDuplicateKeepingAll,
             onCancel = viewModel::dismissDuplicateKeepingExisting,
         )
     }
@@ -237,11 +237,11 @@ fun SaveSheet(
  *   - **Replace**       (Destructive): overwrite the radio-selected existing record with
  *     the new capture. DISABLED until the user picks a card so accidental data loss is
  *     impossible; matches the "conscious destructive action" rule from PRD §4.7.
- *   - **Keep both**     (Primary, Saffron): persist the new capture alongside the
+ *   - **Keep all**      (Primary, Saffron): persist the new capture alongside the
  *     existing rows via [StudentRepository.saveAsDuplicate] with the next duplicateIndex.
  *
  * The dialog is presentation-only — collision resolution + duplicateIndex allocation
- * happen in [SaveViewModel.resolveDuplicateKeepingBoth] → [StudentRepository.saveAsDuplicate].
+ * happen in [SaveViewModel.resolveDuplicateKeepingAll] → [StudentRepository.saveAsDuplicate].
  */
 @Composable
 private fun DuplicateSheet(
@@ -249,7 +249,7 @@ private fun DuplicateSheet(
     saving: Boolean,
     onKeepExisting: () -> Unit,
     onReplace: (targetExistingId: String) -> Unit,
-    onKeepBoth: () -> Unit,
+    onKeepAll: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val chrome = LocalNpicChrome.current
@@ -329,12 +329,12 @@ private fun DuplicateSheet(
             NpicButton(
                 label = "Keep all",
                 onClick = {
-                    pendingAction = "keepBoth"
-                    onKeepBoth()
+                    pendingAction = "keepAll"
+                    onKeepAll()
                 },
                 style = NpicButtonStyle.Primary,
                 enabled = !saving,
-                loading = saving && pendingAction == "keepBoth",
+                loading = saving && pendingAction == "keepAll",
                 modifier = Modifier.weight(1f),
             )
         }

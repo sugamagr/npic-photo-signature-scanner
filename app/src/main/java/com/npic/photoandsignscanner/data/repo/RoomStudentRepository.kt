@@ -113,8 +113,8 @@ class RoomStudentRepository(
     }
 
     /**
-     * m2502 "Keep both" write. Skips the duplicate check because the caller
-     * (SaveViewModel.resolveDuplicateKeepingBoth) has already surfaced the dialog and
+     * m2502 "Keep all" (m2506 rename) write. Skips the duplicate check because the caller
+     * (SaveViewModel.resolveDuplicateKeepingAll) has already surfaced the dialog and
      * the user has consciously chosen to allow the collision. Delegates to
      * [StudentDao.insertAsDuplicateBySerial] / [StudentDao.insertAsDuplicateByName]
      * which atomically read MAX(duplicateIndex)+1 and insert in one transaction.

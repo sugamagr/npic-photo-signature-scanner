@@ -149,12 +149,12 @@ class SaveViewModel(
     }
 
     /**
-     * m2502: user picked "Keep both". Persists the incoming draft alongside the existing
+     * m2502: user picked "Keep all" (m2506 rename). Persists the incoming draft alongside the existing
      * rows via [StudentRepository.saveAsDuplicate], which allocates the next duplicateIndex
      * atomically (see DAO.insertAsDuplicateBySerial / insertAsDuplicateByName). The
      * existing record(s) are untouched.
      */
-    fun resolveDuplicateKeepingBoth() {
+    fun resolveDuplicateKeepingAll() {
         val current = _state.value
         if (current.saving) return
         val dupe = current.duplicate ?: return

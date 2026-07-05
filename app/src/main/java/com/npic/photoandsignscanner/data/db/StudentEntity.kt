@@ -26,7 +26,7 @@ import kotlinx.datetime.Instant
 @Entity(
     tableName = "students",
     indices = [
-        // m2502: composite UNIQUE now includes duplicateIndex so "Keep both" can persist
+        // m2502: composite UNIQUE now includes duplicateIndex so "Keep all" (m2506 rename) can persist
         // two rows with the same (classNum, serial). Default index 0 keeps existing rows
         // singleton-shaped; each subsequent Keep-both allocates the next available index
         // atomically (see StudentDao.peekNextDuplicateIndex + repo.saveAsDuplicate).

@@ -61,7 +61,7 @@ interface StudentRepository {
     suspend fun save(draft: StudentDraft, input: SaveInput): SaveResult
 
     /**
-     * m2502 "Keep both": persist [draft] under [input] alongside any existing record(s)
+     * m2502 "Keep all" (renamed m2506): persist [draft] under [input] alongside any existing record(s)
      * sharing the same (classNum, serial) or (classNum, name) group. Bypasses the
      * duplicate check and allocates the next duplicateIndex atomically. Returns
      * [SaveResult.Success] with the new record whose `duplicateIndex` is >= 1 (0 is

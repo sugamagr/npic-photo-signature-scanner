@@ -31,7 +31,7 @@ data class StudentRecord(
     // instead of the pre-fix behaviour that dropped the record identity and forced the
     // user to re-pick Serial vs Name (creating a phantom second record).
     val namingKind: NamingMode.Kind,
-    // m2502: ordinal position when the user chose "Keep both" on a duplicate. 0 = original
+    // m2502: ordinal position when the user chose "Keep all" (m2506 rename) on a duplicate. 0 = original
     // (or singleton); 1 = first duplicate; 2 = second; etc. Two records with the same
     // (classNum, serial) are DB-legal only when their duplicateIndex differs — enforced
     // by the composite UNIQUE index on StudentEntity. UI shows "090001 (2)" for index 1,

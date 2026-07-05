@@ -166,7 +166,7 @@ interface StudentDao {
     }
 
     /**
-     * m2502: atomic "Keep both" insert. Reads MAX(duplicateIndex) for the target
+     * m2502: atomic "Keep all" (m2506 rename) insert. Reads MAX(duplicateIndex) for the target
      * (classNum, serial) group and writes [entity] with duplicateIndex = max + 1 in
      * one transaction so two concurrent Keep-both writes can't hand out the same
      * index (the composite UNIQUE constraint would then reject one). Returns the

@@ -21,7 +21,7 @@ sealed interface SaveResult {
     @Immutable data class DuplicateFound(
         // m2502: N-way. Ordered by duplicateIndex asc so existing[0] is the original.
         // Dialog shows every existing entry beside the incoming draft; user picks
-        // Keep existing (drop new), Replace (which existing?), or Keep both (allocate
+        // Keep existing (drop new), Replace (which existing?), or Keep all (allocate
         // next duplicateIndex atomically).
         val existing: List<StudentRecord>,
         val incoming: StudentDraft,
