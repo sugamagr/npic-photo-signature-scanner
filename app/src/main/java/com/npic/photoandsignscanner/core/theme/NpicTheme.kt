@@ -8,6 +8,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -84,11 +85,18 @@ val LocalNpicChrome = staticCompositionLocalOf { WarmEditorialChrome }
  * share intent builder) pull from here so a single toggle in the drawer takes effect
  * everywhere without threading callbacks through every composable.
  *
+ * MUST be [compositionLocalOf], NOT [staticCompositionLocalOf]. The static variant tells
+ * Compose to skip tracking readers for recomposition — used for values that never change
+ * during the app's lifetime (like layout direction). AppSettings DOES change at runtime
+ * (Settings drawer toggles) so consumers must recompose when it flips. Making it static
+ * broke the haptics toggle silently for months — every call site cached the initial
+ * value and never picked up the flip.
+ *
  * Default is [AppSettings.Default] so previews and any composable rendered outside
  * [NpicTheme] still resolve; the reduce-motion override is applied inside NpicTheme
  * itself so [LocalReduceMotion] carries the resolved boolean directly.
  */
-val LocalAppSettings = staticCompositionLocalOf { AppSettings.Default }
+val LocalAppSettings = compositionLocalOf { AppSettings.Default }
 
 /**
  * Material 3 slot mapping. Kept deliberate — every slot documented so a reader can trace

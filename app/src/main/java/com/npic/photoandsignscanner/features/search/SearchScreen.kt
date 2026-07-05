@@ -143,7 +143,17 @@ private fun SearchTopBar(
     val chrome = LocalNpicChrome.current
     val focusRequester = remember { FocusRequester() }
     // Auto-focus when the screen enters composition — user tapped Search intending to type.
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    //
+    // The naive `LaunchedEffect(Unit) { focusRequester.requestFocus() }` fires on the FIRST
+    // composition frame, before BasicTextField has been measured, positioned, or attached to
+    // the focus graph. On Samsung One UI 6 the request lands in a void and Compose silently
+    // drops it — result: keyboard never opens, taps on the bar don't route to the field,
+    // typing does nothing. Defer with a 50 ms delay so layout attaches first, and wrap in
+    // runCatching so a "not yet initialized" throw at cold-start doesn't crash the screen.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(50)
+        runCatching { focusRequester.requestFocus() }
+    }
 
     Row(
         modifier = Modifier

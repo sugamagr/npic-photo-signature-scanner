@@ -37,13 +37,13 @@ import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PlaylistAddCheck
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -86,6 +86,7 @@ import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicCaptureFab
 import com.npic.photoandsignscanner.core.ui.NpicChip
 import com.npic.photoandsignscanner.core.ui.NpicEmptyState
+import com.npic.photoandsignscanner.core.ui.NpicMenu
 import com.npic.photoandsignscanner.core.ui.NpicIconButton
 import com.npic.photoandsignscanner.core.ui.NpicIconButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicThumbnail
@@ -296,17 +297,15 @@ private fun GalleryTopBar(
                     contentDescription = "Sort · currently ${sortMode.label}",
                     onClick = { sortMenuOpen = true },
                 )
-                DropdownMenu(
+                NpicMenu(
                     expanded = sortMenuOpen,
                     onDismissRequest = { sortMenuOpen = false },
                 ) {
                     SortMode.entries.forEach { mode ->
-                        DropdownMenuItem(
-                            text  = { Text(mode.label) },
-                            onClick = {
-                                onSortChange(mode)
-                                sortMenuOpen = false
-                            },
+                        item(
+                            label = mode.label,
+                            selected = mode == sortMode,
+                            onClick = { onSortChange(mode) },
                         )
                     }
                 }
@@ -320,23 +319,21 @@ private fun GalleryTopBar(
                 // Anchored overflow (user m1551 S3 restructure): Settings moved out to the
                 // leading hamburger; this menu now carries only the two bulk-record actions.
                 // Mirrors the Sort menu pattern above so tap targets and animation match.
-                DropdownMenu(
+                NpicMenu(
                     expanded = overflowMenuOpen,
                     onDismissRequest = { overflowMenuOpen = false },
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Select all") },
-                        onClick = {
-                            onSelectAll()
-                            overflowMenuOpen = false
-                        },
+                    item(
+                        label = "Select all",
+                        icon = Icons.Outlined.PlaylistAddCheck,
+                        onClick = onSelectAll,
                     )
-                    DropdownMenuItem(
-                        text = { Text("Delete all", color = NpicColors.Terracotta) },
-                        onClick = {
-                            onRequestDeleteAll()
-                            overflowMenuOpen = false
-                        },
+                    divider()
+                    item(
+                        label = "Delete all",
+                        icon = Icons.Outlined.DeleteSweep,
+                        destructive = true,
+                        onClick = onRequestDeleteAll,
                     )
                 }
             }

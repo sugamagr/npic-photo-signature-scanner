@@ -1,6 +1,7 @@
 package com.npic.photoandsignscanner.features.detail
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,18 +25,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Draw
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +50,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -61,6 +65,7 @@ import com.npic.photoandsignscanner.core.ui.NpicButton
 import com.npic.photoandsignscanner.core.ui.NpicButtonStyle
 import com.npic.photoandsignscanner.core.ui.NpicCard
 import com.npic.photoandsignscanner.core.ui.NpicIconButton
+import com.npic.photoandsignscanner.core.ui.NpicMenu
 import com.npic.photoandsignscanner.domain.model.ClassNum
 import com.npic.photoandsignscanner.domain.model.StudentRecord
 import kotlin.time.Duration
@@ -208,21 +213,26 @@ private fun DetailTopBar(
                     contentDescription = "More options",
                     onClick = { if (menuEnabled) menuOpen = true },
                 )
-                DropdownMenu(
+                NpicMenu(
                     expanded = menuOpen,
                     onDismissRequest = { menuOpen = false },
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Edit") },
-                        onClick = { menuOpen = false; onEdit() },
+                    item(
+                        label = "Edit",
+                        icon  = Icons.Outlined.Edit,
+                        onClick = onEdit,
                     )
-                    DropdownMenuItem(
-                        text = { Text("Duplicate to another class") },
-                        onClick = { menuOpen = false; onDuplicateToClass() },
+                    item(
+                        label = "Duplicate to another class",
+                        icon  = Icons.Outlined.ContentCopy,
+                        onClick = onDuplicateToClass,
                     )
-                    DropdownMenuItem(
-                        text = { Text("Delete", color = NpicColors.Terracotta) },
-                        onClick = { menuOpen = false; onDelete() },
+                    divider()
+                    item(
+                        label = "Delete",
+                        icon  = Icons.Outlined.Delete,
+                        destructive = true,
+                        onClick = onDelete,
                     )
                 }
             }
@@ -340,25 +350,18 @@ private fun PhotoCard(
     onImport: () -> Unit,
 ) {
     val hasPhoto = record.photoPath.isNotBlank()
-    val chrome = LocalNpicChrome.current
     NpicCard(
         style   = com.npic.photoandsignscanner.core.ui.NpicCardStyle.Flat,
         onClick = if (hasPhoto) onEdit else null,
         padding = PaddingValues(NpicSpacing.md),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(NpicSpacing.sm)) {
-            Text(
-                text  = "Photo",
-                color = NpicColors.Ink,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight(600)),
+            SectionHeader(
+                title = "Photo",
+                editPill = if (hasPhoto) SectionHeaderPill(onClick = onEdit) else null,
             )
             if (hasPhoto) {
                 PhotoPlaceholder(path = record.photoPath)
-                Text(
-                    text  = "Tap to edit",
-                    color = chrome.inkMuted,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
-                )
             } else {
                 // m2403 Bug T: taller photo card (0.72 ≈ passport 35×45mm ratio) —
                 // was 0.8 (~1.25× width tall), now ~1.39× width tall. Paired with
@@ -371,21 +374,19 @@ private fun PhotoCard(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
                 ) {
-                    NpicButton(
-                        label     = "Capture",
-                        onClick   = onCapture,
-                        modifier  = Modifier.weight(1f),
-                        style     = NpicButtonStyle.Secondary,
-                        size      = com.npic.photoandsignscanner.core.ui.NpicButtonSize.Small,
-                        startIcon = Icons.Outlined.CameraAlt,
+                    // m2056 Item 3 fix: icon-above-label tiles fit 3 buttons across a
+                    // 360dp phone without label wrapping ("Cap ture") — see IconTextTile.
+                    IconTextTile(
+                        icon     = Icons.Outlined.CameraAlt,
+                        label    = "Capture",
+                        onClick  = onCapture,
+                        modifier = Modifier.weight(1f),
                     )
-                    NpicButton(
-                        label     = "Import",
-                        onClick   = onImport,
-                        modifier  = Modifier.weight(1f),
-                        style     = NpicButtonStyle.Ghost,
-                        size      = com.npic.photoandsignscanner.core.ui.NpicButtonSize.Small,
-                        startIcon = Icons.Outlined.PhotoLibrary,
+                    IconTextTile(
+                        icon     = Icons.Outlined.PhotoLibrary,
+                        label    = "Import",
+                        onClick  = onImport,
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -402,24 +403,17 @@ private fun SignatureCard(
     onImport: () -> Unit,
 ) {
     val hasSig = record.hasSignature
-    val chrome = LocalNpicChrome.current
     NpicCard(
         onClick = if (hasSig) onEdit else null,
         padding = PaddingValues(NpicSpacing.md),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(NpicSpacing.sm)) {
-            Text(
-                text  = "Signature",
-                color = NpicColors.Ink,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight(600)),
+            SectionHeader(
+                title = "Signature",
+                editPill = if (hasSig) SectionHeaderPill(onClick = onEdit) else null,
             )
             if (hasSig) {
                 SignaturePlaceholder(path = record.signaturePath.orEmpty())
-                Text(
-                    text  = "Tap to edit",
-                    color = chrome.inkMuted,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
-                )
             } else {
                 // m2403 Bug T: shorter signature strip (3.6f — 0.28× width tall)
                 // was 3f (0.33× width). Paired with taller photo card 0.72 above.
@@ -431,29 +425,23 @@ private fun SignatureCard(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
                 ) {
-                    NpicButton(
-                        label     = "Capture",
-                        onClick   = onCapture,
-                        modifier  = Modifier.weight(1f),
-                        style     = NpicButtonStyle.Secondary,
-                        size      = com.npic.photoandsignscanner.core.ui.NpicButtonSize.Small,
-                        startIcon = Icons.Outlined.CameraAlt,
+                    IconTextTile(
+                        icon     = Icons.Outlined.CameraAlt,
+                        label    = "Capture",
+                        onClick  = onCapture,
+                        modifier = Modifier.weight(1f),
                     )
-                    NpicButton(
-                        label     = "Draw",
-                        onClick   = onDraw,
-                        modifier  = Modifier.weight(1f),
-                        style     = NpicButtonStyle.Ghost,
-                        size      = com.npic.photoandsignscanner.core.ui.NpicButtonSize.Small,
-                        startIcon = Icons.Outlined.Draw,
+                    IconTextTile(
+                        icon     = Icons.Outlined.Draw,
+                        label    = "Draw",
+                        onClick  = onDraw,
+                        modifier = Modifier.weight(1f),
                     )
-                    NpicButton(
-                        label     = "Import",
-                        onClick   = onImport,
-                        modifier  = Modifier.weight(1f),
-                        style     = NpicButtonStyle.Ghost,
-                        size      = com.npic.photoandsignscanner.core.ui.NpicButtonSize.Small,
-                        startIcon = Icons.Outlined.PhotoLibrary,
+                    IconTextTile(
+                        icon     = Icons.Outlined.PhotoLibrary,
+                        label    = "Import",
+                        onClick  = onImport,
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -739,4 +727,99 @@ private fun TargetClassPickerDialog(
             }
         },
     )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section header + edit pill (m2056 Item 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Photo / Signature card header. Symmetric across both media types. When [editPill] is
+ * non-null the header renders a compact Saffron "Edit" affordance in the trailing edge
+ * so the edit action stays discoverable without needing the passive "Tap to edit" hint
+ * that used to sit under the media.
+ */
+@Immutable
+private data class SectionHeaderPill(val onClick: () -> Unit)
+
+@Composable
+private fun SectionHeader(title: String, editPill: SectionHeaderPill?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text  = title,
+            color = NpicColors.Ink,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight(600)),
+            modifier = Modifier.weight(1f),
+        )
+        if (editPill != null) {
+            Row(
+                modifier = Modifier
+                    .clip(NpicShapes.full)
+                    .background(NpicColors.SaffronSoft)
+                    .semantics { role = Role.Button }
+                    .clickable(onClick = editPill.onClick)
+                    .padding(horizontal = NpicSpacing.sm, vertical = NpicSpacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = null,
+                    tint = NpicColors.SaffronDeep,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text  = "Edit",
+                    color = NpicColors.SaffronDeep,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IconTextTile — icon-above-label 3-button row (m2056 Item 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Compact icon-above-label tile used for the add-media action rows on empty Photo /
+ * Signature cards. Fits 3 equal-weight tiles across a 360dp phone without the label
+ * wrapping ("Cap ture") that the horizontal-icon [NpicButton] shape produced at
+ * this width (m2056 Item 3, screenshot in the user's report).
+ */
+@Composable
+private fun IconTextTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val chrome = LocalNpicChrome.current
+    Column(
+        modifier = modifier
+            .clip(NpicShapes.sm)
+            .background(NpicColors.SaffronSoft.copy(alpha = 0.55f))
+            .semantics { role = Role.Button }
+            .clickable(onClick = onClick)
+            .padding(vertical = NpicSpacing.sm, horizontal = NpicSpacing.xxs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(NpicSpacing.xxs),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = NpicColors.SaffronDeep,
+            modifier = Modifier.size(22.dp),
+        )
+        Text(
+            text  = label,
+            color = NpicColors.SaffronDeep,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
+            maxLines = 1,
+        )
+    }
 }
