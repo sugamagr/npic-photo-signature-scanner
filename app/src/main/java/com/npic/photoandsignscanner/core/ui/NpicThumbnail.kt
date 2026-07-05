@@ -5,6 +5,15 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,10 +50,11 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
  * means missing" — DESIGN §6.7's original signal). Two variants:
  *   • Present: 24dp Saffron circle + 14dp Ivory `Draw` glyph.
  *   • Missing: same 24dp Saffron circle + 14dp Ivory `Draw` glyph, plus a
- *     2dp Terracotta diagonal strike-through line drawn across it (m2278).
- *     Shape stays consistent between states; only the strike-through
- *     communicates absence. Matches the visual language of "banned/off"
- *     indicators (Wi-Fi off, camera off).
+ *     2.5dp Ivory diagonal strike-through line drawn across it (m2278 →
+ *     m2334 revision). Shape stays consistent between states; only the
+ *     strike-through communicates absence. Ivory-on-Saffron reads as a
+ *     purely graphical "not yet" marker without alarming the user with
+ *     Terracotta red.
  *
  * Selected state (multi-select): 3dp Saffron ring outside the thumb + white check on a
  * Saffron circle top-right. Whole cell scales to 96%.
@@ -62,6 +72,13 @@ fun NpicThumbnail(
     missingSignature: Boolean = false,
     onClick: () -> Unit = {},
     onLongPress: () -> Unit = {},
+    // m2334 Fix #2: drag-to-select Pattern A. When non-null, the thumbnail
+    // forwards drag events AFTER a long-press without lifting — the same
+    // touch stream that started the long-press becomes a continuous drag,
+    // matching Samsung Gallery / Google Photos semantics. The offset param
+    // is in WINDOW coordinates so the grid handler can hit-test against
+    // its own cellBounds map without needing per-cell coordinate math.
+    onDragToWindowOffset: ((Offset) -> Unit)? = null,
     content: @Composable () -> Unit = {
         Box(Modifier.fillMaxSize().background(NpicColors.SurfaceRaised))
     },
@@ -73,6 +90,11 @@ fun NpicThumbnail(
         animationSpec = NpicMotion.standardOrSnap(reduceMotion),
         label = "thumb_scale",
     )
+
+    // Cache the thumbnail's own window-space top-left so the drag detector can
+    // translate its LOCAL pointer positions into window coordinates for the
+    // grid handler.
+    var windowOrigin by remember { mutableStateOf(Offset.Zero) }
 
     Box(
         modifier = modifier
@@ -90,7 +112,42 @@ fun NpicThumbnail(
             .let { m ->
                 if (!selected) m.border(1.dp, chrome.borderSoft, NpicShapes.md) else m
             }
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+            .let { m ->
+                if (onDragToWindowOffset != null) {
+                    m
+                        .onGloballyPositioned { coords ->
+                            windowOrigin = coords.positionInWindow()
+                        }
+                        .pointerInput(Unit) {
+                            // Long-press-then-drag detector. The long-press fires
+                            // onLongPress (which enables selection mode + toggles
+                            // this cell), THEN as the finger continues to move
+                            // without lifting, onDrag forwards each new pointer
+                            // position in window coordinates upstream.
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    onLongPress()
+                                },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    onDragToWindowOffset(windowOrigin + change.position)
+                                },
+                            )
+                        }
+                        .pointerInput(Unit) {
+                            // Separate click detector so single-tap still fires
+                            // onClick (detectTapGestures doesn't interfere with
+                            // detectDragGesturesAfterLongPress because Compose
+                            // routes long-press and single-tap on different
+                            // gesture-arbitration paths).
+                            detectTapGestures(
+                                onTap = { onClick() },
+                            )
+                        }
+                } else {
+                    m.combinedClickable(onClick = onClick, onLongClick = onLongPress)
+                }
+            },
     ) {
         content()
 
@@ -122,13 +179,17 @@ fun NpicThumbnail(
                 modifier = Modifier.size(14.dp),
             )
             if (missingSignature) {
-                // Diagonal 2dp Terracotta strike-through across the circle. Drawn on a
+                // Diagonal 2.5dp Ivory strike-through across the circle. Drawn on a
                 // full-sized Canvas so the line touches the circle rim on both ends,
                 // matching the "no-symbol" visual language used across the app.
+                //
+                // m2334: swapped from Terracotta red → Ivory. Red on Saffron read as an
+                // "error / alert" state; Ivory reads as a purely graphical "not yet"
+                // marker, which is what the missing-signature state actually is.
                 androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                    val stroke = 2.dp.toPx()
+                    val stroke = 2.5.dp.toPx()
                     drawLine(
-                        color = NpicColors.Terracotta,
+                        color = NpicColors.Ivory,
                         start = androidx.compose.ui.geometry.Offset(0f, size.height),
                         end   = androidx.compose.ui.geometry.Offset(size.width, 0f),
                         strokeWidth = stroke,

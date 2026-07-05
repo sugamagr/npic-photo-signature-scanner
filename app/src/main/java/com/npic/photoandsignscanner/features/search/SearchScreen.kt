@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -30,6 +28,8 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -142,27 +141,20 @@ private fun SearchTopBar(
 ) {
     val chrome = LocalNpicChrome.current
     val focusRequester = remember { FocusRequester() }
-    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    // Auto-focus on entry. The previous m2132 attempt used delay(50) + runCatching,
-    // which didn't work on device — root cause was not focus timing but the
-    // placeholder Text stacked over BasicTextField in a plain Box: on some Compose
-    // + One UI combos, the Text intercepts touch events for the empty area,
-    // preventing the field below from receiving them. m2278 fix moves the
-    // placeholder into BasicTextField.decorationBox (the built-in placeholder
-    // slot), where it never competes for events. Also explicitly show the IME
-    // via LocalSoftwareKeyboardController so the keyboard opens even if some
-    // ancestor consumed the natural show-on-focus signal.
-    LaunchedEffect(Unit) {
-        runCatching { focusRequester.requestFocus() }
-        keyboard?.show()
-    }
+    // m2334: rewrote to use Material 3 OutlinedTextField (was BasicTextField). Both
+    // m2132's delay(50) fix and m2278's decorationBox fix failed on device — user
+    // reported search input still dead after both. This diagnostic swap tells us
+    // whether the bug is in our custom BasicTextField wrapper (would work with
+    // OutlinedTextField's proven IME wiring) or somewhere else entirely (nav /
+    // permission / device-level IME issue — would fail even here).
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(72.dp)
-            .padding(horizontal = NpicSpacing.sm),
+            .padding(horizontal = NpicSpacing.sm, vertical = NpicSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
     ) {
@@ -171,78 +163,76 @@ private fun SearchTopBar(
             contentDescription = "Back",
             onClick = onBack,
         )
-        Row(
+        OutlinedTextField(
+            value = query,
+            onValueChange = { newValue ->
+                android.util.Log.d("SearchScreen", "onQueryChange fired: '$newValue'")
+                onQueryChange(newValue)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .height(48.dp)
-                .clip(NpicShapes.sm)
-                .background(NpicColors.Surface)
-                .border(1.dp, chrome.borderStrong, NpicShapes.sm)
-                // Tapping any pixel of the visible search bar refocuses the field. Belt-
-                // and-suspenders in case the auto-focus above lost the race.
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { runCatching { focusRequester.requestFocus() }; keyboard?.show() }
-                .padding(horizontal = NpicSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Search,
-                contentDescription = null,
-                tint = chrome.inkMuted,
-                modifier = Modifier.size(20.dp),
-            )
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier
-                    .focusRequester(focusRequester)
-                    .weight(1f),
-                singleLine = true,
-                textStyle = LocalTextStyle.current.copy(
-                    color = NpicColors.Ink,
-                    fontSize = MaterialTheme.typography.bodyLarge.fontSize,
-                ),
-                cursorBrush = SolidColor(NpicColors.Saffron),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Words,
-                    imeAction = ImeAction.Search,
-                ),
-                interactionSource = remember { MutableInteractionSource() },
-                decorationBox = { innerField ->
-                    if (query.isEmpty()) {
-                        Text(
-                            text  = "Name, serial, or class",
-                            color = chrome.inkFaint,
-                            style = MaterialTheme.typography.bodyLarge,
+                .focusRequester(focusRequester),
+            placeholder = {
+                Text(
+                    text  = "Name, serial, or class",
+                    color = chrome.inkFaint,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = null,
+                    tint = chrome.inkMuted,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
+            trailingIcon = if (query.isNotEmpty()) {
+                {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(NpicShapes.full)
+                            .clickable(onClick = onClearQuery)
+                            .semantics { role = Role.Button },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = "Clear",
+                            tint = chrome.inkMuted,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
-                    innerField()
-                },
-            )
-            if (query.isNotEmpty()) {
-                // WCAG 2.5.5 / DESIGN §1.6: 44dp tap target. Icon glyph stays 18dp for the
-                // visual weight the search bar wants — the outer Box handles the hit region.
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(NpicShapes.full)
-                        .clickable(onClick = onClearQuery)
-                        .semantics { role = Role.Button },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "Clear",
-                        tint = chrome.inkMuted,
-                        modifier = Modifier.size(18.dp),
-                    )
                 }
-            }
-        }
+            } else null,
+            singleLine = true,
+            shape = NpicShapes.sm,
+            textStyle = LocalTextStyle.current.copy(
+                color = NpicColors.Ink,
+                fontSize = MaterialTheme.typography.bodyLarge.fontSize,
+            ),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Words,
+                imeAction = ImeAction.Search,
+            ),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor            = NpicColors.Ink,
+                unfocusedTextColor          = NpicColors.Ink,
+                focusedContainerColor       = NpicColors.Surface,
+                unfocusedContainerColor     = NpicColors.Surface,
+                cursorColor                 = NpicColors.Saffron,
+                focusedBorderColor          = NpicColors.Saffron,
+                unfocusedBorderColor        = chrome.borderStrong,
+                focusedPlaceholderColor     = chrome.inkFaint,
+                unfocusedPlaceholderColor   = chrome.inkFaint,
+                focusedLeadingIconColor     = chrome.inkMuted,
+                unfocusedLeadingIconColor   = chrome.inkMuted,
+                focusedTrailingIconColor    = chrome.inkMuted,
+                unfocusedTrailingIconColor  = chrome.inkMuted,
+            ),
+        )
     }
 }
 

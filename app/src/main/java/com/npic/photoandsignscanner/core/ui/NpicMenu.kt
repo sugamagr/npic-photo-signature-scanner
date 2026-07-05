@@ -92,7 +92,10 @@ fun NpicMenu(
     modifier: Modifier = Modifier,
     offset: DpOffset = DpOffset(0.dp, NpicSpacing.xs),
     minWidth: androidx.compose.ui.unit.Dp = 200.dp,
-    maxWidth: androidx.compose.ui.unit.Dp = 280.dp,
+    // m2334: default max tightened 280 → 240. Menus with short labels (Sort mode,
+    // "Select all") were still too wide at 280. Longer labels like "Duplicate to
+    // another class" (24 chars) still fit at 240 with the horizontal md padding.
+    maxWidth: androidx.compose.ui.unit.Dp = 240.dp,
     content: NpicMenuScope.() -> Unit,
 ) {
     // MutableTransitionState so AnimatedVisibility runs the exit transition

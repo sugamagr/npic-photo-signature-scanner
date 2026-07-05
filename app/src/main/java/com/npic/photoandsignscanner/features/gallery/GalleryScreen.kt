@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -61,9 +60,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -641,56 +639,41 @@ private fun GalleryGrid(
     // survives recomposition so recycled cells and filter swaps never re-run it.
     val enteredIds = remember { mutableSetOf<String>() }
 
-    // m2056 Item 2 — drag-to-select (m2278 revision).
+    // m2334 Fix #2 — drag-to-select Pattern A (per-thumbnail continuous drag).
     //
-    // First revision put detectDragGesturesAfterLongPress on the grid-level Box.
-    // That caught every long-press before the per-thumbnail combinedClickable
-    // could see it — the normal long-press-to-enter-selection path broke.
+    // Previous m2278 revision put detectDragGesturesAfterLongPress on the grid-
+    // level Box and gated it on isSelectionMode. That failed on device because
+    // the drag detector needs its OWN fresh long-press to trigger — the user's
+    // finger was already down from the per-thumbnail long-press that enabled
+    // selection mode, so the movement out of cell A into cell B never fired a
+    // "new" long-press and the drag never extended.
     //
-    // Fix: gate the grid-level drag detector on `selectionMode`. While selection
-    // mode is OFF, the grid pointerInput is a no-op — the normal per-thumbnail
-    // long-press path fires first and toggles selection mode on. Once selection
-    // mode is ON, subsequent long-press-then-drag on ANY cell enters drag-select
-    // mode and extends the selection across the swiped range.
-    //
-    // Samsung Gallery / Google Photos use the same pattern: the first cell is
-    // always the "commit" long-press, drag-extend only works after the first
-    // pick is committed.
+    // Fix: move the long-press-then-drag detection INSIDE NpicThumbnail via the
+    // new onDragToWindowOffset callback. The thumbnail fires onLongPress on
+    // long-press (turns selection mode on + toggles this cell), then forwards
+    // each drag position upstream in window coordinates. This handler hit-tests
+    // the incoming position against cellBounds (also in window coordinates) and
+    // toggles new cells the finger enters. Samsung Gallery / Google Photos
+    // pattern.
     val cellBounds = remember { mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
     val visitedThisDrag = remember { mutableSetOf<String>() }
     val haptics = com.npic.photoandsignscanner.core.theme.rememberNpicHaptics()
 
-    Box(
-        modifier = Modifier
-            .then(
-                if (state.isSelectionMode) {
-                    Modifier.pointerInput(Unit) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { start: androidx.compose.ui.geometry.Offset ->
-                                visitedThisDrag.clear()
-                                hitTestCell(cellBounds, start)?.let { id ->
-                                    haptics.performLongPress()
-                                    longPressRef.value(id)
-                                    visitedThisDrag += id
-                                }
-                            },
-                            onDrag = { change, _ ->
-                                change.consume()
-                                hitTestCell(cellBounds, change.position)?.let { id ->
-                                    if (id !in visitedThisDrag) {
-                                        haptics.performClick()
-                                        longPressRef.value(id)
-                                        visitedThisDrag += id
-                                    }
-                                }
-                            },
-                            onDragEnd = { visitedThisDrag.clear() },
-                            onDragCancel = { visitedThisDrag.clear() },
-                        )
-                    }
-                } else Modifier,
-            ),
-    ) {
+    // Grid handler receives drag positions from NpicThumbnail in window
+    // coordinates. Hit-test against cellBounds (also window coordinates),
+    // toggle new cells only (visitedThisDrag prevents double-fire on grazing
+    // pointers within a single drag stream).
+    val onDragToWindowOffset: (androidx.compose.ui.geometry.Offset) -> Unit = { windowOffset ->
+        hitTestCell(cellBounds, windowOffset)?.let { id ->
+            if (id !in visitedThisDrag) {
+                haptics.performClick()
+                longPressRef.value(id)
+                visitedThisDrag += id
+            }
+        }
+    }
+
+    Box {
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             contentPadding = PaddingValues(
@@ -717,11 +700,14 @@ private fun GalleryGrid(
                         reveal.animateTo(1f, NpicMotion.springSmooth())
                     }
                 }
-                // Cell auto-unregisters when the LazyGrid recycles this slot — the
-                // key(record.id) block below re-runs on recycle, clearing the old
-                // entry before the new one takes its place.
+                // Cell auto-unregisters when the LazyGrid recycles this slot.
                 DisposableEffect(record.id) {
-                    onDispose { cellBounds.remove(record.id) }
+                    onDispose {
+                        cellBounds.remove(record.id)
+                        // Any in-flight drag stream that visited this now-recycled
+                        // cell can drop its visited-marker safely.
+                        visitedThisDrag.remove(record.id)
+                    }
                 }
                 NpicThumbnail(
                     modifier = Modifier
@@ -732,10 +718,11 @@ private fun GalleryGrid(
                             scaleY = 0.94f + 0.06f * progress
                         }
                         .onGloballyPositioned { coords ->
-                            // positionInParent gives coords in the LazyGrid's local
-                            // space, which matches the pointerInput's coordinate
-                            // system since both live under the same outer Box.
-                            val pos = coords.positionInParent()
+                            // m2334: WINDOW coordinates now (was positionInParent).
+                            // NpicThumbnail forwards drag positions in window coords
+                            // via onDragToWindowOffset — both sides must speak the
+                            // same coordinate system for the hit-test to work.
+                            val pos = coords.positionInWindow()
                             cellBounds[record.id] = androidx.compose.ui.geometry.Rect(
                                 offset = pos,
                                 size = androidx.compose.ui.geometry.Size(
@@ -751,7 +738,15 @@ private fun GalleryGrid(
                         if (selectionModeRef.value) longPressRef.value(record.id)
                         else clickRef.value(record.id)
                     },
-                    onLongPress = { longPressRef.value(record.id) },
+                    onLongPress = {
+                        // Anchor cell of a drag-select stream. Clear the visited
+                        // set here so a fresh long-press always starts a fresh
+                        // drag session even if the previous one was interrupted.
+                        visitedThisDrag.clear()
+                        visitedThisDrag += record.id
+                        longPressRef.value(record.id)
+                    },
+                    onDragToWindowOffset = onDragToWindowOffset,
                     content = {
                         // Bug#1+#2: render the saved photo from SourceStore (`filesDir/sources/`).
                         // Coil handles missing-file / decode failure by leaving the slot blank,
