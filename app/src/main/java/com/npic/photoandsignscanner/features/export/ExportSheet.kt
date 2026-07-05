@@ -486,13 +486,7 @@ private fun NamingToggleSection(
     val selected = override ?: NamingMode.Kind.Name
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text  = "Filename",
-            color = chrome.inkMuted,
-            style = MaterialTheme.typography.labelMedium,
-        )
-        Spacer(Modifier.height(NpicSpacing.xxs))
-        Text(
-            text  = "For records saved with a name. Serial-only records always export as their portal number.",
+            text  = "Filename — prefer name or serial",
             color = chrome.inkMuted,
             style = MaterialTheme.typography.bodySmall,
         )

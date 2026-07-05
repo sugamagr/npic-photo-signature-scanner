@@ -2,8 +2,6 @@ package com.npic.photoandsignscanner.core.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -48,13 +46,7 @@ import com.npic.photoandsignscanner.core.theme.NpicTheme
 fun NpicBottomSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    // m2498: default is `skipPartiallyExpanded = false` so the sheet opens at ~half
-    // height and only expands when the user drags it up. The earlier m2497 fix wrapped
-    // the sheet content in `verticalScroll` — that's what makes half-height safe: if
-    // content overflows the partial viewport, it scrolls inside the sheet instead of
-    // clipping the action row. Callers that need a full-height sheet from the start
-    // (e.g. a canvas-taking editor) can still pass their own SheetState.
-    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     title: String? = null,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
@@ -77,17 +69,10 @@ fun NpicBottomSheet(
         },
         modifier = modifier,
     ) {
-        // m2497: verticalScroll wraps content so overflow scrolls WITHIN the sheet
-        // rather than clipping. Without this, adding sections to a sheet (like the
-        // m2496 naming toggle in ExportSheet) can push the action row below the
-        // visible viewport — users see only the primary button, the Ghost buttons
-        // silently disappear, and there's no scroll gesture to recover them. This
-        // was the m2497 "Save to Gallery and Save & Share not visible at all" bug.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = NpicSpacing.xl, vertical = NpicSpacing.md),
             verticalArrangement = Arrangement.spacedBy(NpicSpacing.md),
         ) {
