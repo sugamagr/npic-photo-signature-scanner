@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Draw
 import androidx.compose.material.icons.outlined.PhotoCamera
@@ -78,53 +80,67 @@ fun ExportSheet(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
+    // m2500: cap Export sheet body at 65% of screen height and scroll inside if it
+    // overflows. This keeps the sheet visually bounded (not full-screen) even when
+    // the naming toggle + missing-media warning are both visible. The scroll is on a
+    // BOUNDED-height inner column — different from the reverted m2497 unbounded
+    // scroll that fought the sheet's own drag physics and washed the chrome white.
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val maxSheetBodyHeight = screenHeightDp * 0.65f
+
     NpicBottomSheet(onDismiss = onCancel, title = "Export") {
-        SheetSubtitle(recordCount = state.recordCount)
-        Spacer(Modifier.height(NpicSpacing.md))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxSheetBodyHeight)
+                .wrapContentHeight()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(NpicSpacing.md),
+        ) {
+            SheetSubtitle(recordCount = state.recordCount)
 
-        FormatCards(
-            selected = state.format,
-            onSelect = viewModel::setFormat,
-        )
+            FormatCards(
+                selected = state.format,
+                onSelect = viewModel::setFormat,
+            )
 
-        // m2496: naming-mode toggle. Only rendered when at least one selected record
-        // was originally saved under Name mode — pure-Serial batches export as
-        // `090001.jpeg` regardless, so the toggle would be a dead switch.
-        if (state.showNamingToggle) {
-            Spacer(Modifier.height(NpicSpacing.md))
-            NamingToggleSection(
-                override = state.namingOverride,
-                onSelect = viewModel::setNamingOverride,
+            // m2496: naming-mode toggle. Only rendered when at least one selected record
+            // was originally saved under Name mode — pure-Serial batches export as
+            // `090001.jpeg` regardless, so the toggle would be a dead switch.
+            if (state.showNamingToggle) {
+                NamingToggleSection(
+                    override = state.namingOverride,
+                    onSelect = viewModel::setNamingOverride,
+                )
+            }
+
+            if (state.hasWarning) {
+                MissingMediaWarning(
+                    skippedCount = state.skipped.size,
+                    format = state.format,
+                    expanded = state.warningExpanded,
+                    onToggle = viewModel::toggleWarningExpanded,
+                    skippedNames = state.skipped.map { it.displayName.ifBlank { "Serial ${it.serial}" } },
+                )
+            }
+
+            Spacer(Modifier.height(NpicSpacing.xs))
+
+            ExportActionRow(
+                effectiveCount = state.effective.size,
+                canExport = state.canExport,
+                onCancel = onCancel,
+                onSaveToGallery = {
+                    viewModel.beginSaveToGallery { result -> onShare(result, state.format) }
+                },
+                onShare = {
+                    viewModel.beginExport { result -> onShare(result, state.format) }
+                },
+                onSaveAndShare = {
+                    viewModel.beginSaveAndShare { result -> onShare(result, state.format) }
+                },
             )
         }
-
-        if (state.hasWarning) {
-            Spacer(Modifier.height(NpicSpacing.md))
-            MissingMediaWarning(
-                skippedCount = state.skipped.size,
-                format = state.format,
-                expanded = state.warningExpanded,
-                onToggle = viewModel::toggleWarningExpanded,
-                skippedNames = state.skipped.map { it.displayName.ifBlank { "Serial ${it.serial}" } },
-            )
-        }
-
-        Spacer(Modifier.height(NpicSpacing.lg))
-
-        ExportActionRow(
-            effectiveCount = state.effective.size,
-            canExport = state.canExport,
-            onCancel = onCancel,
-            onSaveToGallery = {
-                viewModel.beginSaveToGallery { result -> onShare(result, state.format) }
-            },
-            onShare = {
-                viewModel.beginExport { result -> onShare(result, state.format) }
-            },
-            onSaveAndShare = {
-                viewModel.beginSaveAndShare { result -> onShare(result, state.format) }
-            },
-        )
     }
 }
 
@@ -293,58 +309,52 @@ private fun MissingMediaWarning(
     onToggle: () -> Unit,
     skippedNames: List<String>,
 ) {
+    // m2500: compact editorial warning. Old design was a big TerracottaSoft-filled
+    // card with 16dp padding on all sides, a 20dp icon, and a separate 44dp-min
+    // "Show list" tap-target row — ~140dp+ of vertical space. New design: single
+    // inline row (icon + message + inline "Show list" affordance), no fill, only a
+    // Terracotta icon so the warning still reads at a glance. Matches the sheet's
+    // Ivory editorial calm instead of screaming for attention.
+    val reduceMotion = LocalReduceMotion.current
+    val toggleLabel = if (expanded) "Hide" else "Show list"
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(NpicShapes.md)
-            .background(NpicColors.TerracottaSoft)
-            .padding(NpicSpacing.md)
-            // Polite live region so TalkBack announces the missing-media warning when it
-            // appears after a format switch, without interrupting mid-sentence readouts
-            // (Oracle M-8c2-M2-QCC).
             .semantics { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(NpicSpacing.xs),
     ) {
         Row(
-            verticalAlignment = Alignment.Top,
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NpicSpacing.sm),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 44.dp)
+                .clip(NpicShapes.sm)
+                .clickable(onClick = onToggle)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = if (expanded) "Hide skipped list" else "Show skipped list"
+                }
+                .padding(horizontal = NpicSpacing.xxs, vertical = NpicSpacing.xs),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Warning,
                 contentDescription = null,
                 tint = NpicColors.Terracotta,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(16.dp),
             )
             Text(
-                // qc-round-13 MINOR: message noun switches on format so PhotoOnly reads
-                // "photo" not "signature". Combined + SignatureOnly still say signature.
-                // Singular vs plural + "It'll" / "They'll" tense agreement follows count.
                 text  = missingMediaMessage(skippedCount, format),
                 color = NpicColors.Ink,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
             )
-        }
-        val toggleLabel = if (expanded) "Hide list" else "Show list"
-        Box(
-            modifier = Modifier
-                .heightIn(min = 44.dp)
-                .clip(NpicShapes.sm)
-                .semantics {
-                    role = Role.Button
-                    contentDescription = if (expanded) "Hide skipped list" else "Show skipped list"
-                }
-                .clickable(onClick = onToggle)
-                .padding(horizontal = NpicSpacing.xxs, vertical = NpicSpacing.xs),
-            contentAlignment = Alignment.CenterStart,
-        ) {
             Text(
                 text  = toggleLabel,
                 color = NpicColors.Terracotta,
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight(600)),
             )
         }
-        val reduceMotion = LocalReduceMotion.current
         AnimatedVisibility(
             visible = expanded,
             enter = fadeIn(NpicMotion.standardOrSnap(reduceMotion)) +
