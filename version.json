@@ -1,11 +1,11 @@
 {
-  "versionCode": 1,
-  "versionName": "0.1.0",
-  "apkUrl": "https://github.com/sugamagr/npic-photo-signature-scanner/releases/download/v0.1.0/npic-0.1.0-release.apk",
-  "apkSha256": "30479bafae774fac2fe78de54095443537e0789cac5152b44cd0e76ca2fd6b1f",
-  "apkSizeBytes": 45745077,
-  "changelog": "First release with the self-hosted updater.\n\u2022 Warm Editorial UI with true-saffron palette\n\u2022 Photo + signature capture, N-way duplicate handling\n\u2022 Combined / Photo-only / Signature-only export",
+  "versionCode": 2,
+  "versionName": "0.2.0",
+  "apkUrl": "https://github.com/sugamagr/npic-photo-signature-scanner/releases/download/v0.2.0/npic-0.2.0-release.apk",
+  "apkSha256": "b6fb8cb1efade731c035c789d778c13ebceb23a0bd700a01b983641a9d241515",
+  "apkSizeBytes": 46098882,
+  "changelog": "New app icon.\n\u2022 Replaced placeholder saffron 'N' launcher icon with the gold PS-in-photo-frame mark on dark navy\n\u2022 Full adaptive-icon assets at every density (mdpi \u2192 xxxhdpi) so the icon looks crisp on every phone\n\u2022 Themed-icon monochrome variant for Android 13+ Material You\n\u2022 Splash-screen icon updated to a matching saffron signature-flourish glyph on ivory",
   "minSupportedVersion": 1,
   "forceUpdate": false,
-  "releaseDate": "2025-07-05T00:00:00Z"
+  "releaseDate": "2025-07-05T20:04:00Z"
 }

@@ -3,9 +3,15 @@
     Bootstrap XML colors used ONLY for the splash screen and adaptive icon.
     All in-app colors live in NpicColors (core/theme/Color.kt) — feature code
     MUST NOT reference these values. Enforcement rule §11.1 in DESIGN.md.
+
+    m2511: added npic_launcher_navy (#1E2329) for reference — matches the
+    dark navy in the raster launcher icon (mipmap-*/ic_launcher.png). Not
+    used by the splash theme (which stays on npic_ivory), but documented
+    here so the DESIGN.md launcher-icon spec cross-references stay honest.
 -->
 <resources>
     <color name="npic_ivory">#FAF7F2</color>
     <color name="npic_ink">#1A1613</color>
     <color name="npic_saffron">#F6921E</color>
+    <color name="npic_launcher_navy">#1E2329</color>
 </resources>

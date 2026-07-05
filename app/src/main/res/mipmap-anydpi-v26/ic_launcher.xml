@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    m2511: adaptive-icon manifest. The old vector placeholder (saffron N glyph on
+    ivory) was replaced by a raster PS-monogram-in-gold-frame mark generated for
+    v0.2.0. Foreground/background/monochrome each resolve to density-specific
+    PNGs under mipmap-{density}/. Android composes them behind the OEM mask
+    (Pixel squircle / Samsung squircle / round). Simulated all three mask shapes
+    at build time; the 66/108 safe zone leaves ~22% margin so nothing clips.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
 </adaptive-icon>
