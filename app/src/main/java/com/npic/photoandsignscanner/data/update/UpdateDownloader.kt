@@ -17,8 +17,10 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * m2508: streams the release APK from [UpdateManifest.apkUrl] into
- * `cache/updates/npic-{versionName}.apk` via Android's DownloadManager.
+ * m2508+m2512: streams the release APK from [UpdateManifest.apkUrl] into
+ * `{externalFilesDir}/updates/npic-{versionName}.apk` via Android's DownloadManager.
+ * (m2512 moved from `context.cacheDir/updates` after DownloadManager threw
+ * SecurityException on the internal-cache path — see updatesDir docs below.)
  *
  * DownloadManager was chosen over OkHttp/Ktor because it:
  *   1. Survives Doze and app process death (system service holds the download)
@@ -42,12 +44,26 @@ class UpdateDownloader(
         get() = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     /**
-     * Directory where downloaded APKs stage before install. Cache dir means Android
-     * can reclaim if the device runs low on storage; the APK is disposable once
-     * PackageInstaller has streamed it.
+     * m2512 fix: DownloadManager runs in a separate system process and CANNOT write
+     * into an app's internal `context.cacheDir` — it throws `SecurityException:
+     * Unsupported path` and takes the whole app down (v0.1.0 → v0.2.0 crash).
+     * External app-private storage (`getExternalFilesDir`) is world-readable at the
+     * OS level (which DownloadManager needs) but still isolated per-package (no
+     * runtime permission required, cleaned on uninstall). This is the Google-blessed
+     * pattern for staging DownloadManager output that we consume ourselves.
+     *
+     * Fallback to `cacheDir` only if `getExternalFilesDir` returns null (extremely
+     * rare — device with no external storage AND no emulated primary — but keeps
+     * the code total). In that case DownloadManager will still fail, but at least
+     * the sha256-check-and-serve fast path continues to work for cached APKs.
      */
     private val updatesDir: File
-        get() = File(context.cacheDir, "updates").apply { mkdirs() }
+        get() {
+            val external = context.getExternalFilesDir("updates")
+            val dir = external ?: File(context.cacheDir, "updates")
+            if (!dir.exists()) dir.mkdirs()
+            return dir
+        }
 
     /**
      * Returns the file path where the APK for [manifest] would stage. Used by the

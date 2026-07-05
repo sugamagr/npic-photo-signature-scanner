@@ -1,11 +1,11 @@
 {
-  "versionCode": 2,
-  "versionName": "0.2.0",
-  "apkUrl": "https://github.com/sugamagr/npic-photo-signature-scanner/releases/download/v0.2.0/npic-0.2.0-release.apk",
-  "apkSha256": "b6fb8cb1efade731c035c789d778c13ebceb23a0bd700a01b983641a9d241515",
-  "apkSizeBytes": 46098882,
-  "changelog": "New app icon.\n\u2022 Replaced placeholder saffron 'N' launcher icon with the gold PS-in-photo-frame mark on dark navy\n\u2022 Full adaptive-icon assets at every density (mdpi \u2192 xxxhdpi) so the icon looks crisp on every phone\n\u2022 Themed-icon monochrome variant for Android 13+ Material You\n\u2022 Splash-screen icon updated to a matching saffron signature-flourish glyph on ivory",
+  "versionCode": 3,
+  "versionName": "0.2.1",
+  "apkUrl": "https://github.com/sugamagr/npic-photo-signature-scanner/releases/download/v0.2.1/npic-0.2.1-release.apk",
+  "apkSha256": "278b4a620d81fea1a093a9d6c44e1fe235b220c01ca4bf58d73e94aebfc7980c",
+  "apkSizeBytes": 46098898,
+  "changelog": "Fix updater crash when downloading v0.2.0.\n\u2022 DownloadManager cannot write into the app-internal cache directory (throws SecurityException); moved APK staging to the app-external files directory instead\n\u2022 Update flow now completes: check \u2192 download \u2192 verify \u2192 install\n\u2022 New app icon from v0.2.0 (gold PS-in-photo-frame on dark navy) ships along with this fix",
   "minSupportedVersion": 1,
   "forceUpdate": false,
-  "releaseDate": "2025-07-05T20:04:00Z"
+  "releaseDate": "2025-07-05T20:11:00Z"
 }

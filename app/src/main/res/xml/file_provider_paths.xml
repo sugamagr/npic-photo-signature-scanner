@@ -15,9 +15,12 @@
     <files-path name="internal_exports" path="exports/" />
     <cache-path name="cache_exports"   path="exports/" />
     <files-path name="internal_sources" path="sources/" />
-    <!-- m2508: self-hosted updater APK staging directory. DownloadManager writes the
-         downloaded release APK to cache/updates/{versionName}.apk and PackageInstaller
-         streams it back through openWrite. FileProvider access is required for the
-         legacy ACTION_INSTALL_PACKAGE fallback path (rare OEM edge cases). -->
-    <cache-path name="cache_updates"   path="updates/" />
+    <!-- m2508+m2512: self-hosted updater APK staging directory. Moved from
+         cache-path to external-files-path in m2512 because DownloadManager (a
+         separate system process) throws SecurityException on any destination
+         inside /data/data/{pkg}/. External app-private storage
+         (context.getExternalFilesDir("updates")) is DownloadManager-safe AND
+         still permission-free / uninstall-cleaned. FileProvider access here
+         serves the legacy ACTION_INSTALL_PACKAGE fallback path. -->
+    <external-files-path name="external_updates" path="updates/" />
 </paths>
